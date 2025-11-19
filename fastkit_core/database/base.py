@@ -4,18 +4,19 @@ Base Model with FastKit improvements.
 Provides:
 - Automatic timestamps (created_at, updated_at)
 - Primary key (id)
-- Dict/JSON serialization
+- Dict/JSON serialization with relationships
 - Query helpers
-- Repository access
+- Auto-generated table names
 """
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from typing import Any, TypeVar
 
-from sqlalchemy import inspect
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy import DateTime, Integer, event, func
+from sqlalchemy.orm import DeclarativeBase, Mapped, declared_attr, mapped_column
 
 T = TypeVar('T', bound='Base')
 
@@ -27,17 +28,17 @@ class Base(DeclarativeBase):
     Provides common functionality:
     - Auto-incrementing ID
     - Timestamps (created_at, updated_at)
-    - Dict serialization
+    - Dict serialization with relationship support
     - JSON export
+    - Auto-generated table names
 
     Example:
 ```python
         from fastkit_core.database import Base
-        from sqlalchemy import Column, String
+        from sqlalchemy import String
 
         class User(Base):
-            __tablename__ = "users"
-
+            # __tablename__ is auto-generated as 'users'
             name: Mapped[str] = mapped_column(String(100))
             email: Mapped[str] = mapped_column(String(255), unique=True)
 
@@ -48,18 +49,52 @@ class Base(DeclarativeBase):
     # Don't create table for Base itself
     __abstract__ = True
 
+    # Auto-generate table name from class name
+    @declared_attr
+    def __tablename__(cls) -> str:
+        """
+        Auto-generate table name from class name.
+
+        Converts CamelCase to snake_case and pluralizes.
+        Examples:
+            User -> users
+            UserProfile -> user_profiles
+            Category -> categories
+        """
+        # Convert CamelCase to snake_case
+        name = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', cls.__name__)
+        name = re.sub('([a-z0-9])([A-Z])', r'\1_\2', name).lower()
+
+        # Simple pluralization (English)
+        if name.endswith('y') and name[-2] not in 'aeiou':
+            name = name[:-1] + 'ies'
+        elif name.endswith('s') or name.endswith('x') or name.endswith('z'):
+            name = name + 'es'
+        elif name.endswith('ch') or name.endswith('sh'):
+            name = name + 'es'
+        else:
+            name = name + 's'
+
+        return name
+
     # Primary key (auto-incrementing)
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True
+    )
 
     # Timestamps (automatically managed)
     created_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.now(timezone.utc),
+        DateTime(timezone=True),
+        server_default=func.now(),
         nullable=False
     )
 
     updated_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
         nullable=False
     )
 
@@ -67,12 +102,21 @@ class Base(DeclarativeBase):
     # Serialization
     # ========================================================================
 
-    def to_dict(self, exclude: list[str] | None = None) -> dict[str, Any]:
+    def to_dict(
+        self,
+        exclude: list[str] | None = None,
+        include_relationships: bool = False,
+        max_depth: int = 1,
+        _current_depth: int = 0
+    ) -> dict[str, Any]:
         """
         Convert model to dictionary.
 
         Args:
             exclude: List of field names to exclude
+            include_relationships: Include related objects
+            max_depth: Maximum depth for nested relationships (prevents infinite recursion)
+            _current_depth: Internal tracker for recursion depth
 
         Returns:
             Dictionary representation
@@ -80,14 +124,23 @@ class Base(DeclarativeBase):
         Example:
 ```python
             user = User.query.first()
+
+            # Simple dict
             data = user.to_dict(exclude=['password'])
             # {'id': 1, 'name': 'John', 'email': 'john@test.com', ...}
+
+            # With relationships
+            data = user.to_dict(include_relationships=True)
+            # {'id': 1, 'name': 'John', 'posts': [...], ...}
 ```
         """
-        exclude = exclude or []
+        from sqlalchemy import inspect as sa_inspect
 
+        exclude = exclude or []
         result = {}
-        for column in inspect(self).mapper.column_attrs:
+
+        # Columns
+        for column in sa_inspect(self).mapper.column_attrs:
             key = column.key
             if key not in exclude:
                 value = getattr(self, key)
@@ -98,31 +151,88 @@ class Base(DeclarativeBase):
 
                 result[key] = value
 
+        # Relationships
+        if include_relationships and _current_depth < max_depth:
+            for relationship in sa_inspect(self).mapper.relationships:
+                key = relationship.key
+                if key not in exclude:
+                    related = getattr(self, key, None)
+
+                    if related is None:
+                        result[key] = None
+                    elif isinstance(related, list):
+                        # One-to-many or many-to-many
+                        result[key] = [
+                            item.to_dict(
+                                exclude=exclude,
+                                include_relationships=True,
+                                max_depth=max_depth,
+                                _current_depth=_current_depth + 1
+                            )
+                            for item in related
+                        ]
+                    else:
+                        # Many-to-one or one-to-one
+                        result[key] = related.to_dict(
+                            exclude=exclude,
+                            include_relationships=True,
+                            max_depth=max_depth,
+                            _current_depth=_current_depth + 1
+                        )
+
         return result
 
-    def to_json(self, exclude: list[str] | None = None) -> dict[str, Any]:
+    def to_json(
+        self,
+        exclude: list[str] | None = None,
+        include_relationships: bool = False
+    ) -> dict[str, Any]:
         """
         Alias for to_dict() (more intuitive for API responses).
         """
-        return self.to_dict(exclude=exclude)
+        return self.to_dict(
+            exclude=exclude,
+            include_relationships=include_relationships
+        )
 
-    def update_from_dict(self, data: dict[str, Any]) -> None:
+    def update_from_dict(
+        self,
+        data: dict[str, Any],
+        exclude: list[str] | None = None
+    ) -> None:
         """
         Update model attributes from dictionary.
 
         Args:
             data: Dictionary of attributes to update
+            exclude: List of attributes to exclude from update
 
         Example:
 ```python
             user = User.query.first()
-            user.update_from_dict({'name': 'Jane', 'email': 'jane@test.com'})
+            user.update_from_dict({
+                'name': 'Jane',
+                'email': 'jane@test.com'
+            })
             session.commit()
 ```
         """
+        exclude = exclude or []
+
         for key, value in data.items():
-            if hasattr(self, key):
-                setattr(self, key, value)
+            # Skip excluded fields
+            if key in exclude:
+                continue
+
+            # Skip non-existent attributes
+            if not hasattr(self, key):
+                continue
+
+            # Skip primary key and timestamps (unless explicitly needed)
+            if key in ('id', 'created_at', 'updated_at'):
+                continue
+
+            setattr(self, key, value)
 
     # ========================================================================
     # Utility Methods
@@ -130,28 +240,38 @@ class Base(DeclarativeBase):
 
     def __repr__(self) -> str:
         """String representation."""
+        attrs = self.__repr_attrs__()
+
+        if attrs:
+            attrs_str = ', '.join(f"{k}={v!r}" for k, v in attrs)
+            return f"<{self.__class__.__name__}({attrs_str})>"
+
         return f"<{self.__class__.__name__}(id={self.id})>"
 
-    @classmethod
-    def __tablename_from_class__(cls) -> str:
+    def __repr_attrs__(self) -> list[tuple[str, Any]]:
         """
-        Generate table name from class name.
+        Override this to customize repr output.
 
-        Converts CamelCase to snake_case and pluralizes.
-        UserProfile -> user_profiles
+        Returns:
+            List of (key, value) tuples to include in repr
+
+        Example:
+```python
+            class User(Base):
+                name: Mapped[str]
+
+                def __repr_attrs__(self):
+                    return [('id', self.id), ('name', self.name)]
+```
         """
-        import re
+        return [('id', self.id)]
 
-        # Convert CamelCase to snake_case
-        name = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', cls.__name__)
-        name = re.sub('([a-z0-9])([A-Z])', r'\1_\2', name).lower()
 
-        # Simple pluralization (English)
-        if name.endswith('y'):
-            name = name[:-1] + 'ies'
-        elif name.endswith('s'):
-            name = name + 'es'
-        else:
-            name = name + 's'
+# ============================================================================
+# Event Listeners (for automatic updated_at handling)
+# ============================================================================
 
-        return name
+@event.listens_for(Base, 'before_update', propagate=True)
+def receive_before_update(mapper, connection, target):
+    """Automatically update updated_at timestamp on model updates."""
+    target.updated_at = datetime.now(timezone.utc)
