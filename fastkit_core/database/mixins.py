@@ -5,18 +5,23 @@ Provides common patterns:
 - UUID primary keys
 - Soft deletes
 - Timestamps only (no ID)
-- Slugs
+- Slugs (with uniqueness checks)
 - Publishing workflow
+- Ordering
 """
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import DateTime, String
+from sqlalchemy import DateTime, String, select, func
 from sqlalchemy.orm import Mapped, mapped_column
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 
 class UUIDMixin:
@@ -61,15 +66,21 @@ class SoftDeleteMixin:
         post.soft_delete()  # Marks as deleted
         post.restore()      # Restores
 
-        # Query only non-deleted
-        active_posts = Post.query.filter(Post.deleted_at.is_(None)).all()
+        # Query only non-deleted (manual filter)
+        active_posts = session.query(Post).filter(
+            Post.deleted_at.is_(None)
+        ).all()
+
+        # Or use the class method
+        active_posts = Post.active(session).all()
 ```
     """
 
     deleted_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
-        default=None
+        default=None,
+        index=True  # Index for faster queries
     )
 
     @property
@@ -85,6 +96,30 @@ class SoftDeleteMixin:
         """Restore soft-deleted record."""
         self.deleted_at = None
 
+    @classmethod
+    def active(cls, session: Session):
+        """
+        Query helper for non-deleted records.
+
+        Example:
+```python
+            active_posts = Post.active(session).all()
+```
+        """
+        return session.query(cls).filter(cls.deleted_at.is_(None))
+
+    @classmethod
+    def deleted(cls, session: Session):
+        """
+        Query helper for deleted records.
+
+        Example:
+```python
+            deleted_posts = Post.deleted(session).all()
+```
+        """
+        return session.query(cls).filter(cls.deleted_at.isnot(None))
+
 
 class TimestampMixin:
     """
@@ -92,25 +127,41 @@ class TimestampMixin:
 
     Use when you want to define your own primary key
     but still want automatic timestamps.
+
+    Example:
+```python
+        class CustomModel(Base, TimestampMixin):
+            __tablename__ = "custom"
+
+            custom_id: Mapped[int] = mapped_column(primary_key=True)
+            name: Mapped[str]
+```
     """
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        server_default= func.now(),
         nullable=False
     )
 
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        server_default= func.now(),
+        onupdate= func.now(),
         nullable=False
     )
+
+    def __repr_attrs__(self) -> list[tuple[str, any]]:
+        """Include timestamps in repr."""
+        return [
+            ('created_at', self.created_at.isoformat() if self.created_at else None),
+            ('updated_at', self.updated_at.isoformat() if self.updated_at else None)
+        ]
 
 
 class SlugMixin:
     """
-    Automatic slug generation from title/name.
+    Automatic slug generation from title/name with uniqueness checks.
 
     Example:
 ```python
@@ -118,8 +169,13 @@ class SlugMixin:
             __tablename__ = "posts"
             title: Mapped[str]
 
+        # Without session (no uniqueness check)
         post = Post(title="Hello World")
         post.generate_slug()  # slug = "hello-world"
+
+        # With session (ensures uniqueness)
+        post = Post(title="Hello World")
+        post.generate_slug(session=session)  # slug = "hello-world" or "hello-world-2"
 ```
     """
 
@@ -130,19 +186,36 @@ class SlugMixin:
         index=True
     )
 
-    def generate_slug(self, source_field: str = 'title') -> str:
+    def generate_slug(
+        self,
+        source_field: str = 'title',
+        session: Session | None = None,
+        max_length: int = 255
+    ) -> str:
         """
         Generate slug from source field.
 
         Args:
             source_field: Field to generate slug from (default: 'title')
+            session: Database session for uniqueness check (optional)
+            max_length: Maximum slug length (default: 255)
 
         Returns:
             Generated slug
-        """
-        import re
 
+        Example:
+```python
+            post = Post(title="Hello World!")
+            post.generate_slug()  # "hello-world"
+
+            # With uniqueness check
+            post.generate_slug(session=session)  # "hello-world-2" if exists
+```
+        """
         source = getattr(self, source_field, '')
+
+        if not source:
+            raise ValueError(f"Source field '{source_field}' is empty")
 
         # Convert to lowercase
         slug = source.lower()
@@ -152,6 +225,39 @@ class SlugMixin:
 
         # Remove leading/trailing hyphens
         slug = slug.strip('-')
+
+        # Truncate to max length
+        slug = slug[:max_length]
+
+        # If no session provided, just set and return
+        if not session:
+            self.slug = slug
+            return slug
+
+        # Check for uniqueness
+        base_slug = slug
+        counter = 1
+
+        while True:
+            # Build query to check if slug exists
+            stmt = select(self.__class__).where(
+                self.__class__.slug == slug
+            )
+
+            # Exclude current record if it has an ID (update scenario)
+            if hasattr(self, 'id') and self.id is not None:
+                stmt = stmt.where(self.__class__.id != self.id)
+
+            existing = session.execute(stmt).first()
+
+            if not existing:
+                break
+
+            # Generate new slug with counter
+            counter_str = f"-{counter}"
+            max_base_length = max_length - len(counter_str)
+            slug = f"{base_slug[:max_base_length]}{counter_str}"
+            counter += 1
 
         self.slug = slug
         return slug
@@ -173,16 +279,21 @@ class PublishableMixin:
         article.schedule(datetime(2024, 12, 31))  # Schedule
 
         # Query published articles
-        published = Article.query.filter(
-            Article.is_published == True
-        ).all()
+        published = Article.published(session).all()
+
+        # Query drafts
+        drafts = Article.drafts(session).all()
+
+        # Query scheduled
+        scheduled = Article.scheduled(session).all()
 ```
     """
 
     published_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
-        default=None
+        default=None,
+        index=True  # Index for faster queries
     )
 
     @property
@@ -213,5 +324,54 @@ class PublishableMixin:
         self.published_at = None
 
     def schedule(self, publish_at: datetime) -> None:
-        """Schedule for future publication."""
+        """
+        Schedule for future publication.
+
+        Args:
+            publish_at: DateTime when to publish (should be in UTC)
+        """
         self.published_at = publish_at
+
+    @classmethod
+    def published(cls, session: Session):
+        """
+        Query helper for published records.
+
+        Example:
+```python
+            published = Article.published(session).all()
+```
+        """
+        now = datetime.now(timezone.utc)
+        return session.query(cls).filter(
+            cls.published_at.isnot(None),
+            cls.published_at <= now
+        )
+
+    @classmethod
+    def drafts(cls, session: Session):
+        """
+        Query helper for draft records.
+
+        Example:
+```python
+            drafts = Article.drafts(session).all()
+```
+        """
+        return session.query(cls).filter(cls.published_at.is_(None))
+
+    @classmethod
+    def scheduled(cls, session: Session):
+        """
+        Query helper for scheduled records.
+
+        Example:
+```python
+            scheduled = Article.scheduled(session).all()
+```
+        """
+        now = datetime.now(timezone.utc)
+        return session.query(cls).filter(
+            cls.published_at.isnot(None),
+            cls.published_at > now
+        )
