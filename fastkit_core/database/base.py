@@ -61,6 +61,9 @@ class Base(DeclarativeBase):
             UserProfile -> user_profiles
             Category -> categories
         """
+        if hasattr(cls, '__tablename_override__'):
+            return cls.__tablename_override__
+
         # Convert CamelCase to snake_case
         name = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', cls.__name__)
         name = re.sub('([a-z0-9])([A-Z])', r'\1_\2', name).lower()
@@ -94,7 +97,6 @@ class Base(DeclarativeBase):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
-        onupdate=func.now(),
         nullable=False
     )
 
@@ -198,7 +200,8 @@ class Base(DeclarativeBase):
     def update_from_dict(
         self,
         data: dict[str, Any],
-        exclude: list[str] | None = None
+        exclude: list[str] | None = None,
+        allow_only: list[str] | None = None
     ) -> None:
         """
         Update model attributes from dictionary.
@@ -217,6 +220,9 @@ class Base(DeclarativeBase):
             session.commit()
 ```
         """
+        if allow_only:
+            data = {k: v for k, v in data.items() if k in allow_only}
+
         exclude = exclude or []
 
         for key, value in data.items():
