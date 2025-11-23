@@ -2,7 +2,6 @@
 Base Model with FastKit improvements.
 
 Provides:
-- Automatic timestamps (created_at, updated_at)
 - Primary key (id)
 - Dict/JSON serialization with relationships
 - Query helpers
@@ -27,7 +26,6 @@ class Base(DeclarativeBase):
 
     Provides common functionality:
     - Auto-incrementing ID
-    - Timestamps (created_at, updated_at)
     - Dict serialization with relationship support
     - JSON export
     - Auto-generated table names
@@ -42,7 +40,7 @@ class Base(DeclarativeBase):
             name: Mapped[str] = mapped_column(String(100))
             email: Mapped[str] = mapped_column(String(255), unique=True)
 
-        # Auto-included: id, created_at, updated_at
+        # Auto-included: id
 ```
     """
 
@@ -85,19 +83,6 @@ class Base(DeclarativeBase):
         Integer,
         primary_key=True,
         autoincrement=True
-    )
-
-    # Timestamps (automatically managed)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False
-    )
-
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False
     )
 
     # ========================================================================
@@ -235,7 +220,7 @@ class Base(DeclarativeBase):
                 continue
 
             # Skip primary key and timestamps (unless explicitly needed)
-            if key in ('id', 'created_at', 'updated_at'):
+            if key in ('id'):
                 continue
 
             setattr(self, key, value)
@@ -271,13 +256,3 @@ class Base(DeclarativeBase):
 ```
         """
         return [('id', self.id)]
-
-
-# ============================================================================
-# Event Listeners (for automatic updated_at handling)
-# ============================================================================
-
-@event.listens_for(Base, 'before_update', propagate=True)
-def receive_before_update(mapper, connection, target):
-    """Automatically update updated_at timestamp on model updates."""
-    target.updated_at = datetime.now(timezone.utc)
