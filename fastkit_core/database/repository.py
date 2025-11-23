@@ -10,6 +10,7 @@ from typing import Any, Generic, Type, TypeVar
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
+from sqlalchemy import and_, or_
 
 from fastkit_core.database.base import Base
 
@@ -49,6 +50,24 @@ class Repository(Generic[T]):
 ```
     """
 
+    LOOKUP_OPERATORS = {
+        'eq': lambda col, val: col == val,  # Equal (default)
+        'ne': lambda col, val: col != val,  # Not equal
+        'lt': lambda col, val: col < val,  # Less than
+        'lte': lambda col, val: col <= val,  # Less than or equal
+        'gt': lambda col, val: col > val,  # Greater than
+        'gte': lambda col, val: col >= val,  # Greater than or equal
+        'in': lambda col, val: col.in_(val),  # IN (list)
+        'not_in': lambda col, val: col.not_in(val),  # NOT IN
+        'like': lambda col, val: col.like(val),  # LIKE
+        'ilike': lambda col, val: col.ilike(val),  # Case-insensitive LIKE
+        'is_null': lambda col, val: col.is_(None) if val else col.isnot(None),
+        'between': lambda col, val: col.between(val[0], val[1]),  # BETWEEN
+        'startswith': lambda col, val: col.like(f'{val}%'),
+        'endswith': lambda col, val: col.like(f'%{val}'),
+        'contains': lambda col, val: col.like(f'%{val}%'),
+    }
+
     def __init__(self, model: Type[T], session: Session):
         """
         Initialize repository.
@@ -59,6 +78,10 @@ class Repository(Generic[T]):
         """
         self.model = model
         self.session = session
+
+    def query(self):
+        """Get query builder for complex queries."""
+        return select(self.model)
 
     # ========================================================================
     # CREATE
@@ -185,28 +208,78 @@ class Repository(Generic[T]):
         result = self.session.execute(query)
         return list(result.scalars().all())
 
-    def filter(self, **filters) -> list[T]:
+    def filter(
+            self,
+            _limit: int | None = None,
+            _offset: int | None = None,
+            _order_by: str | None = None,
+            **filters
+    ) -> list[T]:
         """
-        Filter records by attributes.
+        Filter records with operator support.
 
-        Args:
-            **filters: Keyword arguments for filtering
+        Supports Django-style field lookups:
+        - field__operator=value
 
-        Returns:
-            List of matching instances
+        Operators:
+        - eq: Equal (default if no operator)
+        - ne: Not equal
+        - lt, lte, gt, gte: Comparisons
+        - in, not_in: IN/NOT IN lists
+        - like, ilike: LIKE patterns
+        - is_null: IS NULL (pass True/False)
+        - between: BETWEEN (pass tuple/list of 2 values)
+        - startswith, endswith, contains: String patterns
 
-        Example:
-```python
-            active_users = repo.filter(active=True)
-            admin_users = repo.filter(role='admin', active=True)
-```
+        Examples:
+            # Simple equality (no operator needed)
+            repo.filter(status='active')
+
+            # With operators
+            repo.filter(age__gte=18, age__lt=65)
+            repo.filter(email__ilike='%@gmail.com')
+            repo.filter(status__in=['active', 'pending'])
+            repo.filter(deleted_at__is_null=True)
+            repo.filter(price__between=(10, 100))
+            repo.filter(name__startswith='John')
+
+            # With pagination
+            repo.filter(status='active', _limit=10, _offset=20)
+
+            # With ordering
+            repo.filter(age__gte=18, _order_by='name')  # ASC
+            repo.filter(age__gte=18, _order_by='-created_at')  # DESC
         """
         query = select(self.model)
 
+        # Build WHERE conditions
+        conditions = []
         for key, value in filters.items():
-            if hasattr(self.model, key):
-                query = query.where(getattr(self.model, key) == value)
+           self._parse_field_operator(key, value, conditions)
 
+        # Apply all conditions
+        if conditions:
+            query = query.where(and_(*conditions))
+
+        # Apply ordering
+        if _order_by:
+            if _order_by.startswith('-'):
+                # Descending order
+                field = _order_by[1:]
+                if hasattr(self.model, field):
+                    query = query.order_by(getattr(self.model, field).desc())
+            else:
+                # Ascending order
+                if hasattr(self.model, _order_by):
+                    query = query.order_by(getattr(self.model, _order_by))
+
+        # Apply limit and offset
+        if _offset:
+            query = query.offset(_offset)
+        if _limit:
+            query = query.limit(_limit)
+
+        # Execute
         result = self.session.execute(query)
         return list(result.scalars().all())
 
@@ -225,14 +298,8 @@ class Repository(Generic[T]):
             user = repo.filter_one(email='john@test.com')
 ```
         """
-        query = select(self.model)
-
-        for key, value in filters.items():
-            if hasattr(self.model, key):
-                query = query.where(getattr(self.model, key) == value)
-
-        result = self.session.execute(query.limit(1))
-        return result.scalars().first()
+        results = self.filter(_limit=1, **filters)
+        return results[0] if results else None
 
     def exists(self, **filters) -> bool:
         """
@@ -250,6 +317,39 @@ class Repository(Generic[T]):
 ```
         """
         return self.filter_one(**filters) is not None
+
+    def filter_or(self, *filter_groups, **and_filters) -> list[T]:
+        """
+        Filter with OR conditions.
+
+        Example:
+            # (status='active' OR status='pending') AND age >= 18
+            users = repo.filter_or(
+                {'status': 'active'},
+                {'status': 'pending'},
+                age__gte=18
+            )
+        """
+        query = select(self.model)
+
+        # OR conditions
+        if filter_groups:
+            or_conditions = []
+            for group in filter_groups:
+                group_conditions = []
+                for key, value in group.items():
+                    self._parse_field_operator(key, value, group_conditions)
+                if group_conditions:
+                    or_conditions.append(and_(*group_conditions))
+
+            if or_conditions:
+                query = query.where(or_(*or_conditions))
+
+        # AND conditions
+        # (same as filter())
+
+        result = self.session.execute(query)
+        return list(result.scalars().all())
 
     def count(self, **filters) -> int:
         """
@@ -359,7 +459,7 @@ class Repository(Generic[T]):
     # DELETE
     # ========================================================================
 
-    def delete(self, id: Any, commit: bool = True) -> bool:
+    def delete(self, id: Any, commit: bool = True, force: bool = False) -> bool:
         """
         Delete record by ID.
 
@@ -374,13 +474,19 @@ class Repository(Generic[T]):
 ```python
             deleted = repo.delete(1)
 ```
+        :param id:
+        :param commit:
+        :param force:
         """
         instance = self.get(id)
 
         if instance is None:
             return False
 
-        self.session.delete(instance)
+        if hasattr(instance, 'soft_delete') and not force:
+            instance.soft_delete()
+        else:
+            self.session.delete(instance)
 
         if commit:
             self.session.commit()
@@ -427,7 +533,7 @@ class Repository(Generic[T]):
             page: int = 1,
             per_page: int = 20,
             **filters
-    ) -> tuple[list[T], int]:
+    ) -> tuple[list[T], dict[str, Any]]:
         """
         Paginate records.
 
@@ -476,7 +582,20 @@ class Repository(Generic[T]):
         result = self.session.execute(query)
         items = list(result.scalars().all())
 
-        return items, total
+        total_pages = (total + per_page - 1) // per_page
+        has_next = page < total_pages
+        has_prev = page > 1
+
+        metadata = {
+            'total': total,
+            'page': page,
+            'per_page': per_page,
+            'total_pages': total_pages,
+            'has_next': has_next,
+            'has_prev': has_prev
+        }
+
+        return items, metadata
 
     # ========================================================================
     # UTILITY
@@ -506,6 +625,32 @@ class Repository(Generic[T]):
     def flush(self) -> None:
         """Flush pending changes."""
         self.session.flush()
+
+    def _parse_field_operator(self, key: str, value: Any, conditions: list[Any]):
+        # Parse field__operator format
+        if '__' in key:
+            field_name, operator = key.rsplit('__', 1)
+        else:
+            field_name = key
+            operator = 'eq'  # Default to equality
+
+        # Validate field exists on model
+        if not hasattr(self.model, field_name):
+            raise ValueError(
+                f"Field '{field_name}' does not exist on {self.model.__name__}"
+            )
+
+        # Validate operator
+        if operator not in self.LOOKUP_OPERATORS:
+            raise ValueError(
+                f"Unknown operator '{operator}'. "
+                f"Available: {', '.join(self.LOOKUP_OPERATORS.keys())}"
+            )
+
+        # Get column and apply operator
+        column = getattr(self.model, field_name)
+        condition = self.LOOKUP_OPERATORS[operator](column, value)
+        conditions.append(condition)
 
 
 # ============================================================================
