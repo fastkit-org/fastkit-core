@@ -17,7 +17,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import DateTime, String, select, func
+from sqlalchemy import DateTime, String, select, event
 from sqlalchemy.orm import Mapped, mapped_column
 
 if TYPE_CHECKING:
@@ -130,41 +130,34 @@ class SoftDeleteMixin:
 
 class TimestampMixin:
     """
-    Just timestamps, no primary key.
+    Adds created_at and updated_at timestamps.
 
-    Use when you want to define your own primary key
-    but still want automatic timestamps.
+    Use this with Base for automatic timestamp tracking.
 
     Example:
-```python
-        class CustomModel(Base, TimestampMixin):
-            __tablename__ = "custom"
-
-            custom_id: Mapped[int] = mapped_column(primary_key=True)
+        class User(Base, TimestampMixin):
             name: Mapped[str]
-```
     """
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        server_default= func.now(),
+        default=lambda: datetime.now(timezone.utc),
         nullable=False
     )
 
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        server_default= func.now(),
-        onupdate= func.now(),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
         nullable=False
     )
 
-    def __repr_attrs__(self) -> list[tuple[str, any]]:
-        """Include timestamps in repr."""
-        return [
-            ('created_at', self.created_at.isoformat() if self.created_at else None),
-            ('updated_at', self.updated_at.isoformat() if self.updated_at else None)
-        ]
 
+# Event listener specifically for TimestampMixin
+@event.listens_for(TimestampMixin, 'before_update', propagate=True)
+def receive_before_update(mapper, connection, target):
+    """Automatically update updated_at timestamp."""
+    target.updated_at = datetime.now(timezone.utc)
 
 class SlugMixin:
     """
