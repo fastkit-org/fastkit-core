@@ -106,7 +106,9 @@ class SoftDeleteMixin:
             active_posts = Post.active(session).all()
 ```
         """
-        return session.query(cls).filter(cls.deleted_at.is_(None))
+        from sqlalchemy import select
+        stmt = select(cls).where(cls.deleted_at.is_(None))
+        return session.scalars(stmt)
 
     @classmethod
     def deleted(cls, session: Session):
@@ -119,6 +121,11 @@ class SoftDeleteMixin:
 ```
         """
         return session.query(cls).filter(cls.deleted_at.isnot(None))
+
+    @classmethod
+    def query(cls, session: Session):
+        """Query builder that excludes soft-deleted by default."""
+        return session.query(cls).filter(cls.deleted_at.is_(None))
 
 
 class TimestampMixin:
@@ -190,7 +197,8 @@ class SlugMixin:
         self,
         source_field: str = 'title',
         session: Session | None = None,
-        max_length: int = 255
+        max_length: int = 255,
+        save: bool = False
     ) -> str:
         """
         Generate slug from source field.
@@ -260,6 +268,10 @@ class SlugMixin:
             counter += 1
 
         self.slug = slug
+
+        if save and session:
+            session.flush()
+
         return slug
 
 
