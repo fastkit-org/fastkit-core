@@ -11,11 +11,13 @@ Provides:
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, TypeVar
 
-from sqlalchemy import DateTime, Integer, event, func
+from sqlalchemy import  Integer
 from sqlalchemy.orm import DeclarativeBase, Mapped, declared_attr, mapped_column
+
+from fastkit_core.database.base_with_timestamps import BaseWithTimestamps
 
 T = TypeVar('T', bound='Base')
 
@@ -256,3 +258,5 @@ class Base(DeclarativeBase):
 ```
         """
         return [('id', self.id)]
+
+__all__ = ['Base', 'BaseWithTimestamps']

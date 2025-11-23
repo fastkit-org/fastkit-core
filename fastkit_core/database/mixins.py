@@ -120,12 +120,15 @@ class SoftDeleteMixin:
             deleted_posts = Post.deleted(session).all()
 ```
         """
-        return session.query(cls).filter(cls.deleted_at.isnot(None))
+        stmt = select(cls).where(cls.deleted_at.isnot(None))
+        return session.scalars(stmt)
+
 
     @classmethod
-    def query(cls, session: Session):
-        """Query builder that excludes soft-deleted by default."""
-        return session.query(cls).filter(cls.deleted_at.is_(None))
+    def with_deleted(cls, session: Session):
+        """Query builder that includes soft-deleted records."""
+        stmt = select(cls)
+        return session.scalars(stmt)
 
 
 class TimestampMixin:
@@ -148,7 +151,6 @@ class TimestampMixin:
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
         nullable=False
     )
 
@@ -348,10 +350,11 @@ class PublishableMixin:
 ```
         """
         now = datetime.now(timezone.utc)
-        return session.query(cls).filter(
+        stmt = select(cls).where(
             cls.published_at.isnot(None),
             cls.published_at <= now
         )
+        return session.scalars(stmt)
 
     @classmethod
     def drafts(cls, session: Session):
@@ -363,7 +366,8 @@ class PublishableMixin:
             drafts = Article.drafts(session).all()
 ```
         """
-        return session.query(cls).filter(cls.published_at.is_(None))
+        stmt = select(cls).where(cls.published_at.is_(None))
+        return session.scalars(stmt)
 
     @classmethod
     def scheduled(cls, session: Session):
@@ -376,7 +380,8 @@ class PublishableMixin:
 ```
         """
         now = datetime.now(timezone.utc)
-        return session.query(cls).filter(
+        stmt = select(cls).where(
             cls.published_at.isnot(None),
             cls.published_at > now
         )
+        return session.scalars(stmt)
