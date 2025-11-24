@@ -1,5 +1,4 @@
 from contextvars import ContextVar
-from typing import Any
 from sqlalchemy import event
 import json
 from fastkit_core.config import ConfigManager
@@ -159,3 +158,43 @@ class TranslatableMixin:
             return False
         translations = self.get_translations(field)
         return locale in translations
+
+
+# SQLAlchemy event listeners
+@event.listens_for(TranslatableMixin, 'load', propagate=True)
+def deserialize_translations(target, context):
+    """After loading from DB, parse JSON into internal storage."""
+    for field in target.__translatable__:
+        # Get raw value from column
+        raw_value = object.__getattribute__(target, field)
+        storage_name = f'_translatable_{field}'
+
+        if raw_value:
+            if isinstance(raw_value, dict):
+                # Already a dict (JSON was auto-parsed)
+                setattr(target, storage_name, raw_value)
+            elif isinstance(raw_value, str):
+                # Need to parse JSON string
+                try:
+                    translations = json.loads(raw_value)
+                    setattr(target, storage_name, translations)
+                except json.JSONDecodeError:
+                    # Not valid JSON, treat as single translation
+                    setattr(target, storage_name, {
+                        target.__fallback_locale__: raw_value
+                    })
+        else:
+            setattr(target, storage_name, {})
+
+
+@event.listens_for(TranslatableMixin, 'before_insert', propagate=True)
+@event.listens_for(TranslatableMixin, 'before_update', propagate=True)
+def serialize_translations(mapper, connection, target):
+    """Before saving to DB, convert internal storage to JSON."""
+    for field in target.__translatable__:
+        storage_name = f'_translatable_{field}'
+        translations = getattr(target, storage_name, {})
+
+        # Set the actual column value to the dict
+        # SQLAlchemy will handle JSON serialization
+        setattr(target, field, translations if translations else None)
