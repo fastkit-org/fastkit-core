@@ -41,6 +41,7 @@ Example:
 """
 
 from fastkit_core.database.base import Base
+from fastkit_core.database.base_with_timestamps import BaseWithTimestamps
 from fastkit_core.database.manager import (
     ConnectionManager,
     get_connection_manager,
@@ -88,4 +89,5 @@ __all__ = [
     'TimestampMixin',
     'SlugMixin',
     'PublishableMixin',
+    'BaseWithTimestamps',
 ]

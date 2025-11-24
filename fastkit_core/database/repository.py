@@ -353,25 +353,30 @@ class Repository(Generic[T]):
 
     def count(self, **filters) -> int:
         """
-        Count records.
+        Count records with operator support.
 
         Args:
-            **filters: Optional keyword arguments for filtering
+            **filters: Keyword arguments for filtering (supports operators)
 
         Returns:
             Number of matching records
 
         Example:
-```python
+    ```python
             total = repo.count()
-            active_count = repo.count(active=True)
-```
+            adult_count = repo.count(age__gte=18)
+            active_count = repo.count(status='active', deleted_at__is_null=True)
+    ```
         """
         query = select(func.count()).select_from(self.model)
 
+        # Build WHERE conditions using operator support
+        conditions = []
         for key, value in filters.items():
-            if hasattr(self.model, key):
-                query = query.where(getattr(self.model, key) == value)
+            self._parse_field_operator(key, value, conditions)
+
+        if conditions:
+            query = query.where(and_(*conditions))
 
         result = self.session.execute(query)
         return result.scalar() or 0
@@ -535,42 +540,48 @@ class Repository(Generic[T]):
             **filters
     ) -> tuple[list[T], dict[str, Any]]:
         """
-        Paginate records.
+        Paginate records with operator support.
 
         Args:
             page: Page number (1-indexed)
             per_page: Items per page
-            **filters: Optional filters
+            **filters: Keyword arguments for filtering (supports operators)
 
         Returns:
-            Tuple of (items, total_count)
+            Tuple of (items, metadata dict)
 
         Example:
-```python
-            users, total = repo.paginate(page=2, per_page=10)
+    ```python
+            users, meta = repo.paginate(page=2, per_page=10)
 
-            # With filters
-            active_users, total = repo.paginate(
+            # With operator filters
+            active_adults, meta = repo.paginate(
                 page=1,
                 per_page=20,
-                active=True
+                status='active',
+                age__gte=18,
+                deleted_at__is_null=True
             )
-```
+
+            print(meta['total'])  # Total count
+            print(meta['has_next'])  # Has next page?
+    ```
         """
-        # Build query
+        # Build base query
         query = select(self.model)
 
+        # Build WHERE conditions using operator support
+        conditions = []
         for key, value in filters.items():
-            if hasattr(self.model, key):
-                query = query.where(getattr(self.model, key) == value)
+            self._parse_field_operator(key, value, conditions)
 
-        # Get total count
+        if conditions:
+            query = query.where(and_(*conditions))
+
+        # Get total count with same conditions
         count_query = select(func.count()).select_from(self.model)
-        for key, value in filters.items():
-            if hasattr(self.model, key):
-                count_query = count_query.where(
-                    getattr(self.model, key) == value
-                )
+        if conditions:
+            count_query = count_query.where(and_(*conditions))
 
         total = self.session.execute(count_query).scalar() or 0
 
@@ -582,6 +593,7 @@ class Repository(Generic[T]):
         result = self.session.execute(query)
         items = list(result.scalars().all())
 
+        # Calculate metadata
         total_pages = (total + per_page - 1) // per_page
         has_next = page < total_pages
         has_prev = page > 1

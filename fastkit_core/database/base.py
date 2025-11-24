@@ -17,8 +17,6 @@ from typing import Any, TypeVar
 from sqlalchemy import  Integer
 from sqlalchemy.orm import DeclarativeBase, Mapped, declared_attr, mapped_column
 
-from fastkit_core.database.base_with_timestamps import BaseWithTimestamps
-
 T = TypeVar('T', bound='Base')
 
 
@@ -258,5 +256,3 @@ class Base(DeclarativeBase):
 ```
         """
         return [('id', self.id)]
-
-__all__ = ['Base', 'BaseWithTimestamps']
