@@ -117,3 +117,38 @@ class TranslatableMixin:
         attributes.flag_modified(self, field)
 
         return self
+
+    def get_translation(
+            self,
+            field: str,
+            locale: str = None,
+            fallback: bool = True
+    ) -> str | None:
+        """
+        Get translation for specific locale explicitly.
+
+        Args:
+            field: Field name
+            locale: Locale code
+            fallback: If True, fallback to default locale if not found
+
+        Returns:
+            Translated value or None
+        """
+        if field not in self.__translatable__:
+            raise ValueError(f"Field '{field}' is not translatable")
+
+        translations = self.get_translations(field)
+
+        if locale is None:
+            locale = self.get_locale()
+
+        # Try requested locale
+        if locale in translations:
+            return translations[locale]
+
+        # Fallback
+        if fallback and locale != self.__fallback_locale__:
+            return translations.get(self.__fallback_locale__)
+
+        return None
