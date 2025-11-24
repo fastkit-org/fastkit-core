@@ -25,7 +25,7 @@ def get_default_locale() -> str:
 
 
 # Thread-safe global locale storage
-_current_locale: ContextVar[str] = ContextVar('locale')
+_current_locale: ContextVar[str | None] = ContextVar('locale', default=None)
 
 
 class TranslatableMixin:
