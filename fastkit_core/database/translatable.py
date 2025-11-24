@@ -5,8 +5,7 @@ import json
 from fastkit_core.config import ConfigManager
 
 config = ConfigManager(modules=['app'], config_package='fastkit_core.config')
-_current_locale: ContextVar[str] = config.get('app.DEFAULT_LANGUAGE')
-
+_current_locale: ContextVar[str] = ContextVar('locale', default=config.get('app.DEFAULT_LANGUAGE'))
 
 class TranslatableMixin:
     """
@@ -46,3 +45,24 @@ class TranslatableMixin:
     # Configure in your model
     __translatable__: list[str] = []
     __fallback_locale__: str = config.get('app.DEFAULT_LANGUAGE')
+
+    def get_locale(self) -> str:
+        """Get current locale for this instance."""
+        if hasattr(self, '_instance_locale'):
+            return self._instance_locale
+        return _current_locale.get()
+
+    def set_locale(self, locale: str) -> 'TranslatableMixin':
+        """Set locale for this instance. Returns self for chaining."""
+        self._instance_locale = locale
+        return self
+
+    @classmethod
+    def set_global_locale(cls, locale: str) -> None:
+        """Set global locale (affects all instances)."""
+        _current_locale.set(locale)
+
+    @classmethod
+    def get_global_locale(cls) -> str:
+        """Get current global locale."""
+        return _current_locale.get()
