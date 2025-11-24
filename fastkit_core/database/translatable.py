@@ -7,8 +7,7 @@ Automatically handles translation storage and retrieval with zero boilerplate.
 from __future__ import annotations
 from contextvars import ContextVar
 from typing import Any, TYPE_CHECKING
-from sqlalchemy import event, JSON
-from sqlalchemy.orm import mapped_column, Mapped
+from sqlalchemy import event
 import json
 
 if TYPE_CHECKING:
@@ -26,7 +25,7 @@ def get_default_locale() -> str:
 
 
 # Thread-safe global locale storage
-_current_locale: ContextVar[str] = ContextVar('locale', default='en')
+_current_locale: ContextVar[str] = ContextVar('locale')
 
 
 class TranslatableMixin:
@@ -236,6 +235,33 @@ class TranslatableMixin:
 
         translations = self.get_translations(field)
         return locale in translations and bool(translations[locale])
+
+    def validate_translations(
+            self,
+            required_locales: list[str] = None
+    ) -> dict[str, list[str]]:
+        """
+        Validate that all translatable fields have translations.
+
+        Args:
+            required_locales: List of locales that must have translations
+
+        Returns:
+            Dict of missing translations: {'field': ['locale1', 'locale2']}
+        """
+        required_locales = required_locales or [self._fallback_locale]
+        missing = {}
+
+        for field in self.__translatable__:
+            missing_locales = []
+            for locale in required_locales:
+                if not self.has_translation(field, locale):
+                    missing_locales.append(locale)
+
+            if missing_locales:
+                missing[field] = missing_locales
+
+        return missing
 
     # ========================================================================
     # MAGIC METHODS - Make fields transparent

@@ -94,6 +94,7 @@ class Base(DeclarativeBase):
         exclude: list[str] | None = None,
         include_relationships: bool = False,
         max_depth: int = 1,
+        locale: str | None = None,
         _current_depth: int = 0
     ) -> dict[str, Any]:
         """
@@ -103,6 +104,7 @@ class Base(DeclarativeBase):
             exclude: List of field names to exclude
             include_relationships: Include related objects
             max_depth: Maximum depth for nested relationships (prevents infinite recursion)
+            locale: Get values of specific language
             _current_depth: Internal tracker for recursion depth
 
         Returns:
@@ -126,11 +128,19 @@ class Base(DeclarativeBase):
         exclude = exclude or []
         result = {}
 
+        is_translatable = hasattr(self, '__translatable__')
+        translatable_fields = getattr(self, '__translatable__', [])
+
         # Columns
         for column in sa_inspect(self).mapper.column_attrs:
             key = column.key
             if key not in exclude:
                 value = getattr(self, key)
+
+                if is_translatable and key in translatable_fields:
+                    if locale:
+                        # Get specific locale translation
+                        value = self.get_translation(key, locale, fallback=True)
 
                 # Handle datetime serialization
                 if isinstance(value, datetime):
