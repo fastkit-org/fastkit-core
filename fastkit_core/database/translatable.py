@@ -152,3 +152,10 @@ class TranslatableMixin:
             return translations.get(self.__fallback_locale__)
 
         return None
+
+    def has_translation(self, field: str, locale: str) -> bool:
+        """Check if translation exists for field in specific locale."""
+        if field not in self.__translatable__:
+            return False
+        translations = self.get_translations(field)
+        return locale in translations
