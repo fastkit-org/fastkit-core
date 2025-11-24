@@ -65,6 +65,8 @@ from fastkit_core.database.session import (
     shutdown_database,
 )
 
+from fastkit_core.database.translatable import TranslatableMixin, set_locale_from_request
+
 __all__ = [
     # Base
     'Base',
@@ -90,4 +92,7 @@ __all__ = [
     'SlugMixin',
     'PublishableMixin',
     'BaseWithTimestamps',
+    # Translations
+    'TranslatableMixin',
+    'set_locale_from_request',
 ]
