@@ -66,3 +66,54 @@ class TranslatableMixin:
     def get_global_locale(cls) -> str:
         """Get current global locale."""
         return _current_locale.get()
+
+    def get_translations(self, field: str) -> dict[str, str]:
+        """
+        Get all translations for a field.
+
+        Returns:
+            Dict mapping locale codes to translated values
+            Example: {'en': 'Hello', 'es': 'Hola', 'fr': 'Bonjour'}
+        """
+        if field not in self.__translatable__:
+            raise ValueError(f"Field '{field}' is not translatable")
+
+        storage_name = f'_translatable_{field}'
+        return getattr(self, storage_name, {}).copy()
+
+    def set_translation(
+            self,
+            field: str,
+            value: str,
+            locale: str = None
+    ) -> 'TranslatableMixin':
+        """
+        Set translation for specific locale explicitly.
+
+        Args:
+            field: Field name
+            value: Translated value
+            locale: Locale code (e.g., 'en', 'es')
+
+        Returns:
+            Self for chaining
+        """
+        if field not in self.__translatable__:
+            raise ValueError(f"Field '{field}' is not translatable")
+
+        if locale is None:
+            locale = self.get_locale()
+
+        storage_name = f'_translatable_{field}'
+        translations = getattr(self, storage_name, None)
+        if translations is None:
+            translations = {}
+            setattr(self, storage_name, translations)
+
+        translations[locale] = value
+
+        # Mark as modified
+        from sqlalchemy.orm import attributes
+        attributes.flag_modified(self, field)
+
+        return self
