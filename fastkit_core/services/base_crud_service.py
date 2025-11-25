@@ -51,3 +51,9 @@ class BaseCrudService(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             data: UpdateSchemaType
     ) -> int:
         return self.repository.update_many(filters=filters, data=data.dict(), commit=True)
+
+    def delete(self, id: Any, force: bool = False) -> bool:
+        return self.repository.delete(id=id, commit=True, force=force)
+
+    def delete_many(self, filters: dict[str, Any]) -> int:
+        return self.repository.delete_many(filters=filters, commit=True)
