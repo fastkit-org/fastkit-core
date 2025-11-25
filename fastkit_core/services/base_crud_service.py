@@ -10,7 +10,7 @@ class BaseCrudService(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
     def __init__(self, repository: Repository):
         self.repository = repository
 
-    def find(self, id: int) -> Optional[ModelType]:
+    def find(self, id: Any) -> Optional[ModelType]:
         return self.repository.get(id)
 
     def get_all(self) -> List[ModelType]:
@@ -42,4 +42,12 @@ class BaseCrudService(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
     def create_many(self, data: list[CreateSchemaType]) -> list[ModelType]:
         return self.repository.create_many(data_list=[item.dict() for item in data], commit=True)
 
+    def update(self, id: Any, data: UpdateSchemaType) -> ModelType | None:
+        return self.repository.update(id=id, data=data.dict(), commit=True)
 
+    def update_many(
+            self,
+            filters: dict[str, Any],
+            data: UpdateSchemaType
+    ) -> int:
+        return self.repository.update_many(filters=filters, data=data.dict(), commit=True)
