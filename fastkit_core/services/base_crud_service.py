@@ -1,0 +1,37 @@
+from typing import Generic, TypeVar, List, Optional, Any
+from fastkit_core.database import Repository
+
+ModelType = TypeVar("ModelType")
+CreateSchemaType = TypeVar("CreateSchemaType")
+UpdateSchemaType = TypeVar("UpdateSchemaType")
+
+class BaseCrudService(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
+
+    def __init__(self, repository: Repository):
+        self.repository = repository
+
+    def find(self, id: int) -> Optional[ModelType]:
+        return self.repository.get(id)
+
+    def get_all(self) -> List[ModelType]:
+        return self.repository.get_all()
+
+    def filter(
+            self,
+            _limit: int | None = None,
+            _offset: int | None = None,
+            _order_by: str | None = None,
+            **filters
+    )-> List[ModelType]:
+        return self.repository.filter(_limit=_limit, _offset=_offset, _order_by=_order_by, **filters)
+
+    def paginate(
+            self,
+            page: int = 1,
+            per_page: int = 20,
+            **filters
+    ) -> tuple[list[ModelType], dict[str, Any]]:
+        return self.repository.paginate(page=page, per_page=per_page, **filters)
+
+    def exists(self, **filters) -> bool:
+        return self.repository.exists(**filters)
