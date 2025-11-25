@@ -35,3 +35,11 @@ class BaseCrudService(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 
     def exists(self, **filters) -> bool:
         return self.repository.exists(**filters)
+
+    def create(self, data: CreateSchemaType) -> ModelType:
+        return self.repository.create(data=data.dict(), commit=True)
+
+    def create_many(self, data: list[CreateSchemaType]) -> list[ModelType]:
+        return self.repository.create_many(data_list=[item.dict() for item in data], commit=True)
+
+
