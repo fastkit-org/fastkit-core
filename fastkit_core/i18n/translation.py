@@ -90,3 +90,161 @@ class TranslationManager:
                 print(f"Error loading {file}: {e}")
             except Exception as e:
                 print(f"Error reading {file}: {e}")
+
+    def get(
+            self,
+            key: str,
+            locale: str | None = None,
+            fallback: bool = True,
+            **replacements
+    ) -> str:
+        """
+        Get translation for a key.
+
+        Args:
+            key: Translation key in dot notation (e.g., 'messages.welcome')
+            locale: Locale code. If None, uses current context locale.
+            fallback: If True, fallback to default locale if key not found
+            **replacements: Variables to replace in translation string
+
+        Returns:
+            Translated string or the key if not found
+
+        Example:
+            t('messages.welcome', name='John')
+            # "Welcome, John!"
+
+            t('messages.items', count=5)
+            # "5 items"
+        """
+        # Determine locale
+        if locale is None:
+            # Try to get from context (shared with TranslatableMixin)
+            locale = _current_locale.get()
+            if locale is None:
+                locale = self.default_locale
+
+        # Get translation data for locale
+        locale_data = self._translations.get(locale)
+
+        # If locale not found and fallback enabled, try fallback locale
+        if locale_data is None and fallback and locale != self.fallback_locale:
+            locale_data = self._translations.get(self.fallback_locale)
+
+        # If still not found, return key
+        if locale_data is None:
+            return key
+
+        # Navigate through nested keys
+        value = self._get_nested_value(locale_data, key)
+
+        # If not found and fallback enabled, try fallback locale
+        if value is None and fallback and locale != self.fallback_locale:
+            fallback_data = self._translations.get(self.fallback_locale)
+            if fallback_data:
+                value = self._get_nested_value(fallback_data, key)
+
+        # If still not found, return key
+        if value is None:
+            return key\
+
+        # Replace variables
+        if isinstance(value, str) and replacements:
+            value = self._replace_variables(value, replacements)
+
+        return value if isinstance(value, str) else key
+
+    def _get_nested_value(self, data: dict, key: str) -> Any:
+        """
+        Get value from nested dict using dot notation.
+
+        Args:
+            data: Dictionary to search
+            key: Dot-separated key (e.g., 'messages.welcome')
+
+        Returns:
+            Value if found, None otherwise
+        """
+        keys = key.split('.')
+        current = data
+
+        for part in keys:
+            if isinstance(current, dict) and part in current:
+                current = current[part]
+            else:
+                return None
+
+        return current
+
+    def _replace_variables(self, text: str, replacements: dict) -> str:
+        """
+        Replace {variable} placeholders in text.
+
+        Args:
+            text: Text with placeholders
+            replacements: Dict of variable values
+
+        Returns:
+            Text with replacements applied
+        """
+        try:
+            return text.format(**replacements)
+        except KeyError as e:
+            # If variable not found, leave placeholder
+            print(f"Warning: Missing translation variable: {e}")
+            return text
+        except Exception as e:
+            print(f"Error replacing variables: {e}")
+            return text
+
+    def has(self, key: str, locale: str | None = None) -> bool:
+        """
+        Check if translation key exists.
+
+        Args:
+            key: Translation key
+            locale: Locale code
+
+        Returns:
+            True if key exists, False otherwise
+        """
+        if locale is None:
+            locale = _current_locale.get() or self.default_locale
+
+        locale_data = self._translations.get(locale)
+        if locale_data is None:
+            return False
+
+        return self._get_nested_value(locale_data, key) is not None
+
+    def get_locale(self) -> str:
+        """Get current locale from context."""
+        return _current_locale.get() or self.default_locale
+
+    def set_locale(self, locale: str) -> None:
+        """Set locale in context (shared with TranslatableMixin)."""
+        _current_locale.set(locale)
+
+    def reload(self) -> None:
+        """Reload all translation files."""
+        self._translations.clear()
+        self._load_translations()
+
+    def get_all(self, locale: str | None = None) -> dict:
+        """
+        Get all translations for a locale.
+
+        Args:
+            locale: Locale code. If None, uses current locale.
+
+        Returns:
+            Dictionary of all translations
+        """
+        if locale is None:
+            locale = self.get_locale()
+
+        return self._translations.get(locale, {}).copy()
+
+    def get_available_locales(self) -> list[str]:
+        """Get list of available locale codes."""
+        return list(self._translations.keys())
