@@ -11,8 +11,10 @@ Provides Laravel-style translation helpers with:
 
 import json
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 from contextvars import ContextVar
+import logging
+logger = logging.getLogger(__name__)
 
 # Shared locale context with TranslatableMixin
 try:
@@ -78,7 +80,6 @@ class TranslationManager:
     def _load_translations(self) -> None:
         """Load all translation files from directory."""
         if not self.translations_dir.exists():
-            print(f"Warning: Translations directory not found: {self.translations_dir}")
             return
 
         for file in self.translations_dir.glob('*.json'):
@@ -87,9 +88,9 @@ class TranslationManager:
                 with open(file, 'r', encoding='utf-8') as f:
                     self._translations[locale] = json.load(f)
             except json.JSONDecodeError as e:
-                print(f"Error loading {file}: {e}")
+                logger.warning(f"Error loading {file}: {e}")
             except Exception as e:
-                print(f"Error reading {file}: {e}")
+                logger.warning(f"Error reading {file}: {e}")
 
     def get(
             self,
@@ -146,7 +147,7 @@ class TranslationManager:
 
         # If still not found, return key
         if value is None:
-            return key\
+            return key
 
         # Replace variables
         if isinstance(value, str) and replacements:
@@ -191,10 +192,10 @@ class TranslationManager:
             return text.format(**replacements)
         except KeyError as e:
             # If variable not found, leave placeholder
-            print(f"Warning: Missing translation variable: {e}")
+            logger.warning(f"Warning: Missing translation variable: {e}")
             return text
         except Exception as e:
-            print(f"Error replacing variables: {e}")
+            logger.warning(f"Error replacing variables: {e}")
             return text
 
     def has(self, key: str, locale: str | None = None) -> bool:
@@ -248,3 +249,107 @@ class TranslationManager:
     def get_available_locales(self) -> list[str]:
         """Get list of available locale codes."""
         return list(self._translations.keys())
+
+
+# ============================================================================
+# Global Instance & Helper Functions
+# ============================================================================
+
+_translation_manager: TranslationManager | None = None
+
+
+def get_translation_manager() -> TranslationManager:
+    """
+    Get global translation manager instance.
+
+    Creates one if it doesn't exist.
+
+    Returns:
+        Global TranslationManager instance
+    """
+    global _translation_manager
+
+    if _translation_manager is None:
+        _translation_manager = TranslationManager()
+
+    return _translation_manager
+
+
+def set_translation_manager(manager: TranslationManager) -> None:
+    """
+    Set global translation manager.
+
+    Useful for testing or custom configuration.
+
+    Args:
+        manager: TranslationManager instance
+    """
+    global _translation_manager
+    _translation_manager = manager
+
+
+def _(key: str, locale: str | None = None, **replacements) -> str:
+    """
+    Translate a key (helper function).
+
+    Args:
+        key: Translation key in dot notation
+        locale: Optional locale override
+        **replacements: Variables to replace
+
+    Returns:
+        Translated string
+
+    Example:
+        # Simple translation
+        _('messages.welcome')
+        # "Welcome!"
+
+        # With variables
+        _('messages.hello', name='John')
+        # "Hello, John!"
+
+        # With pluralization
+        _('messages.items', count=5)
+        # "5 items"
+
+        # With specific locale
+        _('messages.welcome', locale='es')
+        # "¡Bienvenido!"
+    """
+    manager = get_translation_manager()
+    return manager.get(key, locale=locale, **replacements)
+
+def gettext(key: str, locale: str | None = None, **replacements) -> str:
+    return _(key, locale, **replacements)
+
+def set_locale(locale: str) -> None:
+    """
+    Set current locale.
+
+    Args:
+        locale: Locale code (e.g., 'en', 'es', 'fr')
+    """
+    manager = get_translation_manager()
+    manager.set_locale(locale)
+
+
+def get_locale() -> str:
+    """
+    Get current locale.
+
+    Returns:
+        Current locale code
+    """
+    manager = get_translation_manager()
+    return manager.get_locale()
+
+__all__ = [
+    'TranslationManager',
+    'get_translation_manager',
+    'set_translation_manager',
+    '_',
+    'gettext',
+    'set_locale',
+    'get_locale',
+]
