@@ -20,3 +20,7 @@ def min_value(value: int | float):
 def max_value(value: int | float):
     """Maximum numeric value."""
     return Field(le=value)
+
+def between(min_val: int | float, max_val: int | float):
+    """Numeric range."""
+    return Field(ge=min_val, le=max_val)
