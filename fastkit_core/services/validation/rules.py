@@ -16,3 +16,7 @@ def length(min_len: int, max_len: int):
 def min_value(value: int | float):
     """Minimum numeric value."""
     return Field(ge=value)
+
+def max_value(value: int | float):
+    """Maximum numeric value."""
+    return Field(le=value)
