@@ -24,3 +24,7 @@ def max_value(value: int | float):
 def between(min_val: int | float, max_val: int | float):
     """Numeric range."""
     return Field(ge=min_val, le=max_val)
+
+def pattern(regex: str):
+    """Regex pattern validation."""
+    return Field(pattern=regex)
