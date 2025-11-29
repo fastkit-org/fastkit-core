@@ -8,6 +8,12 @@ from fastkit_core.validation.rules import (
     between,
     pattern
 )
+from fastkit_core.validation.validators import (
+    PasswordValidatorMixin,
+    StrongPasswordValidatorMixin,
+    UsernameValidatorMixin,
+    SlugValidatorMixin
+)
 
 __all__ = [
     'BaseSchema',
@@ -17,5 +23,9 @@ __all__ = [
     'min_value',
     'max_value',
     'between',
-    'pattern'
+    'pattern',
+    'PasswordValidatorMixin',
+    'StrongPasswordValidatorMixin',
+    'UsernameValidatorMixin',
+    'SlugValidatorMixin',
 ]
