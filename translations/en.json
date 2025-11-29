@@ -1,0 +1,15 @@
+{
+  "validation": {
+    "required": "The {field} field is required",
+    "email": "The {field} must be a valid email address",
+    "url": "The {field} must be a valid URL",
+    "string_too_short": "The {field} must be at least {min_length} characters",
+    "string_too_long": "The {field} must not exceed {max_length} characters",
+    "greater_than_equal": "The {field} must be at least {ge}",
+    "less_than_equal": "The {field} must not exceed {le}",
+    "greater_than": "The {field} must be greater than {gt}",
+    "less_than": "The {field} must be less than {lt}",
+    "string_pattern_mismatch": "The {field} format is invalid",
+    "value_error": "The {field} is invalid"
+  }
+}
