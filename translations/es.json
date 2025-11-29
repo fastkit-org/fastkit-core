@@ -1,0 +1,15 @@
+{
+  "validation": {
+    "required": "El campo {field} es obligatorio",
+    "string_too_short": "El campo {field} debe tener al menos {min_length} caracteres",
+    "string_too_long": "El campo {field} no debe exceder {max_length} caracteres",
+    "value_error": "El campo {field} no es válido",
+    "email": "El campo {field} debe ser un correo electrónico válido",
+    "url": "El campo {field} debe ser una URL válida",
+    "greater_than_equal": "El campo {field} debe ser al menos {ge}",
+    "less_than_equal": "El campo {field} no debe exceder {le}",
+    "greater_than": "El campo {field} debe ser mayor que {gt}",
+    "less_than": "El campo {field} debe ser menor que {lt}",
+    "string_pattern_mismatch": "El formato del campo {field} no es válido"
+  }
+}

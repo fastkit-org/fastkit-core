@@ -1,6 +1,4 @@
 from pydantic import BaseModel, ValidationError
-from sqlalchemy.util import classproperty
-
 from fastkit_core.i18n import _
 from typing import List, Dict
 
