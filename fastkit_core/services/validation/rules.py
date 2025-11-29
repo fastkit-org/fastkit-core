@@ -1,5 +1,5 @@
 """Simple validation rule helpers that return Field()."""
-from pydantic import Field
+from pydantic import Field, EmailStr, HttpUrl
 
 def min_length(length: int):
     """Minimum string length."""
@@ -28,3 +28,11 @@ def between(min_val: int | float, max_val: int | float):
 def pattern(regex: str):
     """Regex pattern validation."""
     return Field(pattern=regex)
+
+def email():
+    """Return email Field."""
+    return EmailStr
+
+def http_url():
+    """Return http url"""
+    return HttpUrl
