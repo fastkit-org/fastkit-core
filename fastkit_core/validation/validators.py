@@ -114,3 +114,23 @@ class UsernameValidatorMixin:
             raise ValueError(_(cls.VALIDATION_MSG_USM_KEY_FORMAT))
 
         return v
+
+
+class SlugValidatorMixin:
+    VALIDATION_MSG_SLUG_KEY_FORMAT = 'validation.slug.format'
+    """
+    Slug validation mixin.
+
+    Requirements:
+    - Lowercase letters, numbers, hyphens only
+    - No consecutive hyphens
+    - Cannot start/end with hyphen
+    """
+
+    @field_validator('slug')
+    @classmethod
+    def validate_slug(cls, v: str) -> str:
+        if not re.match(r'^[a-z0-9]+(?:-[a-z0-9]+)*$', v):
+            raise ValueError(_(cls.VALIDATION_MSG_SLUG_KEY_FORMAT))
+
+        return v
