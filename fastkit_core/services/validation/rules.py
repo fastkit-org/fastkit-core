@@ -12,3 +12,7 @@ def max_length(length: int):
 def length(min_len: int, max_len: int):
     """String length range."""
     return Field(min_length=min_len, max_length=max_len)
+
+def min_value(value: int | float):
+    """Minimum numeric value."""
+    return Field(ge=value)
