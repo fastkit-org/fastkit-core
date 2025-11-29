@@ -1,10 +1,11 @@
 from pydantic import BaseModel, ValidationError
 from fastkit_core.i18n import _
-from typing import List, Dict
+from typing import List, Dict, ClassVar
+
 
 class BaseSchema(BaseModel):
     # Pydantic error type → translation key mapping
-    VALIDATION_MESSAGE_MAP = {
+    VALIDATION_MESSAGE_MAP: ClassVar[Dict[str, str]]  = {
         'missing': 'validation.required',
         'string_too_short': 'validation.string_too_short',
         'string_too_long': 'validation.string_too_long',

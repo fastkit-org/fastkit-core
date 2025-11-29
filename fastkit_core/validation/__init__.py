@@ -1,5 +1,5 @@
-from base import BaseSchema
-from rules import (
+from fastkit_core.validation.base import BaseSchema
+from fastkit_core.validation.rules import (
     min_length,
     max_length,
     length,
