@@ -1,4 +1,5 @@
 """Reusable validator mixins for complex validation rules."""
+from typing import ClassVar
 
 from pydantic import field_validator
 import re
@@ -6,13 +7,6 @@ from fastkit_core.i18n import _
 
 
 class PasswordValidatorMixin:
-    PWD_MIN_LENGTH = 8
-    PWD_MAX_LENGTH = 16
-    VALIDATION_MSG_PWD_KEY_MIN_LENGTH = 'validation.password.min_length'
-    VALIDATION_MSG_PWD_KEY_MAX_LENGTH = 'validation.password.max_length'
-    VALIDATION_MSG_PWD_KEY_UPPERCASE = 'validation.password.uppercase'
-    VALIDATION_MSG_PWD_KEY_SPECIAL_CHAR = 'validation.password.special_char'
-
     """
     Standard password validation mixin.
 
@@ -25,6 +19,12 @@ class PasswordValidatorMixin:
         class UserCreate(BaseSchema, PasswordValidatorMixin):
             password: str
     """
+    PWD_MIN_LENGTH: ClassVar[int] = 8
+    PWD_MAX_LENGTH: ClassVar[int] = 16
+    VALIDATION_MSG_PWD_KEY_MIN_LENGTH: ClassVar[str] = 'validation.password.min_length'
+    VALIDATION_MSG_PWD_KEY_MAX_LENGTH: ClassVar[str] = 'validation.password.max_length'
+    VALIDATION_MSG_PWD_KEY_UPPERCASE: ClassVar[str] = 'validation.password.uppercase'
+    VALIDATION_MSG_PWD_KEY_SPECIAL_CHAR: ClassVar[str] = 'validation.password.special_char'
 
     @field_validator('password')
     @classmethod
@@ -45,15 +45,6 @@ class PasswordValidatorMixin:
 
 
 class StrongPasswordValidatorMixin:
-    PWD_MIN_LENGTH = 10
-    PWD_MAX_LENGTH = 20
-    VALIDATION_MSG_PWD_KEY_MIN_LENGTH = 'validation.password.min_length'
-    VALIDATION_MSG_PWD_KEY_MAX_LENGTH = 'validation.password.max_length'
-    VALIDATION_MSG_PWD_KEY_UPPERCASE = 'validation.password.uppercase'
-    VALIDATION_MSG_PWD_KEY_SPECIAL_CHAR = 'validation.password.special_char'
-    VALIDATION_MSG_PWD_KEY_LOWERCASE = 'validation.password.lowercase'
-    VALIDATION_MSG_PWD_KEY_DIGIT = 'validation.password.digit'
-
     """
     Strong password validation mixin.
 
@@ -61,6 +52,14 @@ class StrongPasswordValidatorMixin:
     - 10-20 characters
     - Uppercase, lowercase, digit, special character
     """
+    PWD_MIN_LENGTH: ClassVar[int] = 10
+    PWD_MAX_LENGTH: ClassVar[int] = 20
+    VALIDATION_MSG_PWD_KEY_MIN_LENGTH: ClassVar[str] = 'validation.password.min_length'
+    VALIDATION_MSG_PWD_KEY_MAX_LENGTH: ClassVar[str] = 'validation.password.max_length'
+    VALIDATION_MSG_PWD_KEY_UPPERCASE: ClassVar[str] = 'validation.password.uppercase'
+    VALIDATION_MSG_PWD_KEY_SPECIAL_CHAR: ClassVar[str] = 'validation.password.special_char'
+    VALIDATION_MSG_PWD_KEY_LOWERCASE: ClassVar[str] = 'validation.password.lowercase'
+    VALIDATION_MSG_PWD_KEY_DIGIT: ClassVar[str] = 'validation.password.digit'
 
     @field_validator('password')
     @classmethod
@@ -87,11 +86,6 @@ class StrongPasswordValidatorMixin:
 
 
 class UsernameValidatorMixin:
-    USM_MIN_LENGTH = 3
-    USM_MAX_LENGTH = 20
-    VALIDATION_MSG_USM_KEY_MIN_LENGTH = 'validation.username.min_length'
-    VALIDATION_MSG_USM_KEY_MAX_LENGTH = 'validation.username.max_length'
-    VALIDATION_MSG_USM_KEY_FORMAT = 'validation.username.format'
     """
     Username validation mixin.
 
@@ -100,11 +94,16 @@ class UsernameValidatorMixin:
     - Alphanumeric and underscore only
     - Cannot start with number
     """
+    USM_MIN_LENGTH: ClassVar[int] = 3
+    USM_MAX_LENGTH: ClassVar[int] = 20
+    VALIDATION_MSG_USM_KEY_MIN_LENGTH: ClassVar[str] = 'validation.username.min_length'
+    VALIDATION_MSG_USM_KEY_MAX_LENGTH: ClassVar[str] = 'validation.username.max_length'
+    VALIDATION_MSG_USM_KEY_FORMAT: ClassVar[str] = 'validation.username.format'
 
     @field_validator('username')
     @classmethod
     def validate_username(cls, v: str) -> str:
-        if len(v) < cls.USM_MAX_LENGTH:
+        if len(v) < cls.USM_MIN_LENGTH:
             raise ValueError(_(cls.VALIDATION_MSG_USM_KEY_MIN_LENGTH, min=cls.USM_MIN_LENGTH))
 
         if len(v) > cls.USM_MAX_LENGTH:
@@ -117,7 +116,6 @@ class UsernameValidatorMixin:
 
 
 class SlugValidatorMixin:
-    VALIDATION_MSG_SLUG_KEY_FORMAT = 'validation.slug.format'
     """
     Slug validation mixin.
 
@@ -126,6 +124,7 @@ class SlugValidatorMixin:
     - No consecutive hyphens
     - Cannot start/end with hyphen
     """
+    VALIDATION_MSG_SLUG_KEY_FORMAT: ClassVar[str] = 'validation.slug.format'
 
     @field_validator('slug')
     @classmethod
