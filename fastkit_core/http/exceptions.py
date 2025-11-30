@@ -1,0 +1,18 @@
+
+class FastKitException(Exception):
+    """Base exception for FastKit."""
+    def __init__(
+        self,
+        message: str,
+        status_code: int = 400,
+        errors: dict | None = None
+    ):
+        self.message = message
+        self.status_code = status_code
+        self.errors = errors
+
+class NotFoundException(FastKitException):
+    """Resource not found."""
+    def __init__(self, message: str = "Resource not found"):
+        super().__init__(message, status_code=404)
+
