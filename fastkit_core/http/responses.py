@@ -23,3 +23,19 @@ def error_response(
         'errors': errors,
         'message': message
     }, status_code=status_code)
+
+def paginated_response(
+    items: list,
+    total: int,
+    page: int,
+    per_page: int,
+    message: str | None = None
+) -> JSONResponse:
+    """Paginated response with metadata."""
+    return JSONResponse({
+        'items': items,
+        'total': total,
+        'page': page,
+        'per_page': per_page,
+        'message': message
+    }, status_code=200)
