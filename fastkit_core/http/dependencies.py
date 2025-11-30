@@ -11,3 +11,10 @@ def get_pagination(
         'per_page': per_page,
         'offset': (page - 1) * per_page
     }
+
+def get_locale(
+    locale: Annotated[str | None, Query()] = None
+) -> str:
+    """Get locale from query parameter."""
+    from fastkit_core.i18n import get_locale as get_current_locale
+    return locale or get_current_locale()
