@@ -16,3 +16,7 @@ class NotFoundException(FastKitException):
     def __init__(self, message: str = "Resource not found"):
         super().__init__(message, status_code=404)
 
+class ValidationException(FastKitException):
+    """Validation failed."""
+    def __init__(self, errors: dict, message: str = "Validation failed"):
+        super().__init__(message, status_code=422, errors=errors)
