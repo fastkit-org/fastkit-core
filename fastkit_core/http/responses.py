@@ -12,3 +12,14 @@ def success_response(
         'data': data,
         'message': message
     }, status_code=status_code)
+
+def error_response(
+    message: str,
+    errors: dict | None = None,
+    status_code: int = 400
+) -> JSONResponse:
+    """Standard error response format."""
+    return JSONResponse({
+        'errors': errors,
+        'message': message
+    }, status_code=status_code)
