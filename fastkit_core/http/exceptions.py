@@ -25,3 +25,8 @@ class UnauthorizedException(FastKitException):
     """Not authenticated."""
     def __init__(self, message: str = "Unauthorized"):
         super().__init__(message, status_code=401)
+
+class ForbiddenException(FastKitException):
+    """Not authorized."""
+    def __init__(self, message: str = "Forbidden"):
+        super().__init__(message, status_code=403)
