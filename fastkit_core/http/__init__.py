@@ -18,6 +18,9 @@ from fastkit_core.http.middleware import (
     RequestIDMiddleware,
     LocaleMiddleware
 )
+from fastkit_core.http.exception_handlers import (
+    register_exception_handlers
+)
 
 __all__ = [
     'success_response',
@@ -32,4 +35,5 @@ __all__ = [
     'ForbiddenException',
     'RequestIDMiddleware',
     'LocaleMiddleware',
+    'register_exception_handlers',
 ]

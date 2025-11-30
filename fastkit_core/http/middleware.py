@@ -1,11 +1,19 @@
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
 import uuid
 
 
 class RequestIDMiddleware(BaseHTTPMiddleware):
-    """Add unique request ID to each request."""
+    """
+    Add unique request ID to each request.
 
-    async def dispatch(self, request, call_next):
+    Adds request ID to:
+    - request.state.request_id (accessible in route handlers)
+    - X-Request-ID response header (for client/logging)
+    """
+
+    async def dispatch(self, request: Request, call_next) -> Response:
         request_id = str(uuid.uuid4())
         request.state.request_id = request_id
 
@@ -15,9 +23,17 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
 
 
 class LocaleMiddleware(BaseHTTPMiddleware):
-    """Set locale from request headers."""
+    """
+    Set locale from request headers, query params, or cookies.
 
-    async def dispatch(self, request, call_next):
+    Priority:
+    1. Accept-Language header
+    2. ?lang= query parameter
+    3. locale cookie
+    4. Default: 'en'
+    """
+
+    async def dispatch(self, request: Request, call_next) -> Response:
         # Get locale from header, query param, or cookie
         locale = (
                 request.headers.get('Accept-Language', '')[:2]

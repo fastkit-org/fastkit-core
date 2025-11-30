@@ -1,15 +1,26 @@
-
 class FastKitException(Exception):
-    """Base exception for FastKit."""
+    """
+    Base exception for FastKit.
+
+    All FastKit exceptions inherit from this class.
+    Includes status_code and optional errors dict.
+
+    Attributes:
+        message: Error message
+        status_code: HTTP status code
+        errors: Optional error details
+    """
+
     def __init__(
-        self,
-        message: str,
-        status_code: int = 400,
-        errors: dict | None = None
+            self,
+            message: str,
+            status_code: int = 400,
+            errors: dict | None = None
     ):
         self.message = message
         self.status_code = status_code
         self.errors = errors
+        super().__init__(self.message)
 
 class NotFoundException(FastKitException):
     """Resource not found."""
