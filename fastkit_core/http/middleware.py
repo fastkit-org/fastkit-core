@@ -12,3 +12,22 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         response.headers['X-Request-ID'] = request_id
         return response
+
+
+class LocaleMiddleware(BaseHTTPMiddleware):
+    """Set locale from request headers."""
+
+    async def dispatch(self, request, call_next):
+        # Get locale from header, query param, or cookie
+        locale = (
+                request.headers.get('Accept-Language', '')[:2]
+                or request.query_params.get('lang')
+                or request.cookies.get('locale')
+                or 'en'
+        )
+
+        from fastkit_core.i18n import set_locale
+        set_locale(locale)
+
+        response = await call_next(request)
+        return response
