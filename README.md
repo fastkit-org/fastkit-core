@@ -6,42 +6,42 @@
   [![Tests](https://github.com/fastkit/fastkit-core/workflows/Tests/badge.svg)](https://github.com/fastkit/fastkit-core/actions)
   [![Coverage](https://codecov.io/gh/fastkit/fastkit-core/branch/main/graph/badge.svg)](https://codecov.io/gh/fastkit/fastkit-core)
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
-  
 </div>
 
 ---
+
 ## What is FastKit Core?
-We believe that development should be an enjoyable and creative experience, and developer with right tools has to be responsible only for business requirements, so
+
 **FastKit Core is a lightweight toolkit that adds structure and common patterns to FastAPI.**
+
+The software development is an enjoyable and creative experience, so we believe developers should focus on building features, not infrastructure. FastKit Core provides the patterns and structure so you can do exactly that.
 
 FastAPI is fast and flexible by design, but it's minimal — you build the structure yourself. FastKit Core provides that structure with production-ready patterns:
 
 - **Repository Pattern** for database operations
 - **Service Layer** for business logic
-- **Multi-Language Support** built into models and lang files
+- **Multi-Language Support** built into models and translation files
 - **Validation** with translated error messages
 - **HTTP Utilities** for consistent API responses
 
 Think of it as **FastAPI with batteries included** — inspired by Laravel's DX and Django's patterns, built specifically for FastAPI.
 
-**Not a framework. Not a replacement. Just FastAPI with structure and improved DX with pythonic**
-
+**Not a framework. Not a replacement. Just FastAPI with structure.**
 
 ---
 
 ## Why FastKit Core?
 
-## The Problem
+### The Problem
 
 When building FastAPI applications, you quickly face questions:
 
-- *How should I structure my project?*
-- *Where do repositories go? Do I even need them?*
-- *How do I organize business logic?*
-- *How do I handle multi-language content in my models?*
-- *How do I format validation errors consistently?*
-- *How do I standardize API responses?*
+- How should I structure my project?
+- Where do repositories go? Do I even need them?
+- How do I organize business logic?
+- How do I handle multi-language content in my models?
+- How do I format validation errors consistently?
+- How do I standardize API responses?
 
 Every team solves these differently, leading to inconsistent codebases.
 
@@ -49,19 +49,19 @@ Every team solves these differently, leading to inconsistent codebases.
 
 FastKit Core provides **battle-tested patterns** so you don't reinvent the wheel:
 
-✅ **10x Faster Development**  
+- **10x Faster Development**  
 Stop building infrastructure. Start building features.
 
-✅ **Production Ready**  
+- **Production Ready**  
 Patterns proven in real-world applications, not experimental code.
 
-✅ **Unique Features**  
-TranslatableMixin for multi-language models.
+- **Unique Features**  
+TranslatableMixin for effortless multi-language models.
 
-✅ **Zero Vendor Lock-in**  
+- **Zero Vendor Lock-in**  
 Pure FastAPI underneath. Use what you need, skip what you don't.
 
-✅ **Great Developer Experience**  
+- **Great Developer Experience**  
 Inspired by Laravel and Django, built for FastAPI's modern Python.
 
 ### The Result
@@ -79,49 +79,315 @@ article.title = "Hello"
 article.set_locale('es')
 article.title = "Hola"
 ```
+
 ---
 
 ## Quick Start
 
-[5-minute example to get started]
+Get up and running in 5 minutes:
+
+### Installation
+```bash
+pip install fastkit-core
+```
+
+### Your First FastKit Application
+```python
+from fastapi import FastAPI, Depends
+from sqlalchemy.orm import Session
+from fastkit_core.database import BaseWithTimestamps, Repository, get_db
+from fastkit_core.services import BaseCrudService
+from fastkit_core.validation import BaseSchema
+from fastkit_core.http import success_response, register_exception_handlers
+from fastkit_core.i18n import _
+from pydantic import EmailStr
+
+# 1. Define your model
+class User(BaseWithTimestamps):
+    email: Mapped[str]
+    name: Mapped[str]
+
+# 2. Define your schema
+class UserCreate(BaseSchema):
+    email: EmailStr
+    name: str
+
+# 3. Define your service (business logic)
+class UserService(BaseCrudService[User, UserCreate, UserCreate]):
+    def validate_create(self, data):
+        if self.exists(email=data.email):
+            raise ValueError(_('validation.registration.email_is_taken'))
+
+# 4. Create your API
+app = FastAPI()
+register_exception_handlers(app)
+
+@app.post("/users")
+def create_user(data: UserCreate, db: Session = Depends(get_db)):
+    service = UserService(Repository(User, db))
+    user = service.create(data)
+    return success_response(data=user.to_dict())
+
+@app.get("/users")
+def list_users(db: Session = Depends(get_db)):
+    service = UserService(Repository(User, db))
+    users = service.get_all()
+    return success_response(data=[u.to_dict() for u in users])
+```
+
+**That's it!** You have a fully functional API with:
+- Validation with proper, translatable error messages 
+- Business logic separated in services
+- Repository pattern for database
+- Consistent response formatting
+- Timestamps automatically managed
+
+**[See full documentation →](https://fastkit.codevelo.io)**
 
 ---
 
-## 📦 Core Modules
+## Core Modules
 
-### Config
-[Example + explanation]
+FastKit Core provides six integrated modules:
+
+### Configuration
+
+Manage application configuration with environment support.
+```python
+from fastkit_core.config import config
+
+# Load from config files or environment variables
+db_host = config('database.HOST', 'localhost')
+debug_mode = config('app.DEBUG', False)
+```
+
+**Features:**
+- Multi-environment support (dev, test, prod)
+- `.env` file loading with auto-discovery
+- Dot notation access
+- Type casting (strings to bool, int, float)
+
+**[Configuration Documentation →](https://fastkit.codevelo.io/modules/config)**
+
+---
 
 ### Database
-[Example + explanation]
+
+Repository pattern with powerful mixins for common use cases.
+```python
+from fastkit_core.database import (
+    BaseWithTimestamps,
+    TranslatableMixin,
+    SoftDeleteMixin,
+    Repository
+)
+
+# Rich model with automatic features
+class Article(BaseWithTimestamps, TranslatableMixin, SoftDeleteMixin):
+    __translatable__ = ['title', 'content']
+    
+    title: Mapped[dict] = mapped_column(JSON)
+    content: Mapped[dict] = mapped_column(JSON)
+    author_id: Mapped[int]
+
+# Django-style queries
+articles = Repository(Article, session).filter(
+    author_id__in=[1, 2, 3],
+    created_at__gte=datetime(2024, 1, 1),
+    _order_by='-created_at'
+)
+
+# Multi-language support
+article.title = "Hello World"
+article.set_locale('es')
+article.title = "Hola Mundo"
+print(article.to_dict(locale='es'))
+```
+
+**Features:**
+- Repository pattern with Django-style operators
+- TranslatableMixin for multi-language models
+- SoftDeleteMixin for data retention
+- TimestampsMixin for automatic timestamps
+- UUIDMixin, SlugMixin, PublishableMixin
+- Multi-connection support with read replicas
+
+**[Database Documentation →](https://fastkit.codevelo.io/modules/database)**
+
+---
 
 ### Services
-[Example + explanation]
+
+Service layer with validation hooks and lifecycle management.
+```python
+from fastkit_core.services import BaseCrudService
+
+class UserService(BaseCrudService[User, UserCreate, UserUpdate]):
+    
+    def validate_create(self, data: UserCreate):
+        """Custom validation before creation"""
+        if self.exists(email=data.email):
+            raise ValueError("Email already exists")
+    
+    def before_create(self, data: dict) -> dict:
+        """Modify data before saving"""
+        data['password'] = hash_password(data['password'])
+        return data
+    
+    def after_create(self, instance: User):
+        """Actions after creation"""
+        send_welcome_email(instance.email)
+
+# Use in routes
+service = UserService(Repository(User, session))
+user = service.create(user_data)  # All hooks run automatically
+```
+
+**Features:**
+- BaseCrudService with all CRUD operations
+- Validation hooks
+- Lifecycle hooks (before/after create, update, delete)
+- Transaction management
+- Pagination support
+- Seamless repository integration
+
+**[Services Documentation →](https://fastkit.codevelo.io/modules/services)**
+
+---
 
 ### Internationalization (i18n)
-[Example + explanation]
+
+Manage translations with Laravel-style helpers.
+```python
+from fastkit_core.i18n import _, set_locale
+
+# translations/en.json
+# {
+#   "messages": {
+#     "welcome": "Welcome, {name}!",
+#     "goodbye": "Goodbye!"
+#   }
+# }
+
+set_locale('en')
+print(_('messages.welcome', name='John'))  # "Welcome, John!"
+
+set_locale('es')
+print(_('messages.welcome', name='Juan'))  # "¡Bienvenido, Juan!"
+```
+
+**Features:**
+- JSON-based translations
+- Pythonic `_()` helper (follows gettext standard)
+- Variable replacement
+- Locale context (shared with TranslatableMixin)
+- Fallback support
+- Middleware integration
+
+**[i18n Documentation →](https://fastkit.codevelo.io/modules/i18n)**
+
+---
 
 ### Validation
-[Example + explanation]
+
+Pydantic schemas with translated error messages and reusable validators.
+```python
+from pydantic import EmailStr
+from fastkit_core.validation import (
+    BaseSchema,
+    PasswordValidatorMixin,
+    UsernameValidatorMixin
+)
+
+class UserCreate(BaseSchema, PasswordValidatorMixin, UsernameValidatorMixin):
+    email: EmailStr
+    username: str  # Validated by UsernameValidatorMixin
+    password: str  # Validated by PasswordValidatorMixin
+
+# Validation errors are automatically translated
+set_locale('es')
+try:
+    user = UserCreate(email="invalid", password="weak")
+except ValidationError as e:
+    errors = BaseSchema.format_errors(e)
+    # Returns: {"email": ["Must be valid..."], "password": ["Must be at least..."]}
+```
+
+**Features:**
+- BaseSchema with Laravel-style error formatting
+- Automatic translation of error messages
+- Reusable validation mixins
+- Customizable error messages per schema
+- Field validation rules
+- Pydantic v2 compatible
+
+**[Validation Documentation →](https://fastkit.codevelo.io/modules/validation)**
+
+---
 
 ### HTTP
-[Example + explanation]
+
+Standard response formatting and exception handling.
+```python
+from fastkit_core.http import (
+    success_response,
+    paginated_response,
+    NotFoundException,
+    register_exception_handlers
+)
+
+# Register handlers once
+app = FastAPI()
+register_exception_handlers(app)
+
+@app.get("/users/{user_id}")
+def get_user(user_id: int):
+    user = service.find(user_id)
+    if not user:
+        raise NotFoundException(f"User {user_id} not found")
+    
+    return success_response(data=user.to_dict())
+
+@app.get("/users")
+def list_users(page: int = 1):
+    users, pagination = service.paginate(page=page, per_page=20)
+    return paginated_response(
+        items=[u.to_dict() for u in users],
+        pagination=pagination
+    )
+```
+
+**Features:**
+- Standard response formatters
+- Automatic exception handling
+- Custom exceptions
+- Middleware (RequestID, Locale detection)
+- Pagination helpers
+- CORS configuration
+
+**[HTTP Documentation →](https://fastkit.codevelo.io/modules/http)**
 
 ---
 
-## 📚 Documentation
+## Documentation
 
-[Link to full docs]
-
----
-
-## 🤝 Contributing
-
-[How to contribute]
+Complete guides, tutorials, and API reference:  
+**[fastkit.codevelo.io](https://fastkit.codevelo.io)**
 
 ---
 
-## 📄 License
+## Contributing
 
-[MIT License]
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md).
 
+---
+
+## License
+
+FastKit Core is open-source software licensed under the [MIT License](LICENSE).
+
+---
+
+## Built by CodeVelo
+
+FastKit is developed and maintained by [CodeVelo](https://codevelo.io) for the FastAPI community.
