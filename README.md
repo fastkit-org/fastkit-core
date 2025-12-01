@@ -16,7 +16,7 @@
 
 The software development is an enjoyable and creative experience, so we believe developers should focus on building features, not infrastructure. FastKit Core provides the patterns and structure so you can do exactly that.
 
-FastAPI is fast and flexible by design, but it's minimal — you build the structure yourself. FastKit Core provides that structure with production-ready patterns:
+FastAPI is fast and flexible by design, but it's minimal - you build the structure yourself. FastKit Core provides that structure with production-ready patterns:
 
 - **Repository Pattern** for database operations
 - **Service Layer** for business logic
@@ -28,6 +28,35 @@ Think of it as **FastAPI with batteries included** — inspired by Laravel's DX 
 
 **Not a framework. Not a replacement. Just FastAPI with structure.**
 
+---
+## Who is FastKit Core For?
+
+**FastKit Core is built for developers who:**
+
+**Are Coming from Laravel or Django**
+- You love the structure and developer experience, but need FastAPI's performance
+- You want familiar concepts (repositories, services, mixins) in modern Python
+- You're tired of rebuilding patterns from scratch in every FastAPI project
+
+**Are Building Production Applications**
+- You need consistent, maintainable code structure across your team
+- You want proven patterns, not experimental approaches
+- You're building multi-language applications or complex business logic
+
+**Are New to FastAPI Architecture**
+- FastAPI's minimal structure leaves you wondering where to put things
+- You need guidance on organizing business logic and database operations
+- You want to learn best practices from day one
+
+**Are Leading Development Teams**
+- You need to standardize how your team builds FastAPI applications
+- You want faster onboarding and more consistent code reviews
+- You're tired of every developer having their own architectural approach
+
+**FastKit Core is not for you if:**
+- You prefer building everything from scratch and don't want any structure
+- You're building simple CRUD APIs with no business logic
+- You only need basic FastAPI features (FastAPI alone is perfect for this!)
 ---
 
 ## Why FastKit Core?
