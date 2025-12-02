@@ -255,3 +255,69 @@ class TestTranslationLoading:
         assert 'en' in manager._translations
         assert 'readme' not in manager._translations
         assert 'config' not in manager._translations
+
+
+# ============================================================================
+# Test Translation Retrieval (get)
+# ============================================================================
+
+class TestTranslationGet:
+    """Test translation retrieval."""
+
+    def test_get_simple_key(self, manager):
+        """Should get simple translation."""
+        result = manager.get('messages.welcome', locale='en')
+        assert result == "Welcome!"
+
+    def test_get_with_dot_notation(self, manager):
+        """Should access nested keys with dot notation."""
+        result = manager.get('errors.not_found', locale='en')
+        assert result == "Not found"
+
+    def test_get_deeply_nested(self, manager):
+        """Should access deeply nested keys."""
+        result = manager.get('nested.level1.level2.deep', locale='en')
+        assert result == "Deep value"
+
+    def test_get_nonexistent_key(self, manager):
+        """Should return key if translation not found."""
+        result = manager.get('nonexistent.key', locale='en')
+        assert result == 'nonexistent.key'
+
+    def test_get_with_variable_replacement(self, manager):
+        """Should replace variables in translation."""
+        result = manager.get('messages.hello', locale='en', name='John')
+        assert result == "Hello, John!"
+
+    def test_get_with_multiple_variables(self, manager):
+        """Should replace multiple variables."""
+        # Add translation with multiple variables
+        manager._translations['en']['test'] = {'multi': '{first} and {second}'}
+
+        result = manager.get('test.multi', locale='en', first='A', second='B')
+        assert result == "A and B"
+
+    def test_get_with_missing_variable(self, manager):
+        """Should handle missing variable gracefully."""
+        result = manager.get('messages.hello', locale='en')
+        # Should still return string with placeholder
+        assert '{name}' in result
+
+    def test_get_different_locales(self, manager):
+        """Should get translations for different locales."""
+        en_result = manager.get('messages.welcome', locale='en')
+        es_result = manager.get('messages.welcome', locale='es')
+
+        assert en_result == "Welcome!"
+        assert es_result == "¡Bienvenido!"
+
+    def test_get_uses_current_locale(self, manager):
+        """Should use current context locale if not specified."""
+        manager.set_locale('es')
+        result = manager.get('messages.welcome')
+        assert result == "¡Bienvenido!"
+
+    def test_get_uses_default_locale(self, manager):
+        """Should use default locale if no context locale set."""
+        result = manager.get('messages.welcome')
+        assert result == "Welcome!"
