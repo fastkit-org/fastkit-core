@@ -193,3 +193,15 @@ class TestEnvLoading:
         assert os.getenv('APP_NAME') == 'EnvApp'
         assert os.getenv('DEBUG') == 'true'
         assert os.getenv('DB_HOST') == 'envhost'
+
+    def test_load_env_file_not_found(self, clean_env, tmp_path):
+        """Should handle missing .env file gracefully."""
+        missing_file = tmp_path / "nonexistent.env"
+        manager = ConfigManager(
+            modules=[],
+            env_file=missing_file,
+            auto_load=False
+        )
+
+        # Should not raise error
+        manager._load_env()
