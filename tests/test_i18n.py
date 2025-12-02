@@ -184,3 +184,74 @@ class TestTranslationManagerInit:
         assert 'en' in manager._translations
         assert 'es' in manager._translations
         assert 'fr' in manager._translations
+
+
+# ============================================================================
+# Test Translation File Loading
+# ============================================================================
+
+class TestTranslationLoading:
+    """Test translation file loading."""
+
+    def test_load_valid_json(self, manager):
+        """Should load valid JSON files."""
+        assert 'messages' in manager._translations['en']
+        assert 'errors' in manager._translations['en']
+
+    def test_load_utf8_content(self, manager):
+        """Should handle UTF-8 content correctly."""
+        welcome_es = manager._translations['es']['messages']['welcome']
+        assert '¡' in welcome_es
+        assert 'Bienvenido' in welcome_es
+
+    def test_load_nested_structure(self, manager):
+        """Should load nested JSON structure."""
+        nested = manager._translations['en']['nested']
+        assert 'level1' in nested
+        assert 'level2' in nested['level1']
+        assert 'deep' in nested['level1']['level2']
+
+    def test_load_invalid_json(self, tmp_path, config_with_translations):
+        """Should handle invalid JSON gracefully."""
+        trans_dir = tmp_path / "bad_translations"
+        trans_dir.mkdir()
+
+        # Create invalid JSON file
+        bad_file = trans_dir / "bad.json"
+        bad_file.write_text("{invalid json content!!!")
+
+        manager = TranslationManager(translations_dir=trans_dir)
+
+        # Should not have loaded bad file
+        assert 'bad' not in manager._translations
+
+    def test_load_empty_json_file(self, tmp_path, config_with_translations):
+        """Should handle empty JSON file."""
+        trans_dir = tmp_path / "empty_translations"
+        trans_dir.mkdir()
+
+        empty_file = trans_dir / "empty.json"
+        empty_file.write_text("{}")
+
+        manager = TranslationManager(translations_dir=trans_dir)
+
+        assert 'empty' in manager._translations
+        assert manager._translations['empty'] == {}
+
+    def test_ignore_non_json_files(self, tmp_path, config_with_translations):
+        """Should ignore non-JSON files."""
+        trans_dir = tmp_path / "mixed_translations"
+        trans_dir.mkdir()
+
+        # Create JSON file
+        (trans_dir / "en.json").write_text('{"test": "value"}')
+
+        # Create non-JSON files
+        (trans_dir / "readme.txt").write_text("readme")
+        (trans_dir / "config.yaml").write_text("test: value")
+
+        manager = TranslationManager(translations_dir=trans_dir)
+
+        assert 'en' in manager._translations
+        assert 'readme' not in manager._translations
+        assert 'config' not in manager._translations
