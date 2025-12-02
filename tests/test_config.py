@@ -105,3 +105,18 @@ def reset_default_manager():
     config_module._default_manager = None
     yield
     config_module._default_manager = None
+
+# ============================================================================
+# Test ConfigManager Initialization
+# ============================================================================
+
+class TestConfigManagerInit:
+    """Test ConfigManager initialization."""
+
+    def test_init_default_modules(self, clean_env):
+        """Should initialize with default modules."""
+        manager = ConfigManager(auto_load=False)
+
+        assert manager._modules == ['app', 'database', 'cache']
+        assert manager._config_package == 'config'
+        assert manager._loaded is False
