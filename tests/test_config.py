@@ -147,3 +147,9 @@ class TestConfigManagerInit:
         )
 
         assert manager._env_file == temp_env_file
+
+    def test_init_auto_load_default(self, clean_env):
+        """Should auto-load by default."""
+        with patch.object(ConfigManager, 'load'):
+            manager = ConfigManager()
+            ConfigManager.load.assert_called_once()
