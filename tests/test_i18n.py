@@ -29,7 +29,7 @@ from fastkit_core.i18n import (
     set_locale,
     get_locale,
 )
-from fastkit_core.config import ConfigManager, set_config_manager
+from fastkit_core.config import ConfigManager, set_config_manager, get_config_manager
 
 
 # ============================================================================
@@ -487,3 +487,88 @@ class TestHelperMethods:
         # Should have new locale
         assert 'de' in manager._translations
         assert manager.get('messages.welcome', locale='de') == "Willkommen!"
+
+
+# ============================================================================
+# Test Global Functions
+# ============================================================================
+
+class TestGlobalFunctions:
+    """Test global helper functions."""
+
+    def test_get_translation_manager(self, config_with_translations, translations_dir):
+        """Should get global translation manager."""
+        # Set config with translations path
+        config = get_config_manager()
+        config.set('app.TRANSLATIONS_PATH', str(translations_dir))
+
+        manager = get_translation_manager()
+
+        assert manager is not None
+        assert isinstance(manager, TranslationManager)
+
+    def test_get_translation_manager_singleton(self, config_with_translations, translations_dir):
+        """Should return same instance."""
+        config = get_config_manager()
+        config.set('app.TRANSLATIONS_PATH', str(translations_dir))
+
+        manager1 = get_translation_manager()
+        manager2 = get_translation_manager()
+
+        assert manager1 is manager2
+
+    def test_set_translation_manager(self, translations_dir):
+        """Should set custom global manager."""
+        custom_manager = TranslationManager(translations_dir=translations_dir)
+        set_translation_manager(custom_manager)
+
+        assert get_translation_manager() is custom_manager
+
+    def test_underscore_helper(self, config_with_translations, translations_dir):
+        """Should translate using _ helper."""
+        config = get_config_manager()
+        config.set('app.TRANSLATIONS_PATH', str(translations_dir))
+
+        result = _('messages.welcome', locale='en')
+        assert result == "Welcome!"
+
+    def test_underscore_with_variables(self, config_with_translations, translations_dir):
+        """Should handle variables with _ helper."""
+        config = get_config_manager()
+        config.set('app.TRANSLATIONS_PATH', str(translations_dir))
+
+        result = _('messages.hello', locale='en', name='John')
+        assert result == "Hello, John!"
+
+    def test_underscore_uses_context_locale(self, config_with_translations, translations_dir):
+        """Should use context locale with _ helper."""
+        config = get_config_manager()
+        config.set('app.TRANSLATIONS_PATH', str(translations_dir))
+
+        set_locale('es')
+        result = _('messages.welcome')
+        assert result == "¡Bienvenido!"
+
+    def test_gettext_alias(self, config_with_translations, translations_dir):
+        """Should work as alias for _."""
+        config = get_config_manager()
+        config.set('app.TRANSLATIONS_PATH', str(translations_dir))
+
+        result = gettext('messages.welcome', locale='en')
+        assert result == "Welcome!"
+
+    def test_set_locale_function(self, config_with_translations, translations_dir):
+        """Should set locale via function."""
+        config = get_config_manager()
+        config.set('app.TRANSLATIONS_PATH', str(translations_dir))
+
+        set_locale('es')
+        assert get_locale() == 'es'
+
+    def test_get_locale_function(self, config_with_translations, translations_dir):
+        """Should get locale via function."""
+        config = get_config_manager()
+        config.set('app.TRANSLATIONS_PATH', str(translations_dir))
+
+        locale = get_locale()
+        assert locale == 'en'  # Default
