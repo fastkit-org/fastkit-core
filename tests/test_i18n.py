@@ -368,3 +368,48 @@ class TestFallbackBehavior:
 
         # Should return key, not loop
         assert result == 'nonexistent.key'
+
+
+# ============================================================================
+# Test Locale Management
+# ============================================================================
+
+class TestLocaleManagement:
+    """Test locale setting and getting."""
+
+    def test_set_locale(self, manager):
+        """Should set current locale."""
+        manager.set_locale('es')
+        assert manager.get_locale() == 'es'
+
+    def test_get_locale_default(self, manager):
+        """Should return default locale if not set."""
+        locale = manager.get_locale()
+        assert locale == 'en'
+
+    def test_locale_context_shared(self, manager):
+        """Should share locale context with TranslatableMixin."""
+        from fastkit_core.i18n.translation import _current_locale
+
+        manager.set_locale('es')
+
+        # Context should be set
+        assert _current_locale.get() == 'es'
+
+    def test_set_locale_affects_get(self, manager):
+        """Should affect subsequent get() calls."""
+        manager.set_locale('es')
+        result = manager.get('messages.welcome')
+        assert result == "¡Bienvenido!"
+
+        manager.set_locale('fr')
+        result = manager.get('messages.welcome')
+        assert result == "Bienvenue!"
+
+    def test_get_with_explicit_locale_overrides_context(self, manager):
+        """Should override context locale when explicit."""
+        manager.set_locale('es')
+
+        # Explicit locale should override context
+        result = manager.get('messages.welcome', locale='en')
+        assert result == "Welcome!"
