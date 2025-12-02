@@ -129,3 +129,12 @@ class TestConfigManagerInit:
         )
 
         assert manager._modules == ['custom1', 'custom2']
+
+    def test_init_custom_package(self, clean_env):
+        """Should initialize with custom package name."""
+        manager = ConfigManager(
+            config_package='my_config',
+            auto_load=False
+        )
+
+        assert manager._config_package == 'my_config'
