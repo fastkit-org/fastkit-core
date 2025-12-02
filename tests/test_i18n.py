@@ -137,3 +137,50 @@ def reset_translation_manager():
 def manager(config_with_translations, translations_dir):
     """Create TranslationManager instance."""
     return TranslationManager(translations_dir=translations_dir)
+
+
+# ============================================================================
+# Test TranslationManager Initialization
+# ============================================================================
+
+class TestTranslationManagerInit:
+    """Test TranslationManager initialization."""
+
+    def test_init_with_explicit_path(self, translations_dir):
+        """Should initialize with explicit translations directory."""
+        manager = TranslationManager(translations_dir=translations_dir)
+
+        assert manager.translations_dir == translations_dir
+        assert len(manager._translations) > 0
+
+    def test_init_from_config(self, config_with_translations):
+        """Should load translations path from config."""
+        manager = TranslationManager()
+
+        assert manager.translations_dir.exists()
+        assert len(manager._translations) > 0
+
+    def test_init_default_locale_from_config(self, config_with_translations):
+        """Should load default locale from config."""
+        manager = TranslationManager()
+
+        assert manager.default_locale == 'en'
+
+    def test_init_fallback_locale_from_config(self, config_with_translations):
+        """Should load fallback locale from config."""
+        manager = TranslationManager()
+
+        assert manager.fallback_locale == 'en'
+
+    def test_init_nonexistent_directory(self, tmp_path):
+        """Should handle nonexistent translations directory."""
+        nonexistent = tmp_path / "nonexistent"
+        manager = TranslationManager(translations_dir=nonexistent)
+
+        assert manager._translations == {}
+
+    def test_load_multiple_locales(self, manager):
+        """Should load all locale files."""
+        assert 'en' in manager._translations
+        assert 'es' in manager._translations
+        assert 'fr' in manager._translations
