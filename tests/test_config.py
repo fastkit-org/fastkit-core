@@ -172,3 +172,24 @@ class TestConfigManagerInit:
         assert 'ConfigManager' in repr_str
         assert 'test_config' in repr_str
         assert "['app']" in repr_str
+
+
+# ============================================================================
+# Test Environment Variable Loading
+# ============================================================================
+
+class TestEnvLoading:
+    """Test .env file loading."""
+
+    def test_load_explicit_env_file(self, clean_env, temp_env_file):
+        """Should load specified .env file."""
+        manager = ConfigManager(
+            modules=[],
+            env_file=temp_env_file,
+            auto_load=False
+        )
+        manager._load_env()
+
+        assert os.getenv('APP_NAME') == 'EnvApp'
+        assert os.getenv('DEBUG') == 'true'
+        assert os.getenv('DB_HOST') == 'envhost'
