@@ -221,3 +221,13 @@ class TestEnvLoading:
         manager._load_env()
 
         assert os.getenv('AUTO_DISCOVERED') == 'true'
+
+    def test_no_env_file_found(self, clean_env, tmp_path, monkeypatch):
+        """Should handle no .env file gracefully."""
+        # Change to directory without .env
+        monkeypatch.chdir(tmp_path)
+
+        manager = ConfigManager(modules=[], auto_load=False)
+
+        # Should not raise error
+        manager._load_env()
