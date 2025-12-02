@@ -205,3 +205,19 @@ class TestEnvLoading:
 
         # Should not raise error
         manager._load_env()
+
+    def test_auto_discover_env_file(self, clean_env, tmp_path, monkeypatch):
+        """Should auto-discover .env file in parent directories."""
+        # Create .env in parent directory
+        env_file = tmp_path / ".env"
+        env_file.write_text("AUTO_DISCOVERED=true")
+
+        # Change to subdirectory
+        subdir = tmp_path / "subdir"
+        subdir.mkdir()
+        monkeypatch.chdir(subdir)
+
+        manager = ConfigManager(modules=[], auto_load=False)
+        manager._load_env()
+
+        assert os.getenv('AUTO_DISCOVERED') == 'true'
