@@ -321,3 +321,50 @@ class TestTranslationGet:
         """Should use default locale if no context locale set."""
         result = manager.get('messages.welcome')
         assert result == "Welcome!"
+
+
+# ============================================================================
+# Test Fallback Behavior
+# ====================================================================k========
+
+class TestFallbackBehavior:
+    """Test locale fallback behavior."""
+
+    def test_fallback_to_default_locale(self, manager):
+        """Should fallback to default locale for missing key."""
+        # French has 'welcome' but not 'goodbye'
+        result = manager.get('messages.goodbye', locale='fr', name='John')
+
+        # Should fallback to English
+        assert result == "Goodbye, John!"
+
+    def test_fallback_for_missing_locale(self, manager):
+        """Should fallback to default for nonexistent locale."""
+        result = manager.get('messages.welcome', locale='de')
+
+        # Should fallback to English
+        assert result == "Welcome!"
+
+    def test_no_fallback_when_disabled(self, manager):
+        """Should not fallback when disabled."""
+        result = manager.get('messages.goodbye', locale='fr', fallback=False)
+
+        # Should return key, not fallback
+        assert result == 'messages.goodbye'
+
+    def test_fallback_with_variables(self, manager):
+        """Should apply variables after fallback."""
+        # French missing 'goodbye', fallback to English
+        result = manager.get('messages.goodbye', locale='fr', name='Marie')
+
+        assert result == "Goodbye, Marie!"
+
+    def test_no_fallback_loop(self, manager):
+        """Should not fallback if locale is same as fallback."""
+        manager.fallback_locale = 'en'
+
+        # Key doesn't exist in English
+        result = manager.get('nonexistent.key', locale='en')
+
+        # Should return key, not loop
+        assert result == 'nonexistent.key'
