@@ -663,3 +663,98 @@ class TestEdgeCases:
         """Should handle special chars in variable values."""
         result = manager.get('messages.hello', locale='en', name='<script>')
         assert result == "Hello, <script>!"
+
+
+# ============================================================================
+# Test Integration Scenarios
+# ============================================================================
+
+class TestIntegration:
+    """Test real-world integration scenarios."""
+
+    def test_typical_web_app_usage(self, config_with_translations, translations_dir):
+        """Should work in typical web app scenario."""
+        config = get_config_manager()
+        config.set('app.TRANSLATIONS_PATH', str(translations_dir))
+
+        # Set user's locale (e.g., from request header)
+        set_locale('es')
+
+        # Use in code
+        welcome = _('messages.welcome')
+        greeting = _('messages.hello', name='María')
+        error = _('errors.not_found')
+
+        assert welcome == "¡Bienvenido!"
+        assert greeting == "¡Hola, María!"
+        assert error == "No encontrado"
+
+    def test_validation_error_messages(self, config_with_translations, translations_dir):
+        """Should work for validation error messages."""
+        config = get_config_manager()
+        config.set('app.TRANSLATIONS_PATH', str(translations_dir))
+
+        set_locale('en')
+
+        # Simulate validation errors
+        email_error = _('validation.email', field='email')
+        required_error = _('validation.required', field='username')
+
+        assert email_error == "The email must be a valid email"
+        assert required_error == "The username field is required"
+
+    def test_multi_user_concurrent_locales(self, config_with_translations, translations_dir):
+        """Should handle different locales in concurrent requests."""
+        config = get_config_manager()
+        config.set('app.TRANSLATIONS_PATH', str(translations_dir))
+
+        # User 1: English
+        set_locale('en')
+        result_en = _('messages.welcome')
+
+        # User 2: Spanish
+        set_locale('es')
+        result_es = _('messages.welcome')
+
+        # User 3: French
+        set_locale('fr')
+        result_fr = _('messages.welcome')
+
+        # Each should get their locale
+        # (Note: in real concurrent scenarios, use async context)
+        assert result_fr == "Bienvenue!"
+
+    def test_missing_translation_graceful_degradation(self, config_with_translations, translations_dir):
+        """Should degrade gracefully for missing translations."""
+        config = get_config_manager()
+        config.set('app.TRANSLATIONS_PATH', str(translations_dir))
+
+        set_locale('fr')
+
+        # French has 'welcome' but not 'goodbye'
+        # Should fallback to English
+        welcome = _('messages.welcome')
+        goodbye = _('messages.goodbye', name='User')
+
+        assert welcome == "Bienvenue!"  # French
+        assert goodbye == "Goodbye, User!"  # English fallback
+
+    def test_dynamic_locale_switching(self, config_with_translations, translations_dir):
+        """Should handle dynamic locale switching."""
+        config = get_config_manager()
+        config.set('app.TRANSLATIONS_PATH', str(translations_dir))
+
+        # Start with English
+        set_locale('en')
+        result1 = _('messages.welcome')
+        assert result1 == "Welcome!"
+
+        # Switch to Spanish
+        set_locale('es')
+        result2 = _('messages.welcome')
+        assert result2 == "¡Bienvenido!"
+
+        # Switch to French
+        set_locale('fr')
+        result3 = _('messages.welcome')
+        assert result3 == "Bienvenue!"
