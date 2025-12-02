@@ -244,7 +244,7 @@ class TranslationManager:
         if locale is None:
             locale = self.get_locale()
 
-        return self._translations.get(locale, {}).copy()
+        return self._translations.get(locale, {})
 
     def get_available_locales(self) -> list[str]:
         """Get list of available locale codes."""

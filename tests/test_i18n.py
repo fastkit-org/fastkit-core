@@ -413,3 +413,77 @@ class TestLocaleManagement:
         # Explicit locale should override context
         result = manager.get('messages.welcome', locale='en')
         assert result == "Welcome!"
+
+
+# ============================================================================
+# Test Helper Methods
+# ============================================================================
+
+class TestHelperMethods:
+    """Test utility helper methods."""
+
+    def test_has_existing_key(self, manager):
+        """Should return True for existing key."""
+        assert manager.has('messages.welcome', locale='en') is True
+
+    def test_has_nonexistent_key(self, manager):
+        """Should return False for nonexistent key."""
+        assert manager.has('nonexistent.key', locale='en') is False
+
+    def test_has_with_current_locale(self, manager):
+        """Should use current locale if not specified."""
+        manager.set_locale('es')
+        assert manager.has('messages.welcome') is True
+
+    def test_has_nonexistent_locale(self, manager):
+        """Should return False for nonexistent locale."""
+        assert manager.has('messages.welcome', locale='de') is False
+
+    def test_get_all_for_locale(self, manager):
+        """Should get all translations for locale."""
+        all_trans = manager.get_all('en')
+
+        assert 'messages' in all_trans
+        assert 'errors' in all_trans
+        assert all_trans['messages']['welcome'] == "Welcome!"
+
+    def test_get_all_current_locale(self, manager):
+        """Should use current locale if not specified."""
+        manager.set_locale('es')
+        all_trans = manager.get_all()
+
+        assert all_trans['messages']['welcome'] == "¡Bienvenido!"
+
+    def test_get_available_locales(self, manager):
+        """Should return list of available locales."""
+        locales = manager.get_available_locales()
+
+        assert 'en' in locales
+        assert 'es' in locales
+        assert 'fr' in locales
+        assert len(locales) == 3
+
+    def test_reload_translations(self, manager, translations_dir):
+        """Should reload translation files."""
+        # Modify translation
+        manager._translations['en']['messages']['welcome'] = 'Changed'
+
+        # Reload
+        manager.reload()
+
+        # Should be back to original
+        assert manager.get('messages.welcome', locale='en') == "Welcome!"
+
+    def test_reload_picks_up_new_files(self, manager, translations_dir):
+        """Should pick up new translation files on reload."""
+        # Add new locale file
+        de_content = {"messages": {"welcome": "Willkommen!"}}
+        with open(translations_dir / "de.json", "w") as f:
+            json.dump(de_content, f)
+
+        # Reload
+        manager.reload()
+
+        # Should have new locale
+        assert 'de' in manager._translations
+        assert manager.get('messages.welcome', locale='de') == "Willkommen!"
