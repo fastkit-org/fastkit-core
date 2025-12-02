@@ -159,3 +159,16 @@ class TestConfigManagerInit:
         with patch.object(ConfigManager, 'load'):
             manager = ConfigManager(auto_load=False)
             ConfigManager.load.assert_not_called()
+
+    def test_repr(self, clean_env):
+        """Should have readable repr."""
+        manager = ConfigManager(
+            modules=['app'],
+            config_package='test_config',
+            auto_load=False
+        )
+
+        repr_str = repr(manager)
+        assert 'ConfigManager' in repr_str
+        assert 'test_config' in repr_str
+        assert "['app']" in repr_str
