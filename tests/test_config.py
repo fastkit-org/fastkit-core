@@ -153,3 +153,9 @@ class TestConfigManagerInit:
         with patch.object(ConfigManager, 'load'):
             manager = ConfigManager()
             ConfigManager.load.assert_called_once()
+
+    def test_init_no_auto_load(self, clean_env):
+        """Should not auto-load when disabled."""
+        with patch.object(ConfigManager, 'load'):
+            manager = ConfigManager(auto_load=False)
+            ConfigManager.load.assert_not_called()
