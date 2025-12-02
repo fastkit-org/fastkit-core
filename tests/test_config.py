@@ -120,3 +120,12 @@ class TestConfigManagerInit:
         assert manager._modules == ['app', 'database', 'cache']
         assert manager._config_package == 'config'
         assert manager._loaded is False
+
+    def test_init_custom_modules(self, clean_env):
+        """Should initialize with custom modules."""
+        manager = ConfigManager(
+            modules=['custom1', 'custom2'],
+            auto_load=False
+        )
+
+        assert manager._modules == ['custom1', 'custom2']
