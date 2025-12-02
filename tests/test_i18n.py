@@ -572,3 +572,94 @@ class TestGlobalFunctions:
 
         locale = get_locale()
         assert locale == 'en'  # Default
+
+
+# ============================================================================
+# Test Edge Cases
+# ============================================================================
+
+class TestEdgeCases:
+    """Test edge cases and error conditions."""
+
+    def test_empty_key(self, manager):
+        """Should handle empty key."""
+        result = manager.get('', locale='en')
+        assert result == ''
+
+    def test_key_with_only_dots(self, manager):
+        """Should handle key with only dots."""
+        result = manager.get('...', locale='en')
+        assert result == '...'
+
+    def test_very_long_key(self, manager):
+        """Should handle very long key."""
+        long_key = '.'.join(['level'] * 100)
+        result = manager.get(long_key, locale='en')
+        assert result == long_key
+
+    def test_special_characters_in_values(self, manager):
+        """Should handle special characters."""
+        manager._translations['en']['test'] = {
+            'special': '!@#$%^&*(){}[]|\\<>?,./"\':;'
+        }
+
+        result = manager.get('test.special', locale='en')
+        assert result == '!@#$%^&*(){}[]|\\<>?,./"\':;'
+
+    def test_unicode_in_keys_and_values(self, manager):
+        """Should handle Unicode."""
+        manager._translations['en']['test'] = {
+            'unicode': '你好世界 🌍 Привет مرحبا'
+        }
+
+        result = manager.get('test.unicode', locale='en')
+        assert '你好世界' in result
+        assert '🌍' in result
+
+    def test_none_as_translation_value(self, manager):
+        """Should handle None values."""
+        manager._translations['en']['test'] = {'null': None}
+
+        result = manager.get('test.null', locale='en')
+        # Should return key if value is not string
+        assert result == 'test.null'
+
+    def test_number_as_translation_value(self, manager):
+        """Should handle number values."""
+        manager._translations['en']['test'] = {'number': 42}
+
+        result = manager.get('test.number', locale='en')
+        # Should return key if value is not string
+        assert result == 'test.number'
+
+    def test_list_as_translation_value(self, manager):
+        """Should handle list values."""
+        manager._translations['en']['test'] = {'list': ['a', 'b', 'c']}
+
+        result = manager.get('test.list', locale='en')
+        # Should return key if value is not string
+        assert result == 'test.list'
+
+    def test_empty_string_translation(self, manager):
+        """Should handle empty string translations."""
+        manager._translations['en']['test'] = {'empty': ''}
+
+        result = manager.get('test.empty', locale='en')
+        assert result == ''
+
+    def test_whitespace_only_translation(self, manager):
+        """Should handle whitespace-only translations."""
+        manager._translations['en']['test'] = {'spaces': '   '}
+
+        result = manager.get('test.spaces', locale='en')
+        assert result == '   '
+
+    def test_variable_replacement_with_empty_value(self, manager):
+        """Should handle empty variable values."""
+        result = manager.get('messages.hello', locale='en', name='')
+        assert result == "Hello, !"
+
+    def test_variable_replacement_with_special_chars(self, manager):
+        """Should handle special chars in variable values."""
+        result = manager.get('messages.hello', locale='en', name='<script>')
+        assert result == "Hello, <script>!"
