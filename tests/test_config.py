@@ -138,3 +138,12 @@ class TestConfigManagerInit:
         )
 
         assert manager._config_package == 'my_config'
+
+    def test_init_custom_env_file(self, clean_env, temp_env_file):
+        """Should initialize with custom env file."""
+        manager = ConfigManager(
+            env_file=temp_env_file,
+            auto_load=False
+        )
+
+        assert manager._env_file == temp_env_file
