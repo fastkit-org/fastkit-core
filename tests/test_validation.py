@@ -131,3 +131,129 @@ def setup_i18n(translations_dir):
 
     # Cleanup
     set_locale('en')
+
+
+# ============================================================================
+# Test BaseSchema Translation
+# ============================================================================
+
+class TestBaseSchemaTranslation:
+    """Test BaseSchema error translation."""
+
+    def test_translate_required_error(self, setup_i18n):
+        """Should translate 'required' error."""
+
+        class TestSchema(BaseSchema):
+            name: str
+
+        try:
+            TestSchema()
+        except ValidationError as e:
+            errors = BaseSchema.format_errors(e)
+
+            assert 'name' in errors
+            assert 'required' in errors['name'][0].lower()
+
+    def test_translate_min_length_error(self, setup_i18n):
+        """Should translate 'min_length' error."""
+
+        class TestSchema(BaseSchema):
+            name: str = Field(min_length=5)
+
+        try:
+            TestSchema(name="abc")
+        except ValidationError as e:
+            errors = BaseSchema.format_errors(e)
+
+            assert 'name' in errors
+            assert '5' in errors['name'][0]
+            assert 'at least' in errors['name'][0].lower()
+
+    def test_translate_max_length_error(self, setup_i18n):
+        """Should translate 'max_length' error."""
+
+        class TestSchema(BaseSchema):
+            name: str = Field(max_length=10)
+
+        try:
+            TestSchema(name="a" * 20)
+        except ValidationError as e:
+            errors = BaseSchema.format_errors(e)
+
+            assert 'name' in errors
+            assert '10' in errors['name'][0]
+            assert 'exceed' in errors['name'][0].lower()
+
+    def test_translate_email_error(self, setup_i18n):
+        """Should translate email validation error."""
+
+        class TestSchema(BaseSchema):
+            email: EmailStr
+
+        try:
+            TestSchema(email="not_an_email")
+        except ValidationError as e:
+            errors = BaseSchema.format_errors(e)
+
+            assert 'email' in errors
+            assert 'email' in errors['email'][0].lower()
+
+    def test_translate_custom_error(self, setup_i18n):
+        """Should translate custom validator errors."""
+
+        class TestSchema(BaseSchema):
+            age: int = Field(ge=18)
+
+        try:
+            TestSchema(age=15)
+        except ValidationError as e:
+            errors = BaseSchema.format_errors(e)
+
+            assert 'age' in errors
+            assert '18' in errors['age'][0]
+
+    def test_fallback_to_default_message(self, setup_i18n):
+        """Should fallback to Pydantic message when translation missing."""
+
+        class TestSchema(BaseSchema):
+            # Use error type not in translation map
+            value: int
+
+        try:
+            TestSchema(value="not_a_number")
+        except ValidationError as e:
+            errors = BaseSchema.format_errors(e)
+
+            assert 'value' in errors
+            # Should have some error message
+            assert len(errors['value'][0]) > 0
+
+    def test_translate_in_spanish(self, setup_i18n):
+        """Should translate errors in Spanish."""
+        set_locale('es')
+
+        class TestSchema(BaseSchema):
+            name: str
+
+        try:
+            TestSchema()
+        except ValidationError as e:
+            errors = BaseSchema.format_errors(e)
+
+            assert 'name' in errors
+            # Should contain Spanish words
+            assert 'obligatorio' in errors['name'][0].lower()
+
+    def test_translate_with_field_context(self, setup_i18n):
+        """Should include field name in translation."""
+
+        class TestSchema(BaseSchema):
+            username: str
+
+        try:
+            TestSchema()
+        except ValidationError as e:
+            errors = BaseSchema.format_errors(e)
+
+            assert 'username' in errors
+            assert 'username' in errors['username'][0].lower()
