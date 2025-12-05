@@ -588,3 +588,126 @@ class TestStrongPasswordValidator:
         # Valid - has all
         schema = UserSchema(password="Test12345!")
         assert schema.password == "Test12345!"
+
+
+# ============================================================================
+# Test UsernameValidatorMixin
+# ============================================================================
+
+class TestUsernameValidator:
+    """Test UsernameValidatorMixin."""
+
+    def test_username_valid(self, setup_i18n):
+        """Should accept valid username."""
+
+        class UserSchema(BaseSchema, UsernameValidatorMixin):
+            username: str
+
+        schema = UserSchema(username="john_doe123")
+        assert schema.username == "john_doe123"
+
+    def test_username_min_length(self, setup_i18n):
+        """Should enforce minimum 3 characters."""
+
+        class UserSchema(BaseSchema, UsernameValidatorMixin):
+            username: str
+
+        with pytest.raises(ValidationError) as exc_info:
+            UserSchema(username="ab")
+
+        errors = BaseSchema.format_errors(exc_info.value)
+        assert 'username' in errors
+        assert '3' in errors['username'][0]
+
+    def test_username_max_length(self, setup_i18n):
+        """Should enforce maximum 20 characters."""
+
+        class UserSchema(BaseSchema, UsernameValidatorMixin):
+            username: str
+
+        with pytest.raises(ValidationError) as exc_info:
+            UserSchema(username="a" * 25)
+
+        errors = BaseSchema.format_errors(exc_info.value)
+        assert 'username' in errors
+        assert '20' in errors['username'][0]
+
+    def test_username_must_start_with_letter(self, setup_i18n):
+        """Should require starting with letter."""
+
+        class UserSchema(BaseSchema, UsernameValidatorMixin):
+            username: str
+
+        # Invalid - starts with number
+        with pytest.raises(ValidationError):
+            UserSchema(username="123john")
+
+        # Invalid - starts with underscore
+        with pytest.raises(ValidationError):
+            UserSchema(username="_john")
+
+    def test_username_alphanumeric_underscore_only(self, setup_i18n):
+        """Should allow only alphanumeric and underscore."""
+
+        class UserSchema(BaseSchema, UsernameValidatorMixin):
+            username: str
+
+        # Valid
+        schema = UserSchema(username="john_doe_123")
+        assert schema.username == "john_doe_123"
+
+        # Invalid - hyphen
+        with pytest.raises(ValidationError):
+            UserSchema(username="john-doe")
+
+        # Invalid - special chars
+        with pytest.raises(ValidationError):
+            UserSchema(username="john@doe")
+
+        # Invalid - space
+        with pytest.raises(ValidationError):
+            UserSchema(username="john doe")
+
+    def test_username_case_insensitive(self, setup_i18n):
+        """Should accept both cases."""
+
+        class UserSchema(BaseSchema, UsernameValidatorMixin):
+            username: str
+
+        schema1 = UserSchema(username="JohnDoe")
+        assert schema1.username == "JohnDoe"
+
+        schema2 = UserSchema(username="johndoe")
+        assert schema2.username == "johndoe"
+
+    def test_username_custom_length(self, setup_i18n):
+        """Should allow custom length requirements."""
+
+        class UserSchema(BaseSchema, UsernameValidatorMixin):
+            USM_MIN_LENGTH: ClassVar[int] = 5
+            USM_MAX_LENGTH: ClassVar[int] = 15
+            username: str
+
+        # Valid with custom length
+        schema = UserSchema(username="johndoe")
+        assert schema.username == "johndoe"
+
+        # Too short
+        with pytest.raises(ValidationError):
+            UserSchema(username="john")
+
+    def test_username_translated_errors(self, setup_i18n):
+        """Should translate username errors."""
+        set_locale('es')
+
+        class UserSchema(BaseSchema, UsernameValidatorMixin):
+            username: str
+
+        with pytest.raises(ValidationError) as exc_info:
+            UserSchema(username="ab")
+
+        errors = BaseSchema.format_errors(exc_info.value)
+        assert 'username' in errors
+        # Spanish translation
+        assert 'usuario' in errors['username'][0].lower()
+
