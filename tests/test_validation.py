@@ -812,3 +812,68 @@ class TestSlugValidator:
         assert schema.slug == "123"
 
 
+# ============================================================================
+# Test Multiple Validators Combined
+# ============================================================================
+
+class TestCombinedValidators:
+    """Test combining multiple validators."""
+
+    def test_password_and_username_together(self, setup_i18n):
+        """Should use multiple validators together."""
+
+        class UserSchema(BaseSchema, PasswordValidatorMixin, UsernameValidatorMixin):
+            username: str
+            password: str
+
+        schema = UserSchema(
+            username="john_doe",
+            password="Test1234!"
+        )
+
+        assert schema.username == "john_doe"
+        assert schema.password == "Test1234!"
+
+    def test_all_validators_together(self, setup_i18n):
+        """Should combine all validators."""
+
+        class ComplexSchema(
+            BaseSchema,
+            PasswordValidatorMixin,
+            UsernameValidatorMixin,
+            SlugValidatorMixin
+        ):
+            username: str
+            password: str
+            slug: str
+
+        schema = ComplexSchema(
+            username="john_doe",
+            password="Test1234!",
+            slug="my-article"
+        )
+
+        assert schema.username == "john_doe"
+        assert schema.password == "Test1234!"
+        assert schema.slug == "my-article"
+
+    def test_multiple_validation_errors(self, setup_i18n):
+        """Should report all validation errors."""
+
+        class UserSchema(BaseSchema, PasswordValidatorMixin, UsernameValidatorMixin):
+            username: str
+            password: str
+
+        with pytest.raises(ValidationError) as exc_info:
+            UserSchema(
+                username="ab",
+                password="weak"
+            )
+
+        errors = BaseSchema.format_errors(exc_info.value)
+
+        # Both fields should have errors
+        assert 'username' in errors
+        assert 'password' in errors
+
+
