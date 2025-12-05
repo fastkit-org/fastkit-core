@@ -877,3 +877,76 @@ class TestCombinedValidators:
         assert 'password' in errors
 
 
+# ============================================================================
+# Test Edge Cases
+# ============================================================================
+
+class TestEdgeCases:
+    """Test edge cases and boundary conditions."""
+
+    def test_empty_string_validation(self, setup_i18n):
+        """Should handle empty strings."""
+
+        class TestSchema(BaseSchema):
+            name: str = min_length(1)
+
+        with pytest.raises(ValidationError):
+            TestSchema(name="")
+
+    def test_whitespace_only_string(self, setup_i18n):
+        """Should handle whitespace-only strings."""
+
+        class UserSchema(BaseSchema, UsernameValidatorMixin):
+            username: str
+
+        with pytest.raises(ValidationError):
+            UserSchema(username="   ")
+
+    def test_unicode_in_password(self, setup_i18n):
+        """Should handle Unicode characters."""
+
+        class UserSchema(BaseSchema, PasswordValidatorMixin):
+            password: str
+
+        # Unicode special chars might not be recognized
+        # Should still require ASCII special chars
+        with pytest.raises(ValidationError):
+            UserSchema(password="Test1234你好")
+
+    def test_exact_boundary_values(self, setup_i18n):
+        """Should handle exact boundary values."""
+
+        class UserSchema(BaseSchema, PasswordValidatorMixin):
+            password: str
+
+        # Exactly min length
+        schema = UserSchema(password="Test123!")
+        assert len(schema.password) == 8
+
+        # Exactly max length
+        schema = UserSchema(password="Test1234567890!A")
+        assert len(schema.password) == 16
+
+    def test_none_value(self, setup_i18n):
+        """Should handle None values."""
+
+        class TestSchema(BaseSchema):
+            name: str
+
+        with pytest.raises(ValidationError):
+            TestSchema(name=None)
+
+    def test_numeric_string_in_username(self, setup_i18n):
+        """Should handle numeric strings."""
+
+        class UserSchema(BaseSchema, UsernameValidatorMixin):
+            username: str
+
+        # Cannot start with number
+        with pytest.raises(ValidationError):
+            UserSchema(username="123")
+
+        # Can contain numbers
+        schema = UserSchema(username="user123")
+        assert schema.username == "user123"
+
