@@ -5,7 +5,7 @@ from typing import List, Dict, ClassVar
 
 class BaseSchema(BaseModel):
     # Pydantic error type → translation key mapping
-    VALIDATION_MESSAGE_MAP: ClassVar[Dict[str, str]]  = {
+    VALIDATION_MESSAGE_MAP: ClassVar[Dict[str, str]] = {
         'missing': 'validation.required',
         'string_too_short': 'validation.string_too_short',
         'string_too_long': 'validation.string_too_long',
@@ -68,7 +68,30 @@ class BaseSchema(BaseModel):
             Translated error message
         """
 
-        # Get translation key
+        # Special handling for value_error with custom message
+        # When validators raise ValueError with custom message,
+        # Pydantic wraps it as 'value_error' with the message in default_msg
+        if error_type == 'value_error':
+            # Check if message looks like it's from our custom validator
+            # (already translated by the validator itself)
+            # Pattern: "Value error, <actual message>"
+            if default_msg.startswith('Value error, '):
+                # Extract the actual message (already translated)
+                return default_msg.replace('Value error, ', '')
+
+            # If it's a generic value_error, try to translate
+            # But if no translation exists, use the actual error message
+            translation_key = 'validation.value_error'
+            params = {'field': field_name, **context}
+            translated = _(translation_key, **params)
+
+            # If translation not found, use the actual error message
+            if translated == translation_key:
+                return default_msg.replace('Value error, ', '')
+
+            return translated
+
+        # Get translation key for other error types
         translation_key = cls.VALIDATION_MESSAGE_MAP.get(error_type, 'validation.value_error')
 
         # Prepare translation parameters
@@ -80,7 +103,7 @@ class BaseSchema(BaseModel):
         # Translate
         translated = _(translation_key, **params)
 
-        # If translation key not found, _(} returns the key itself
+        # If translation key not found, _() returns the key itself
         # In that case, use default Pydantic message
         if translated == translation_key:
             return default_msg

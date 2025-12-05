@@ -1,15 +1,31 @@
 {
-  "validation": {
-    "required": "The {field} field is required",
-    "email": "The {field} must be a valid email address",
-    "url": "The {field} must be a valid URL",
-    "string_too_short": "The {field} must be at least {min_length} characters",
-    "string_too_long": "The {field} must not exceed {max_length} characters",
-    "greater_than_equal": "The {field} must be at least {ge}",
-    "less_than_equal": "The {field} must not exceed {le}",
-    "greater_than": "The {field} must be greater than {gt}",
-    "less_than": "The {field} must be less than {lt}",
-    "string_pattern_mismatch": "The {field} format is invalid",
-    "value_error": "The {field} is invalid"
-  }
+    "validation": {
+            "required": "The {field} field is required",
+            "string_too_short": "The {field} must be at least {min_length} characters",
+            "string_too_long": "The {field} must not exceed {max_length} characters",
+            "value_error": "Invalid value for {field}",
+            "email": "The {field} must be a valid email address",
+            "url": "The {field} must be a valid URL",
+            "greater_than_equal": "The {field} must be at least {ge}",
+            "less_than_equal": "The {field} must not exceed {le}",
+            "greater_than": "The {field} must be greater than {gt}",
+            "less_than": "The {field} must be less than {lt}",
+            "string_pattern_mismatch": "The {field} format is invalid",
+            "password": {
+                "min_length": "Password must be at least {min} characters",
+                "max_length": "Password must not exceed {max} characters",
+                "uppercase": "Password must contain at least one uppercase letter",
+                "lowercase": "Password must contain at least one lowercase letter",
+                "digit": "Password must contain at least one digit",
+                "special_char": "Password must contain at least one special character"
+            },
+            "username": {
+                "min_length": "Username must be at least {min} characters",
+                "max_length": "Username must not exceed {max} characters",
+                "format": "Username must start with a letter and contain only letters, numbers, and underscores"
+            },
+            "slug": {
+                "format": "Slug must be lowercase letters, numbers, and hyphens only"
+            }
+        }
 }
