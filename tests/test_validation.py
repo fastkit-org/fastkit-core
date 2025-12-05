@@ -257,3 +257,134 @@ class TestBaseSchemaTranslation:
 
             assert 'username' in errors
             assert 'username' in errors['username'][0].lower()
+
+
+# ============================================================================
+# Test Validation Rules
+# ============================================================================
+
+class TestValidationRules:
+    """Test validation rule helpers."""
+
+    def test_min_length_rule(self, setup_i18n):
+        """Should validate minimum length."""
+
+        class TestSchema(BaseSchema):
+            name: str = min_length(5)
+
+        # Valid
+        schema = TestSchema(name="hello")
+        assert schema.name == "hello"
+
+        # Invalid
+        with pytest.raises(ValidationError):
+            TestSchema(name="hi")
+
+    def test_max_length_rule(self, setup_i18n):
+        """Should validate maximum length."""
+
+        class TestSchema(BaseSchema):
+            name: str = max_length(10)
+
+        # Valid
+        schema = TestSchema(name="hello")
+        assert schema.name == "hello"
+
+        # Invalid
+        with pytest.raises(ValidationError):
+            TestSchema(name="a" * 20)
+
+    def test_length_range_rule(self, setup_i18n):
+        """Should validate length range."""
+
+        class TestSchema(BaseSchema):
+            name: str = length(3, 10)
+
+        # Valid
+        schema = TestSchema(name="hello")
+        assert schema.name == "hello"
+
+        # Too short
+        with pytest.raises(ValidationError):
+            TestSchema(name="ab")
+
+        # Too long
+        with pytest.raises(ValidationError):
+            TestSchema(name="a" * 20)
+
+    def test_min_value_rule(self, setup_i18n):
+        """Should validate minimum value."""
+
+        class TestSchema(BaseSchema):
+            age: int = min_value(18)
+
+        # Valid
+        schema = TestSchema(age=25)
+        assert schema.age == 25
+
+        # Invalid
+        with pytest.raises(ValidationError):
+            TestSchema(age=15)
+
+    def test_max_value_rule(self, setup_i18n):
+        """Should validate maximum value."""
+
+        class TestSchema(BaseSchema):
+            score: int = max_value(100)
+
+        # Valid
+        schema = TestSchema(score=95)
+        assert schema.score == 95
+
+        # Invalid
+        with pytest.raises(ValidationError):
+            TestSchema(score=150)
+
+    def test_between_rule(self, setup_i18n):
+        """Should validate value range."""
+
+        class TestSchema(BaseSchema):
+            age: int = between(18, 100)
+
+        # Valid
+        schema = TestSchema(age=25)
+        assert schema.age == 25
+
+        # Too low
+        with pytest.raises(ValidationError):
+            TestSchema(age=15)
+
+        # Too high
+        with pytest.raises(ValidationError):
+            TestSchema(age=150)
+
+    def test_pattern_rule(self, setup_i18n):
+        """Should validate regex pattern."""
+
+        class TestSchema(BaseSchema):
+            code: str = pattern(r'^[A-Z]{3}\d{3}$')
+
+        # Valid
+        schema = TestSchema(code="ABC123")
+        assert schema.code == "ABC123"
+
+        # Invalid
+        with pytest.raises(ValidationError):
+            TestSchema(code="abc123")
+
+        with pytest.raises(ValidationError):
+            TestSchema(code="ABCD1234")
+
+    def test_float_between_rule(self, setup_i18n):
+        """Should validate float ranges."""
+
+        class TestSchema(BaseSchema):
+            rating: float = between(0.0, 5.0)
+
+        # Valid
+        schema = TestSchema(rating=4.5)
+        assert schema.rating == 4.5
+
+        # Invalid
+        with pytest.raises(ValidationError):
+            TestSchema(rating=6.0)
