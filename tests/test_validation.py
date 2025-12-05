@@ -950,3 +950,100 @@ class TestEdgeCases:
         schema = UserSchema(username="user123")
         assert schema.username == "user123"
 
+
+# ============================================================================
+# Test Integration Scenarios
+# ============================================================================
+
+class TestIntegration:
+    """Test real-world integration scenarios."""
+
+    def test_user_registration_schema(self, setup_i18n):
+        """Should validate user registration."""
+
+        class UserRegisterSchema(
+            BaseSchema,
+            PasswordValidatorMixin,
+            UsernameValidatorMixin
+        ):
+            username: str
+            email: EmailStr
+            password: str
+            age: int = min_value(18)
+
+        # Valid registration
+        schema = UserRegisterSchema(
+            username="john_doe",
+            email="john@example.com",
+            password="Test1234!",
+            age=25
+        )
+
+        assert schema.username == "john_doe"
+        assert schema.email == "john@example.com"
+        assert schema.password == "Test1234!"
+        assert schema.age == 25
+
+    def test_article_creation_schema(self, setup_i18n):
+        """Should validate article creation."""
+
+        class ArticleCreateSchema(BaseSchema, SlugValidatorMixin):
+            title: str = length(5, 100)
+            slug: str
+            content: str = min_length(50)
+
+        # Valid article
+        schema = ArticleCreateSchema(
+            title="My Great Article",
+            slug="my-great-article",
+            content="A" * 100
+        )
+
+        assert schema.title == "My Great Article"
+        assert schema.slug == "my-great-article"
+
+    def test_validation_with_api_response(self, setup_i18n):
+        """Should format errors for API response."""
+
+        class UserSchema(BaseSchema, PasswordValidatorMixin, UsernameValidatorMixin):
+            username: str
+            password: str
+
+        try:
+            UserSchema(
+                username="ab",
+                password="weak"
+            )
+        except ValidationError as e:
+            errors = BaseSchema.format_errors(e)
+
+            # Should be ready for JSON response
+            assert isinstance(errors, dict)
+
+            # Each field should have list of strings
+            for field, messages in errors.items():
+                assert isinstance(messages, list)
+                for msg in messages:
+                    assert isinstance(msg, str)
+
+    def test_multilingual_validation_errors(self, setup_i18n):
+        """Should support multiple languages."""
+
+        class UserSchema(BaseSchema, PasswordValidatorMixin):
+            password: str
+
+        # English errors
+        set_locale('en')
+        try:
+            UserSchema(password="weak")
+        except ValidationError as e:
+            errors_en = BaseSchema.format_errors(e)
+            assert 'password' in errors_en['password'][0].lower()
+
+        # Spanish errors
+        set_locale('es')
+        try:
+            UserSchema(password="weak")
+        except ValidationError as e:
+            errors_es = BaseSchema.format_errors(e)
+            assert 'contraseña' in errors_es['password'][0].lower()
