@@ -388,3 +388,111 @@ class TestValidationRules:
         # Invalid
         with pytest.raises(ValidationError):
             TestSchema(rating=6.0)
+
+
+# ============================================================================
+# Test PasswordValidatorMixin
+# ============================================================================
+
+class TestPasswordValidator:
+    """Test PasswordValidatorMixin."""
+
+    def test_password_valid(self, setup_i18n):
+        """Should accept valid password."""
+
+        class UserSchema(BaseSchema, PasswordValidatorMixin):
+            password: str
+
+        schema = UserSchema(password="Test123!")
+        assert schema.password == "Test123!"
+
+    def test_password_min_length(self, setup_i18n):
+        """Should enforce minimum length."""
+
+        class UserSchema(BaseSchema, PasswordValidatorMixin):
+            password: str
+
+        with pytest.raises(ValidationError) as exc_info:
+            UserSchema(password="Test1!")
+
+        errors = BaseSchema.format_errors(exc_info.value)
+        assert 'password' in errors
+        assert '8' in errors['password'][0]
+
+    def test_password_max_length(self, setup_i18n):
+        """Should enforce maximum length."""
+
+        class UserSchema(BaseSchema, PasswordValidatorMixin):
+            password: str
+
+        with pytest.raises(ValidationError) as exc_info:
+            UserSchema(password="Test123!" * 10)
+
+        errors = BaseSchema.format_errors(exc_info.value)
+        assert 'password' in errors
+        assert '16' in errors['password'][0]
+
+    def test_password_uppercase_required(self, setup_i18n):
+        """Should require uppercase letter."""
+
+        class UserSchema(BaseSchema, PasswordValidatorMixin):
+            password: str
+
+        with pytest.raises(ValidationError) as exc_info:
+            UserSchema(password="test123!")
+
+        errors = BaseSchema.format_errors(exc_info.value)
+        assert 'password' in errors
+        assert 'uppercase' in errors['password'][0].lower()
+
+    def test_password_special_char_required(self, setup_i18n):
+        """Should require special character."""
+
+        class UserSchema(BaseSchema, PasswordValidatorMixin):
+            password: str
+
+        with pytest.raises(ValidationError) as exc_info:
+            UserSchema(password="Test1234")
+
+        errors = BaseSchema.format_errors(exc_info.value)
+        assert 'password' in errors
+        assert 'special' in errors['password'][0].lower()
+
+    def test_password_all_special_chars(self, setup_i18n):
+        """Should accept all defined special characters."""
+
+        class UserSchema(BaseSchema, PasswordValidatorMixin):
+            password: str
+
+        special_chars = '!@#$%^&*(),.?":{}|<>'
+
+        for char in special_chars:
+            schema = UserSchema(password=f"Test123{char}")
+            assert schema.password == f"Test123{char}"
+
+    def test_password_custom_length(self, setup_i18n):
+        """Should allow custom length requirements."""
+
+        class UserSchema(BaseSchema, PasswordValidatorMixin):
+            PWD_MIN_LENGTH: ClassVar[int] = 6
+            PWD_MAX_LENGTH: ClassVar[int] = 10
+            password: str
+
+        # Valid with custom length
+        schema = UserSchema(password="Test12!")
+        assert schema.password == "Test12!"
+
+    def test_password_translated_errors(self, setup_i18n):
+        """Should translate password errors."""
+        set_locale('es')
+
+        class UserSchema(BaseSchema, PasswordValidatorMixin):
+            password: str
+
+        with pytest.raises(ValidationError) as exc_info:
+            UserSchema(password="test")
+
+        errors = BaseSchema.format_errors(exc_info.value)
+        assert 'password' in errors
+        # Spanish translation
+        assert 'contraseña' in errors['password'][0].lower()
