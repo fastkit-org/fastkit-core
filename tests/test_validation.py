@@ -711,3 +711,104 @@ class TestUsernameValidator:
         # Spanish translation
         assert 'usuario' in errors['username'][0].lower()
 
+
+# ============================================================================
+# Test SlugValidatorMixin
+# ============================================================================
+
+class TestSlugValidator:
+    """Test SlugValidatorMixin."""
+
+    def test_slug_valid(self, setup_i18n):
+        """Should accept valid slug."""
+
+        class ArticleSchema(BaseSchema, SlugValidatorMixin):
+            slug: str
+
+        schema = ArticleSchema(slug="my-article-title")
+        assert schema.slug == "my-article-title"
+
+    def test_slug_lowercase_only(self, setup_i18n):
+        """Should reject uppercase letters."""
+
+        class ArticleSchema(BaseSchema, SlugValidatorMixin):
+            slug: str
+
+        with pytest.raises(ValidationError):
+            ArticleSchema(slug="My-Article")
+
+    def test_slug_no_spaces(self, setup_i18n):
+        """Should reject spaces."""
+
+        class ArticleSchema(BaseSchema, SlugValidatorMixin):
+            slug: str
+
+        with pytest.raises(ValidationError):
+            ArticleSchema(slug="my article")
+
+    def test_slug_no_special_chars(self, setup_i18n):
+        """Should reject special characters."""
+
+        class ArticleSchema(BaseSchema, SlugValidatorMixin):
+            slug: str
+
+        with pytest.raises(ValidationError):
+            ArticleSchema(slug="my_article")
+
+        with pytest.raises(ValidationError):
+            ArticleSchema(slug="my@article")
+
+        with pytest.raises(ValidationError):
+            ArticleSchema(slug="my.article")
+
+    def test_slug_no_consecutive_hyphens(self, setup_i18n):
+        """Should reject consecutive hyphens."""
+
+        class ArticleSchema(BaseSchema, SlugValidatorMixin):
+            slug: str
+
+        with pytest.raises(ValidationError):
+            ArticleSchema(slug="my--article")
+
+    def test_slug_no_start_end_hyphen(self, setup_i18n):
+        """Should reject hyphen at start or end."""
+
+        class ArticleSchema(BaseSchema, SlugValidatorMixin):
+            slug: str
+
+        # Start with hyphen
+        with pytest.raises(ValidationError):
+            ArticleSchema(slug="-my-article")
+
+        # End with hyphen
+        with pytest.raises(ValidationError):
+            ArticleSchema(slug="my-article-")
+
+    def test_slug_with_numbers(self, setup_i18n):
+        """Should accept numbers."""
+
+        class ArticleSchema(BaseSchema, SlugValidatorMixin):
+            slug: str
+
+        schema = ArticleSchema(slug="article-123")
+        assert schema.slug == "article-123"
+
+    def test_slug_single_word(self, setup_i18n):
+        """Should accept single word."""
+
+        class ArticleSchema(BaseSchema, SlugValidatorMixin):
+            slug: str
+
+        schema = ArticleSchema(slug="article")
+        assert schema.slug == "article"
+
+    def test_slug_only_numbers(self, setup_i18n):
+        """Should accept only numbers."""
+
+        class ArticleSchema(BaseSchema, SlugValidatorMixin):
+            slug: str
+
+        schema = ArticleSchema(slug="123")
+        assert schema.slug == "123"
+
+
