@@ -496,3 +496,95 @@ class TestPasswordValidator:
         assert 'password' in errors
         # Spanish translation
         assert 'contraseña' in errors['password'][0].lower()
+
+
+# ============================================================================
+# Test StrongPasswordValidatorMixin
+# ============================================================================
+
+class TestStrongPasswordValidator:
+    """Test StrongPasswordValidatorMixin."""
+
+    def test_strong_password_valid(self, setup_i18n):
+        """Should accept valid strong password."""
+
+        class UserSchema(BaseSchema, StrongPasswordValidatorMixin):
+            password: str
+
+        schema = UserSchema(password="Test12345!")
+        assert schema.password == "Test12345!"
+
+    def test_strong_password_min_length(self, setup_i18n):
+        """Should enforce 10 character minimum."""
+
+        class UserSchema(BaseSchema, StrongPasswordValidatorMixin):
+            password: str
+
+        with pytest.raises(ValidationError) as exc_info:
+            UserSchema(password="Test123!")
+
+        errors = BaseSchema.format_errors(exc_info.value)
+        assert 'password' in errors
+        assert '10' in errors['password'][0]
+
+    def test_strong_password_uppercase_required(self, setup_i18n):
+        """Should require uppercase letter."""
+
+        class UserSchema(BaseSchema, StrongPasswordValidatorMixin):
+            password: str
+
+        with pytest.raises(ValidationError):
+            UserSchema(password="test12345!")
+
+    def test_strong_password_lowercase_required(self, setup_i18n):
+        """Should require lowercase letter."""
+
+        class UserSchema(BaseSchema, StrongPasswordValidatorMixin):
+            password: str
+
+        with pytest.raises(ValidationError):
+            UserSchema(password="TEST12345!")
+
+    def test_strong_password_digit_required(self, setup_i18n):
+        """Should require digit."""
+
+        class UserSchema(BaseSchema, StrongPasswordValidatorMixin):
+            password: str
+
+        with pytest.raises(ValidationError):
+            UserSchema(password="TestPassword!")
+
+    def test_strong_password_special_required(self, setup_i18n):
+        """Should require special character."""
+
+        class UserSchema(BaseSchema, StrongPasswordValidatorMixin):
+            password: str
+
+        with pytest.raises(ValidationError):
+            UserSchema(password="Test1234567")
+
+    def test_strong_password_all_requirements(self, setup_i18n):
+        """Should enforce all requirements together."""
+
+        class UserSchema(BaseSchema, StrongPasswordValidatorMixin):
+            password: str
+
+        # Missing uppercase
+        with pytest.raises(ValidationError):
+            UserSchema(password="test12345!")
+
+        # Missing lowercase
+        with pytest.raises(ValidationError):
+            UserSchema(password="TEST12345!")
+
+        # Missing digit
+        with pytest.raises(ValidationError):
+            UserSchema(password="TestTest!!")
+
+        # Missing special
+        with pytest.raises(ValidationError):
+            UserSchema(password="Test123456")
+
+        # Valid - has all
+        schema = UserSchema(password="Test12345!")
+        assert schema.password == "Test12345!"
