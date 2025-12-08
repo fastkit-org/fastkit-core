@@ -234,3 +234,80 @@ class TestErrorResponse:
         assert 'message' in content
         assert 'errors' in content
         assert content['success'] is False
+
+class TestPaginatedResponse:
+    """Test paginated_response formatter."""
+
+    def test_paginated_basic(self):
+        """Should create paginated response."""
+        items = [{'id': 1}, {'id': 2}]
+        pagination = {
+            'page': 1,
+            'per_page': 20,
+            'total': 2,
+            'total_pages': 1,
+            'has_next': False,
+            'has_prev': False
+        }
+
+        response = paginated_response(items=items, pagination=pagination)
+
+        assert response.status_code == 200
+        content = json.loads(response.body)
+        assert content['success'] is True
+        assert content['data'] == items
+        assert content['pagination'] == pagination
+
+    def test_paginated_with_message(self):
+        """Should include message when provided."""
+        response = paginated_response(
+            items=[],
+            pagination={'page': 1, 'total': 0},
+            message="No results"
+        )
+
+        content = json.loads(response.body)
+        assert content['message'] == "No results"
+
+    def test_paginated_without_message(self):
+        """Should not include message when not provided."""
+        response = paginated_response(
+            items=[],
+            pagination={'page': 1}
+        )
+
+        content = json.loads(response.body)
+        assert 'message' not in content
+
+    def test_paginated_empty_items(self):
+        """Should handle empty items list."""
+        response = paginated_response(
+            items=[],
+            pagination={'page': 1, 'total': 0}
+        )
+
+        content = json.loads(response.body)
+        assert content['data'] == []
+
+    def test_paginated_format(self):
+        """Should match expected format."""
+        response = paginated_response(
+            items=[{'id': 1}],
+            pagination={'page': 1, 'per_page': 10, 'total': 100}
+        )
+
+        content = json.loads(response.body)
+        assert 'success' in content
+        assert 'data' in content
+        assert 'pagination' in content
+        assert content['success'] is True
+
+    def test_paginated_custom_status(self):
+        """Should use custom status code."""
+        response = paginated_response(
+            items=[],
+            pagination={'page': 1},
+            status_code=206
+        )
+
+        assert response.status_code == 206
