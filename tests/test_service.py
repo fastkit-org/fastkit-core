@@ -511,3 +511,72 @@ class TestCreateOperations:
         count = service.count()
         assert count == 0
 
+# ============================================================================
+# Test UPDATE Operations
+# ============================================================================
+class TestUpdateOperations:
+    """Test service update operations."""
+
+    def test_update_basic(self, service, sample_user):
+        """Should update user."""
+        update_data = UserUpdate(name="Jane Doe")
+
+        updated = service.update(sample_user.id, update_data)
+
+        assert updated is not None
+        assert updated.name == "Jane Doe"
+        assert updated.email == sample_user.email  # Unchanged
+
+    def test_update_multiple_fields(self, service, sample_user):
+        """Should update multiple fields."""
+        update_data = UserUpdate(name="Jane Doe", age=35)
+
+        updated = service.update(sample_user.id, update_data)
+
+        assert updated.name == "Jane Doe"
+        assert updated.age == 35
+
+    def test_update_nonexistent(self, service):
+        """Should return None for nonexistent record."""
+        update_data = UserUpdate(name="Nobody")
+
+        updated = service.update(9999, update_data)
+
+        assert updated is None
+
+    def test_update_with_commit_false(self, service, sample_user, session):
+        """Should not commit when commit=False."""
+        original_name = sample_user.name
+        update_data = UserUpdate(name="Changed")
+
+        service.update(sample_user.id, update_data, commit=False)
+
+        # Rollback
+        session.rollback()
+
+        # Should be unchanged
+        found = service.find(sample_user.id)
+        assert found.name == original_name
+
+    def test_update_many(self, service):
+        """Should update multiple records."""
+        # Create users
+        for i in range(5):
+            service.create(UserCreate(
+                name=f"User {i}",
+                email=f"user{i}@example.com",
+                status='active'
+            ))
+
+        # Update all active users
+        update_data = UserUpdate(status='inactive')
+        count = service.update_many(
+            filters={'status': 'active'},
+            data=update_data
+        )
+
+        assert count == 5
+
+        # Verify
+        inactive_count = service.count(status='inactive')
+        assert inactive_count == 5
