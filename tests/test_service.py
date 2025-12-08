@@ -124,3 +124,51 @@ class TestServiceInit:
         assert hasattr(service, 'repository')
         assert hasattr(service.repository, 'create')
         assert hasattr(service.repository, 'get')
+
+# ============================================================================
+# Test Helper Methods
+# ============================================================================
+
+class TestHelperMethods:
+    """Test service helper methods."""
+
+    def test_to_dict_with_pydantic_model(self, service):
+        """Should convert Pydantic model to dict."""
+        user_data = UserCreate(
+            name="John Doe",
+            email="john@example.com",
+            age=30
+        )
+
+        result = service._to_dict(user_data)
+
+        assert isinstance(result, dict)
+        assert result['name'] == "John Doe"
+        assert result['email'] == "john@example.com"
+        assert result['age'] == 30
+
+    def test_to_dict_with_dict(self, service):
+        """Should handle dict input."""
+        data = {'name': 'John', 'email': 'john@example.com'}
+
+        result = service._to_dict(data)
+
+        assert result == data
+        assert isinstance(result, dict)
+
+    def test_to_dict_exclude_unset(self, service):
+        """Should exclude unset values."""
+        user_data = UserUpdate(name="John")
+
+        result = service._to_dict(user_data)
+
+        assert 'name' in result
+        assert 'email' not in result  # Not set, should be excluded
+        assert 'age' not in result
+
+    def test_to_dict_invalid_type(self, service):
+        """Should raise error for invalid type."""
+        with pytest.raises(ValueError) as exc_info:
+            service._to_dict("invalid_string")
+
+        assert "Cannot convert" in str(exc_info.value)
