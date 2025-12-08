@@ -793,3 +793,127 @@ class TestDependencies:
 
         data = response.json()
         assert data['locale'] == "es"
+
+
+# ============================================================================
+# Test Integration Scenarios
+# ============================================================================
+class TestIntegration:
+    """Test real-world integration scenarios."""
+
+    def test_complete_api_flow(self, app, client):
+        """Should handle complete API request/response flow."""
+        app.add_middleware(RequestIDMiddleware)
+        app.add_middleware(LocaleMiddleware)
+
+        @app.post("/users")
+        def create_user(request: Request):
+            # Access request ID
+            request_id = request.state.request_id
+
+            return success_response(
+                data={'id': 1, 'name': 'John', 'request_id': request_id},
+                message="User created"
+            )
+
+        response = client.post("/users", json={'name': 'John'})
+
+        assert response.status_code == 200
+        assert 'X-Request-ID' in response.headers
+        data = response.json()
+        assert data['success'] is True
+        assert data['data']['name'] == 'John'
+        assert data['message'] == "User created"
+
+    def test_pagination_flow(self, app, client):
+        """Should handle paginated API response."""
+
+        @app.get("/items")
+        def get_items(pagination: dict = Depends(get_pagination)):
+            # Simulate paginated data
+            items = [{'id': i} for i in range(10)]
+            meta = {
+                'page': pagination['page'],
+                'per_page': pagination['per_page'],
+                'total': 100,
+                'total_pages': 10,
+                'has_next': True,
+                'has_prev': False
+            }
+            return paginated_response(items=items, pagination=meta)
+
+        response = client.get("/items?page=1&per_page=10")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data['success'] is True
+        assert len(data['data']) == 10
+        assert 'pagination' in data
+        assert data['pagination']['page'] == 1
+
+    def test_error_handling_flow(self, app, client):
+        """Should handle errors gracefully."""
+
+        @app.get("/users/{user_id}")
+        def get_user(user_id: int):
+            if user_id == 999:
+                raise NotFoundException("User not found")
+            return success_response(data={'id': user_id})
+
+        # Success case
+        response = client.get("/users/1")
+        assert response.status_code == 200
+
+        # Error case
+        response = client.get("/users/999")
+        assert response.status_code == 404
+        data = response.json()
+        assert data['success'] is False
+        assert "not found" in data['message'].lower()
+
+    def test_validation_flow(self, app, client):
+        """Should handle validation errors."""
+
+        class UserCreate(BaseSchema):
+            email: EmailStr
+            age: int
+
+        @app.post("/users")
+        def create_user(data: UserCreate):
+            return success_response(data=data.model_dump())
+
+        # Valid data
+        response = client.post("/users", json={
+            "email": "test@example.com",
+            "age": 25
+        })
+        assert response.status_code == 200
+
+        # Invalid email
+        response = client.post("/users", json={
+            "email": "invalid",
+            "age": 25
+        })
+        assert response.status_code == 422
+        data = response.json()
+        assert data['success'] is False
+        assert 'errors' in data
+
+    def test_multilingual_api(self, app, client, setup_i18n):
+        """Should support multiple languages."""
+        app.add_middleware(LocaleMiddleware)
+
+        @app.get("/error")
+        def error_route():
+            from fastkit_core.i18n import _
+            raise FastKitException(_('validation.failed'))
+
+        # English
+        response = client.get("/error", headers={"Accept-Language": "en"})
+        data = response.json()
+        assert "Validation failed" in data['message']
+
+        # Spanish
+        response = client.get("/error", headers={"Accept-Language": "es"})
+        data = response.json()
+        assert "Validación fallida" in data['message']
