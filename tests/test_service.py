@@ -420,3 +420,94 @@ class TestPagination:
         assert len(users) == 5
         assert all(u.status == 'active' for u in users)
         assert meta['total'] == 15  # Half are active
+
+# ============================================================================
+# Test CREATE Operations
+# ============================================================================
+class TestCreateOperations:
+    """Test service create operations."""
+
+    def test_create_basic(self, service):
+        """Should create user."""
+        user_data = UserCreate(
+            name="John Doe",
+            email="john@example.com",
+            age=30
+        )
+
+        user = service.create(user_data)
+
+        assert user.id is not None
+        assert user.name == "John Doe"
+        assert user.email == "john@example.com"
+        assert user.age == 30
+
+    def test_create_with_dict(self, service):
+        """Should create from dict."""
+        user_data = {
+            'name': 'Jane Doe',
+            'email': 'jane@example.com',
+            'age': 25
+        }
+
+        user = service.create(user_data)
+
+        assert user.id is not None
+        assert user.name == "Jane Doe"
+
+    def test_create_without_optional_fields(self, service):
+        """Should create without optional fields."""
+        user_data = UserCreate(
+            name="John Doe",
+            email="john@example.com"
+        )
+
+        user = service.create(user_data)
+
+        assert user.id is not None
+        assert user.age is None
+
+    def test_create_with_commit_false(self, service, session):
+        """Should not commit when commit=False."""
+        user_data = UserCreate(
+            name="John Doe",
+            email="john@example.com"
+        )
+
+        user = service.create(user_data, commit=False)
+
+        # Rollback
+        session.rollback()
+
+        # Should not exist after rollback
+        found = service.find(user.id)
+        assert found is None
+
+    def test_create_many(self, service):
+        """Should create multiple users."""
+        users_data = [
+            UserCreate(name=f"User {i}", email=f"user{i}@example.com")
+            for i in range(3)
+        ]
+
+        users = service.create_many(users_data)
+
+        assert len(users) == 3
+        assert all(u.id is not None for u in users)
+
+    def test_create_many_with_commit_false(self, service, session):
+        """Should not commit bulk create when commit=False."""
+        users_data = [
+            UserCreate(name=f"User {i}", email=f"user{i}@example.com")
+            for i in range(3)
+        ]
+
+        users = service.create_many(users_data, commit=False)
+
+        # Rollback
+        session.rollback()
+
+        # Should not exist
+        count = service.count()
+        assert count == 0
+
