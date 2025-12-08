@@ -917,3 +917,84 @@ class TestIntegration:
         response = client.get("/error", headers={"Accept-Language": "es"})
         data = response.json()
         assert "Validación fallida" in data['message']
+
+
+# ============================================================================
+# Test Edge Cases
+# ============================================================================
+class TestEdgeCases:
+    """Test edge cases and error conditions."""
+
+    def test_response_with_empty_data(self):
+        """Should handle empty data structures."""
+        response = success_response(data={})
+        content = json.loads(response.body)
+        assert content['data'] == {}
+
+    def test_response_with_complex_nested_data(self):
+        """Should handle complex nested structures."""
+        data = {
+            'user': {
+                'profile': {
+                    'settings': {
+                        'theme': 'dark'
+                    }
+                }
+            }
+        }
+        response = success_response(data=data)
+        content = json.loads(response.body)
+        assert content['data'] == data
+
+    def test_exception_with_empty_message(self):
+        """Should handle empty error message."""
+        exc = FastKitException(message="")
+        assert exc.message == ""
+
+    def test_pagination_with_zero_items(self):
+        """Should handle empty pagination."""
+        response = paginated_response(
+            items=[],
+            pagination={
+                'page': 1,
+                'per_page': 20,
+                'total': 0,
+                'total_pages': 0,
+                'has_next': False,
+                'has_prev': False
+            }
+        )
+        content = json.loads(response.body)
+        assert content['data'] == []
+        assert content['pagination']['total'] == 0
+
+    def test_locale_with_empty_header(self, setup_i18n):
+        """Should handle empty Accept-Language header."""
+        app = FastAPI()
+        app.add_middleware(LocaleMiddleware)
+
+        @app.get("/test")
+        def test_route():
+            from fastkit_core.i18n import get_locale
+            return {"locale": get_locale()}
+
+        client = TestClient(app)
+        response = client.get("/test", headers={"Accept-Language": ""})
+
+        # Should fallback to default
+        data = response.json()
+        assert data['locale'] == "en"
+
+    def test_pagination_with_invalid_types(self):
+        """Should validate pagination parameter types."""
+        app = FastAPI()
+
+        @app.get("/test")
+        def test_route(pagination: dict = Depends(get_pagination)):
+            return pagination
+
+        client = TestClient(app)
+
+        # String instead of int
+        response = client.get("/test?page=abc")
+        assert response.status_code == 422
