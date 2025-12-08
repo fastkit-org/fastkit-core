@@ -107,3 +107,76 @@ def app(setup_i18n):
 def client(app):
     """Create test client."""
     return TestClient(app)
+
+# ============================================================================
+# Test Response Formatters
+# ============================================================================
+class TestSuccessResponse:
+    """Test success_response formatter."""
+
+    def test_success_basic(self):
+        """Should create basic success response."""
+        response = success_response()
+
+        assert response.status_code == 200
+        content = json.loads(response.body)
+        assert content['success'] is True
+        assert 'data' in content
+
+    def test_success_with_data(self):
+        """Should include data in response."""
+        data = {'id': 1, 'name': 'Test'}
+        response = success_response(data=data)
+
+        content = json.loads(response.body)
+        assert content['success'] is True
+        assert content['data'] == data
+
+    def test_success_with_message(self):
+        """Should include message when provided."""
+        response = success_response(message="Operation successful")
+
+        content = json.loads(response.body)
+        assert content['success'] is True
+        assert content['message'] == "Operation successful"
+
+    def test_success_without_message(self):
+        """Should not include message when not provided."""
+        response = success_response(data={'test': 'value'})
+
+        content = json.loads(response.body)
+        assert 'message' not in content
+
+    def test_success_custom_status(self):
+        """Should use custom status code."""
+        response = success_response(status_code=201)
+
+        assert response.status_code == 201
+
+    def test_success_with_list_data(self):
+        """Should handle list data."""
+        data = [{'id': 1}, {'id': 2}]
+        response = success_response(data=data)
+
+        content = json.loads(response.body)
+        assert content['data'] == data
+
+    def test_success_with_none_data(self):
+        """Should handle None data."""
+        response = success_response(data=None)
+
+        content = json.loads(response.body)
+        assert content['data'] is None
+
+    def test_success_format(self):
+        """Should match expected format."""
+        response = success_response(
+            data={'test': 'value'},
+            message="Success"
+        )
+
+        content = json.loads(response.body)
+        assert 'success' in content
+        assert 'data' in content
+        assert 'message' in content
+        assert content['success'] is True
