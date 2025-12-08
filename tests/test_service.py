@@ -686,3 +686,146 @@ class TestValidationHooks:
             service.update(sample_user.id, UserUpdate(age=15))
 
         assert "Age must be 18" in str(exc_info.value)
+
+# ============================================================================
+# Test Lifecycle Hooks
+# ============================================================================
+class TestLifecycleHooks:
+    """Test lifecycle hooks."""
+
+    def test_before_create_hook(self, repository):
+        """Should call before_create hook."""
+
+        class HookService(BaseCrudService[User, UserCreate, UserUpdate]):
+            def before_create(self, data: dict) -> dict:
+                # Add prefix to name
+                data['name'] = f"Mr. {data['name']}"
+                return data
+
+        service = HookService(repository)
+
+        user = service.create(UserCreate(
+            name="John Doe",
+            email="john@example.com"
+        ))
+
+        assert user.name == "Mr. John Doe"
+
+    def test_after_create_hook(self, repository):
+        """Should call after_create hook."""
+        hook_called = []
+
+        class HookService(BaseCrudService[User, UserCreate, UserUpdate]):
+            def after_create(self, instance: User) -> None:
+                hook_called.append(instance.id)
+
+        service = HookService(repository)
+
+        user = service.create(UserCreate(
+            name="John Doe",
+            email="john@example.com"
+        ))
+
+        assert len(hook_called) == 1
+        assert hook_called[0] == user.id
+
+    def test_after_create_not_called_without_commit(self, repository):
+        """Should not call after_create when commit=False."""
+        hook_called = []
+
+        class HookService(BaseCrudService[User, UserCreate, UserUpdate]):
+            def after_create(self, instance: User) -> None:
+                hook_called.append(instance.id)
+
+        service = HookService(repository)
+
+        service.create(
+            UserCreate(name="John", email="john@example.com"),
+            commit=False
+        )
+
+        assert len(hook_called) == 0
+
+    def test_before_update_hook(self, repository, sample_user):
+        """Should call before_update hook."""
+
+        class HookService(BaseCrudService[User, UserCreate, UserUpdate]):
+            def before_update(self, id, data: dict) -> dict:
+                # Convert name to uppercase
+                if 'name' in data:
+                    data['name'] = data['name'].upper()
+                return data
+
+        service = HookService(repository)
+
+        updated = service.update(sample_user.id, UserUpdate(name="john doe"))
+
+        assert updated.name == "JOHN DOE"
+
+    def test_after_update_hook(self, repository, sample_user):
+        """Should call after_update hook."""
+        hook_called = []
+
+        class HookService(BaseCrudService[User, UserCreate, UserUpdate]):
+            def after_update(self, instance: User) -> None:
+                hook_called.append(instance.id)
+
+        service = HookService(repository)
+
+        service.update(sample_user.id, UserUpdate(name="Jane"))
+
+        assert len(hook_called) == 1
+        assert hook_called[0] == sample_user.id
+
+    def test_before_delete_hook(self, repository, sample_user):
+        """Should call before_delete hook."""
+
+        class HookService(BaseCrudService[User, UserCreate, UserUpdate]):
+            def before_delete(self, id) -> None:
+                user = self.find(id)
+                if user and user.status == 'active':
+                    raise ValueError("Cannot delete active user")
+
+        service = HookService(repository)
+
+        # Should prevent deletion
+        with pytest.raises(ValueError) as exc_info:
+            service.delete(sample_user.id)
+
+        assert "Cannot delete active user" in str(exc_info.value)
+
+    def test_after_delete_hook(self, repository, sample_user):
+        """Should call after_delete hook."""
+        hook_called = []
+
+        class HookService(BaseCrudService[User, UserCreate, UserUpdate]):
+            def after_delete(self, id) -> None:
+                hook_called.append(id)
+
+        service = HookService(repository)
+
+        service.delete(sample_user.id)
+
+        assert len(hook_called) == 1
+        assert hook_called[0] == sample_user.id
+
+    def test_hook_execution_order(self, repository):
+        """Should execute hooks in correct order."""
+        execution_order = []
+
+        class HookService(BaseCrudService[User, UserCreate, UserUpdate]):
+            def validate_create(self, data: UserCreate) -> None:
+                execution_order.append('validate')
+
+            def before_create(self, data: dict) -> dict:
+                execution_order.append('before')
+                return data
+
+            def after_create(self, instance: User) -> None:
+                execution_order.append('after')
+
+        service = HookService(repository)
+
+        service.create(UserCreate(name="John", email="john@example.com"))
+
+        assert execution_order == ['validate', 'before', 'after']
