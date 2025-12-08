@@ -350,3 +350,73 @@ class TestReadOperations:
         count = service.count(age=25)
 
         assert count == 2
+
+# ============================================================================
+# Test Pagination
+# ============================================================================
+
+class TestPagination:
+    """Test pagination functionality."""
+
+    def test_paginate_first_page(self, service):
+        """Should paginate first page."""
+        for i in range(25):
+            service.create(UserCreate(
+                name=f"User {i}",
+                email=f"user{i}@example.com"
+            ))
+
+        users, meta = service.paginate(page=1, per_page=10)
+
+        assert len(users) == 10
+        assert meta['page'] == 1
+        assert meta['per_page'] == 10
+        assert meta['total'] == 25
+        assert meta['total_pages'] == 3
+        assert meta['has_next'] is True
+        assert meta['has_prev'] is False
+
+    def test_paginate_second_page(self, service):
+        """Should paginate second page."""
+        for i in range(25):
+            service.create(UserCreate(
+                name=f"User {i}",
+                email=f"user{i}@example.com"
+            ))
+
+        users, meta = service.paginate(page=2, per_page=10)
+
+        assert len(users) == 10
+        assert meta['page'] == 2
+        assert meta['has_next'] is True
+        assert meta['has_prev'] is True
+
+    def test_paginate_last_page(self, service):
+        """Should handle last page correctly."""
+        for i in range(25):
+            service.create(UserCreate(
+                name=f"User {i}",
+                email=f"user{i}@example.com"
+            ))
+
+        users, meta = service.paginate(page=3, per_page=10)
+
+        assert len(users) == 5
+        assert meta['page'] == 3
+        assert meta['has_next'] is False
+        assert meta['has_prev'] is True
+
+    def test_paginate_with_filters(self, service):
+        """Should paginate with filters."""
+        for i in range(30):
+            service.create(UserCreate(
+                name=f"User {i}",
+                email=f"user{i}@example.com",
+                status='active' if i % 2 == 0 else 'inactive'
+            ))
+
+        users, meta = service.paginate(page=1, per_page=5, status='active')
+
+        assert len(users) == 5
+        assert all(u.status == 'active' for u in users)
+        assert meta['total'] == 15  # Half are active
