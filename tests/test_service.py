@@ -967,3 +967,51 @@ class TestIntegration:
         service.delete(user.id)
         assert 'before_delete' in execution_log
         assert 'after_delete' in execution_log
+
+# ============================================================================
+# Test Edge Cases
+# ============================================================================
+
+class TestEdgeCases:
+    """Test edge cases and error conditions."""
+
+    def test_create_with_empty_dict(self, service):
+        """Should handle empty dict gracefully."""
+        with pytest.raises(Exception):  # Will fail due to missing required fields
+            service.create({})
+
+    def test_update_with_no_changes(self, service, sample_user):
+        """Should handle update with no changes."""
+        updated = service.update(sample_user.id, UserUpdate())
+
+        # Should still return the instance
+        assert updated is not None
+
+    def test_pagination_empty_results(self, service):
+        """Should handle pagination with no results."""
+        users, meta = service.paginate(page=1, per_page=10)
+
+        assert len(users) == 0
+        assert meta['total'] == 0
+        assert meta['total_pages'] == 0
+
+    def test_pagination_beyond_last_page(self, service):
+        """Should handle page beyond total pages."""
+        service.create(UserCreate(name="User", email="user@example.com"))
+
+        users, meta = service.paginate(page=100, per_page=10)
+
+        assert len(users) == 0
+        assert meta['page'] == 100
+
+    def test_count_with_no_records(self, service):
+        """Should return 0 for empty table."""
+        count = service.count()
+
+        assert count == 0
+
+    def test_filter_with_no_matches(self, service, sample_user):
+        """Should return empty list when no matches."""
+        users = service.filter(name="Nonexistent")
+
+        assert users == []
