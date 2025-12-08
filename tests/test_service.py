@@ -580,3 +580,59 @@ class TestUpdateOperations:
         # Verify
         inactive_count = service.count(status='inactive')
         assert inactive_count == 5
+
+# ============================================================================
+# Test DELETE Operations
+# ============================================================================
+class TestDeleteOperations:
+    """Test service delete operations."""
+
+    def test_delete_basic(self, service, sample_user):
+        """Should delete user."""
+        user_id = sample_user.id
+
+        deleted = service.delete(user_id)
+
+        assert deleted is True
+
+        # Verify
+        found = service.find(user_id)
+        assert found is None
+
+    def test_delete_nonexistent(self, service):
+        """Should return False for nonexistent record."""
+        deleted = service.delete(9999)
+
+        assert deleted is False
+
+    def test_delete_with_commit_false(self, service, sample_user, session):
+        """Should not commit when commit=False."""
+        user_id = sample_user.id
+
+        service.delete(user_id, commit=False)
+
+        # Rollback
+        session.rollback()
+
+        # Should still exist
+        found = service.find(user_id)
+        assert found is not None
+
+    def test_delete_many(self, service):
+        """Should delete multiple records."""
+        # Create users
+        for i in range(5):
+            service.create(UserCreate(
+                name=f"User {i}",
+                email=f"user{i}@example.com",
+                status='inactive'
+            ))
+
+        # Delete inactive users
+        count = service.delete_many(filters={'status': 'inactive'})
+
+        assert count == 5
+
+        # Verify
+        remaining = service.count()
+        assert remaining == 0
