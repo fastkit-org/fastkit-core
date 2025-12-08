@@ -396,3 +396,129 @@ class TestExceptions:
         exc = ForbiddenException(message="No permission")
 
         assert exc.message == "No permission"
+
+# ============================================================================
+# Test Exception Handlers
+# ============================================================================
+class TestExceptionHandlers:
+    """Test exception handlers registration."""
+
+    def test_register_exception_handlers(self, app):
+        """Should register all handlers."""
+        # Handlers should be registered
+        assert FastKitException in app.exception_handlers
+
+    def test_handle_fastkit_exception(self, app, client):
+        """Should handle FastKitException."""
+
+        @app.get("/test")
+        def test_route():
+            raise NotFoundException("Resource not found")
+
+        response = client.get("/test")
+
+        assert response.status_code == 404
+        data = response.json()
+        assert data['success'] is False
+        assert "not found" in data['message'].lower()
+
+    def test_handle_fastkit_exception_with_errors(self, app, client):
+        """Should include errors in response."""
+
+        @app.get("/test")
+        def test_route():
+            raise ValidationException(
+                errors={'field': ['error']},
+                message="Validation failed"
+            )
+
+        response = client.get("/test")
+
+        assert response.status_code == 422
+        data = response.json()
+        assert data['success'] is False
+        assert 'errors' in data
+        assert data['errors'] == {'field': ['error']}
+
+    def test_handle_pydantic_validation_error(self, app, client):
+        """Should handle Pydantic ValidationError."""
+
+        class TestSchema(BaseSchema):
+            email: EmailStr
+
+        @app.post("/test")
+        def test_route(data: TestSchema):
+            return {"ok": True}
+
+        response = client.post("/test", json={"email": "invalid"})
+
+        assert response.status_code == 422
+        data = response.json()
+        assert data['success'] is False
+        assert 'errors' in data
+
+    def test_handle_fastapi_validation_error(self, app, client):
+        """Should handle FastAPI request validation."""
+
+        @app.get("/test")
+        def test_route(age: int):
+            return {"age": age}
+
+        response = client.get("/test?age=invalid")
+
+        assert response.status_code == 422
+        data = response.json()
+        assert data['success'] is False
+
+    def test_handle_generic_exception_debug_mode(self, setup_i18n):
+        """Should show error details in debug mode."""
+        # Create fresh app for this test
+        from fastapi import FastAPI
+        from fastkit_core.config import get_config_manager
+
+        # Set debug mode BEFORE creating app
+        config = get_config_manager()
+        config.set('app.DEBUG', True)
+
+        app = FastAPI()
+        register_exception_handlers(app)
+
+        @app.get("/test")
+        def test_route():
+            raise ValueError("Something went wrong")
+
+        client = TestClient(app, raise_server_exceptions=False)
+        response = client.get("/test")
+
+        assert response.status_code == 500
+        data = response.json()
+        assert data['success'] is False
+        assert "Something went wrong" in data['message']
+
+    def test_handle_generic_exception_production_mode(self, setup_i18n):
+        """Should hide error details in production."""
+        # Create fresh app for this test
+        from fastapi import FastAPI
+        from fastkit_core.config import get_config_manager
+
+        # Set production mode BEFORE creating app
+        config = get_config_manager()
+        config.set('app.DEBUG', False)
+
+        app = FastAPI()
+        register_exception_handlers(app)
+
+        @app.get("/test")
+        def test_route():
+            raise ValueError("Internal details")
+
+        client = TestClient(app, raise_server_exceptions=False)
+        response = client.get("/test")
+
+        assert response.status_code == 500
+        data = response.json()
+        assert data['success'] is False
+        # Should not expose internal error
+        assert "Internal details" not in data['message']
+        # Should show generic error message
+        assert "Internal server error" in data['message'] or "error" in data['message'].lower()
