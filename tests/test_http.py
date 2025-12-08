@@ -311,3 +311,88 @@ class TestPaginatedResponse:
         )
 
         assert response.status_code == 206
+
+# ============================================================================
+# Test Custom Exceptions
+# ============================================================================
+class TestExceptions:
+    """Test custom exception classes."""
+
+    def test_fastkit_exception_basic(self):
+        """Should create FastKitException."""
+        exc = FastKitException(message="Error occurred")
+
+        assert exc.message == "Error occurred"
+        assert exc.status_code == 400
+        assert exc.errors is None
+
+    def test_fastkit_exception_custom_status(self):
+        """Should accept custom status code."""
+        exc = FastKitException(message="Error", status_code=500)
+
+        assert exc.status_code == 500
+
+    def test_fastkit_exception_with_errors(self):
+        """Should include errors dict."""
+        errors = {'field': ['error']}
+        exc = FastKitException(message="Error", errors=errors)
+
+        assert exc.errors == errors
+
+    def test_not_found_exception(self):
+        """Should create 404 exception."""
+        exc = NotFoundException()
+
+        assert exc.status_code == 404
+        assert "not found" in exc.message.lower()
+
+    def test_not_found_exception_custom_message(self):
+        """Should accept custom message."""
+        exc = NotFoundException(message="User not found")
+
+        assert exc.message == "User not found"
+        assert exc.status_code == 404
+
+    def test_validation_exception(self):
+        """Should create 422 exception."""
+        errors = {'email': ['Invalid']}
+        exc = ValidationException(errors=errors)
+
+        assert exc.status_code == 422
+        assert exc.errors == errors
+        assert "validation" in exc.message.lower()
+
+    def test_validation_exception_custom_message(self):
+        """Should accept custom message."""
+        exc = ValidationException(
+            errors={'field': ['error']},
+            message="Custom validation error"
+        )
+
+        assert exc.message == "Custom validation error"
+
+    def test_unauthorized_exception(self):
+        """Should create 401 exception."""
+        exc = UnauthorizedException()
+
+        assert exc.status_code == 401
+        assert "unauthorized" in exc.message.lower()
+
+    def test_unauthorized_exception_custom_message(self):
+        """Should accept custom message."""
+        exc = UnauthorizedException(message="Token expired")
+
+        assert exc.message == "Token expired"
+
+    def test_forbidden_exception(self):
+        """Should create 403 exception."""
+        exc = ForbiddenException()
+
+        assert exc.status_code == 403
+        assert "forbidden" in exc.message.lower()
+
+    def test_forbidden_exception_custom_message(self):
+        """Should accept custom message."""
+        exc = ForbiddenException(message="No permission")
+
+        assert exc.message == "No permission"
