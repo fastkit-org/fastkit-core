@@ -702,3 +702,94 @@ class TestLocaleMiddleware:
         client.get("/test")
 
         assert detected_locale == "en"  # Default
+
+
+# ============================================================================
+# Test Dependencies
+# ============================================================================
+class TestDependencies:
+    """Test FastAPI dependencies."""
+
+    def test_get_pagination_default(self):
+        """Should provide default pagination params."""
+        result = get_pagination()
+
+        assert result['page'] == 1
+        assert result['per_page'] == 20
+        assert result['offset'] == 0
+
+    def test_get_pagination_custom(self):
+        """Should accept custom pagination params."""
+        result = get_pagination(page=3, per_page=50)
+
+        assert result['page'] == 3
+        assert result['per_page'] == 50
+        assert result['offset'] == 100  # (3-1) * 50
+
+    def test_get_pagination_calculates_offset(self):
+        """Should calculate correct offset."""
+        result = get_pagination(page=5, per_page=10)
+
+        assert result['offset'] == 40
+
+    def test_get_pagination_in_route(self):
+        """Should work as FastAPI dependency."""
+        app = FastAPI()
+
+        @app.get("/test")
+        def test_route(pagination: dict = Depends(get_pagination)):
+            return pagination
+
+        client = TestClient(app)
+        response = client.get("/test?page=2&per_page=15")
+
+        data = response.json()
+        assert data['page'] == 2
+        assert data['per_page'] == 15
+
+    def test_get_pagination_validation(self):
+        """Should validate pagination params."""
+        app = FastAPI()
+
+        @app.get("/test")
+        def test_route(pagination: dict = Depends(get_pagination)):
+            return pagination
+
+        client = TestClient(app)
+
+        # Page must be >= 1
+        response = client.get("/test?page=0")
+        assert response.status_code == 422
+
+        # Per page must be <= 100
+        response = client.get("/test?per_page=200")
+        assert response.status_code == 422
+
+    def test_get_locale_from_query(self, setup_i18n):
+        """Should get locale from query parameter."""
+        result = get_locale(locale="es")
+
+        assert result == "es"
+
+    def test_get_locale_from_context(self, setup_i18n):
+        """Should get locale from context when not in query."""
+        from fastkit_core.i18n import set_locale
+        set_locale('fr')
+
+        result = get_locale(locale=None)
+
+        assert result == "fr"
+
+    def test_get_locale_in_route(self, setup_i18n):
+        """Should work as FastAPI dependency."""
+        app = FastAPI()
+
+        @app.get("/test")
+        def test_route(locale: str = Depends(get_locale)):
+            return {"locale": locale}
+
+        client = TestClient(app)
+        response = client.get("/test?locale=es")
+
+        data = response.json()
+        assert data['locale'] == "es"
