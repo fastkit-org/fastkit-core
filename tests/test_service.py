@@ -61,3 +61,46 @@ class UserUpdate(BaseModel):
 class BasicUserService(BaseCrudService[User, UserCreate, UserUpdate]):
     """Basic service without custom logic."""
     pass
+
+# ============================================================================
+# Fixtures
+# ============================================================================
+
+@pytest.fixture
+def engine():
+    """Create in-memory SQLite engine."""
+    engine = create_engine('sqlite:///:memory:', echo=False)
+    Base.metadata.create_all(engine)
+    return engine
+
+
+@pytest.fixture
+def session(engine):
+    """Create database session."""
+    SessionLocal = sessionmaker(bind=engine)
+    session = SessionLocal()
+    yield session
+    session.close()
+
+
+@pytest.fixture
+def repository(session):
+    """Create user repository."""
+    return Repository(User, session)
+
+
+@pytest.fixture
+def service(repository):
+    """Create basic user service."""
+    return BasicUserService(repository)
+
+
+@pytest.fixture
+def sample_user(service):
+    """Create a sample user."""
+    user_data = UserCreate(
+        name="John Doe",
+        email="john@example.com",
+        age=30
+    )
+    return service.create(user_data)
