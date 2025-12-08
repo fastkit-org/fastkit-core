@@ -522,3 +522,80 @@ class TestExceptionHandlers:
         assert "Internal details" not in data['message']
         # Should show generic error message
         assert "Internal server error" in data['message'] or "error" in data['message'].lower()
+
+# ============================================================================
+# Test Middleware
+# ============================================================================
+class TestRequestIDMiddleware:
+    """Test RequestIDMiddleware."""
+
+    def test_add_request_id_to_response(self):
+        """Should add X-Request-ID header to response."""
+        app = FastAPI()
+        app.add_middleware(RequestIDMiddleware)
+
+        @app.get("/test")
+        def test_route():
+            return {"ok": True}
+
+        client = TestClient(app)
+        response = client.get("/test")
+
+        assert 'X-Request-ID' in response.headers
+        assert len(response.headers['X-Request-ID']) > 0
+
+    def test_request_id_unique(self):
+        """Should generate unique IDs for each request."""
+        app = FastAPI()
+        app.add_middleware(RequestIDMiddleware)
+
+        @app.get("/test")
+        def test_route():
+            return {"ok": True}
+
+        client = TestClient(app)
+
+        response1 = client.get("/test")
+        response2 = client.get("/test")
+
+        id1 = response1.headers['X-Request-ID']
+        id2 = response2.headers['X-Request-ID']
+
+        assert id1 != id2
+
+    def test_request_id_in_state(self):
+        """Should add request_id to request.state."""
+        app = FastAPI()
+        app.add_middleware(RequestIDMiddleware)
+
+        captured_id = None
+
+        @app.get("/test")
+        def test_route(request: Request):
+            nonlocal captured_id
+            captured_id = request.state.request_id
+            return {"ok": True}
+
+        client = TestClient(app)
+        response = client.get("/test")
+
+        assert captured_id is not None
+        assert captured_id == response.headers['X-Request-ID']
+
+    def test_request_id_format(self):
+        """Should be valid UUID format."""
+        app = FastAPI()
+        app.add_middleware(RequestIDMiddleware)
+
+        @app.get("/test")
+        def test_route():
+            return {"ok": True}
+
+        client = TestClient(app)
+        response = client.get("/test")
+
+        request_id = response.headers['X-Request-ID']
+
+        # Should be UUID format (with hyphens)
+        parts = request_id.split('-')
+        assert len(parts) == 5
