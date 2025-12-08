@@ -172,3 +172,181 @@ class TestHelperMethods:
             service._to_dict("invalid_string")
 
         assert "Cannot convert" in str(exc_info.value)
+
+# ============================================================================
+# Test READ Operations
+# ============================================================================
+
+class TestReadOperations:
+    """Test service read operations."""
+
+    def test_find_by_id(self, service, sample_user):
+        """Should find user by ID."""
+        found = service.find(sample_user.id)
+
+        assert found is not None
+        assert found.id == sample_user.id
+        assert found.name == sample_user.name
+
+    def test_find_nonexistent(self, service):
+        """Should return None for nonexistent ID."""
+        found = service.find(9999)
+
+        assert found is None
+
+    def test_find_or_fail_success(self, service, sample_user):
+        """Should find user or raise exception."""
+        found = service.find_or_fail(sample_user.id)
+
+        assert found is not None
+        assert found.id == sample_user.id
+
+    def test_find_or_fail_raises(self, service):
+        """Should raise exception if not found."""
+        with pytest.raises(ValueError) as exc_info:
+            service.find_or_fail(9999)
+
+        assert "not found" in str(exc_info.value).lower()
+        assert "User" in str(exc_info.value)
+
+    def test_get_all(self, service):
+        """Should get all users."""
+        # Create multiple users
+        for i in range(3):
+            service.create(UserCreate(
+                name=f"User {i}",
+                email=f"user{i}@example.com",
+                age=20 + i
+            ))
+
+        users = service.get_all()
+
+        assert len(users) == 3
+
+    def test_get_all_with_limit(self, service):
+        """Should limit results."""
+        # Create multiple users
+        for i in range(5):
+            service.create(UserCreate(
+                name=f"User {i}",
+                email=f"user{i}@example.com"
+            ))
+
+        users = service.get_all(limit=3)
+
+        assert len(users) == 3
+
+    def test_filter_basic(self, service):
+        """Should filter users."""
+        service.create(UserCreate(name="Alice", email="alice@example.com", age=25))
+        service.create(UserCreate(name="Bob", email="bob@example.com", age=30))
+        service.create(UserCreate(name="Charlie", email="charlie@example.com", age=25))
+
+        users = service.filter(age=25)
+
+        assert len(users) == 2
+        assert all(u.age == 25 for u in users)
+
+    def test_filter_with_operators(self, service):
+        """Should support Django-style operators."""
+        service.create(UserCreate(name="User1", email="user1@example.com", age=20))
+        service.create(UserCreate(name="User2", email="user2@example.com", age=30))
+        service.create(UserCreate(name="User3", email="user3@example.com", age=40))
+
+        users = service.filter(age__gte=30)
+
+        assert len(users) == 2
+        assert all(u.age >= 30 for u in users)
+
+    def test_filter_with_limit(self, service):
+        """Should limit filter results."""
+        for i in range(5):
+            service.create(UserCreate(
+                name=f"User {i}",
+                email=f"user{i}@example.com",
+                status='active'
+            ))
+
+        users = service.filter(status='active', _limit=3)
+
+        assert len(users) == 3
+
+    def test_filter_with_offset(self, service):
+        """Should offset filter results."""
+        for i in range(5):
+            service.create(UserCreate(
+                name=f"User {i}",
+                email=f"user{i}@example.com"
+            ))
+
+        users = service.filter(_offset=2, _limit=2)
+
+        assert len(users) == 2
+
+    def test_filter_with_order_by(self, service):
+        """Should order filter results."""
+        service.create(UserCreate(name="Charlie", email="charlie@example.com", age=30))
+        service.create(UserCreate(name="Alice", email="alice@example.com", age=25))
+        service.create(UserCreate(name="Bob", email="bob@example.com", age=35))
+
+        users = service.filter(_order_by='age')
+
+        assert users[0].age == 25
+        assert users[1].age == 30
+        assert users[2].age == 35
+
+    def test_filter_with_order_by_desc(self, service):
+        """Should order descending."""
+        service.create(UserCreate(name="User1", email="user1@example.com", age=25))
+        service.create(UserCreate(name="User2", email="user2@example.com", age=35))
+        service.create(UserCreate(name="User3", email="user3@example.com", age=30))
+
+        users = service.filter(_order_by='-age')
+
+        assert users[0].age == 35
+        assert users[1].age == 30
+        assert users[2].age == 25
+
+    def test_filter_one(self, service):
+        """Should get first matching record."""
+        service.create(UserCreate(name="Alice", email="alice@example.com", age=25))
+        service.create(UserCreate(name="Bob", email="bob@example.com", age=25))
+
+        user = service.filter_one(age=25)
+
+        assert user is not None
+        assert user.age == 25
+
+    def test_filter_one_not_found(self, service):
+        """Should return None if not found."""
+        user = service.filter_one(age=999)
+
+        assert user is None
+
+    def test_exists(self, service, sample_user):
+        """Should check if record exists."""
+        assert service.exists(email=sample_user.email) is True
+        assert service.exists(email="nonexistent@example.com") is False
+
+    def test_count(self, service):
+        """Should count records."""
+        for i in range(5):
+            service.create(UserCreate(
+                name=f"User {i}",
+                email=f"user{i}@example.com",
+                status='active'
+            ))
+
+        count = service.count(status='active')
+
+        assert count == 5
+
+    def test_count_with_filters(self, service):
+        """Should count with filters."""
+        service.create(UserCreate(name="User1", email="user1@example.com", age=25))
+        service.create(UserCreate(name="User2", email="user2@example.com", age=30))
+        service.create(UserCreate(name="User3", email="user3@example.com", age=25))
+
+        count = service.count(age=25)
+
+        assert count == 2
