@@ -180,3 +180,57 @@ class TestSuccessResponse:
         assert 'data' in content
         assert 'message' in content
         assert content['success'] is True
+
+class TestErrorResponse:
+    """Test error_response formatter."""
+
+    def test_error_basic(self):
+        """Should create basic error response."""
+        response = error_response(message="Error occurred")
+
+        assert response.status_code == 400
+        content = json.loads(response.body)
+        assert content['success'] is False
+        assert content['message'] == "Error occurred"
+
+    def test_error_with_errors_dict(self):
+        """Should include validation errors."""
+        errors = {
+            'email': ['Invalid email format'],
+            'password': ['Too short']
+        }
+        response = error_response(
+            message="Validation failed",
+            errors=errors
+        )
+
+        content = json.loads(response.body)
+        assert content['success'] is False
+        assert content['errors'] == errors
+
+    def test_error_without_errors(self):
+        """Should not include errors when not provided."""
+        response = error_response(message="Error")
+
+        content = json.loads(response.body)
+        assert 'errors' not in content
+
+    def test_error_custom_status(self):
+        """Should use custom status code."""
+        response = error_response(message="Not found", status_code=404)
+
+        assert response.status_code == 404
+
+    def test_error_format(self):
+        """Should match expected format."""
+        response = error_response(
+            message="Error",
+            errors={'field': ['error']},
+            status_code=422
+        )
+
+        content = json.loads(response.body)
+        assert 'success' in content
+        assert 'message' in content
+        assert 'errors' in content
+        assert content['success'] is False
