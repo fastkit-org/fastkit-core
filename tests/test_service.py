@@ -104,3 +104,23 @@ def sample_user(service):
         age=30
     )
     return service.create(user_data)
+
+
+# ============================================================================
+# Test Service Initialization
+# ============================================================================
+
+class TestServiceInit:
+    """Test service initialization."""
+
+    def test_init_with_repository(self, repository):
+        """Should initialize with repository."""
+        service = BasicUserService(repository)
+
+        assert service.repository is repository
+
+    def test_service_has_repository_access(self, service):
+        """Should have access to repository methods."""
+        assert hasattr(service, 'repository')
+        assert hasattr(service.repository, 'create')
+        assert hasattr(service.repository, 'get')
