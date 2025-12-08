@@ -636,3 +636,53 @@ class TestDeleteOperations:
         # Verify
         remaining = service.count()
         assert remaining == 0
+
+# ============================================================================
+# Test Validation Hooks
+# ============================================================================
+class TestValidationHooks:
+    """Test validation hooks."""
+
+    def test_validate_create_hook(self, repository):
+        """Should call validate_create hook."""
+
+        class ValidatingService(BaseCrudService[User, UserCreate, UserUpdate]):
+            def validate_create(self, data: UserCreate) -> None:
+                if self.exists(email=data.email):
+                    raise ValueError("Email already exists")
+
+        service = ValidatingService(repository)
+
+        # First user - OK
+        user1 = service.create(UserCreate(
+            name="User1",
+            email="test@example.com"
+        ))
+
+        # Duplicate email - should fail
+        with pytest.raises(ValueError) as exc_info:
+            service.create(UserCreate(
+                name="User2",
+                email="test@example.com"
+            ))
+
+        assert "Email already exists" in str(exc_info.value)
+
+    def test_validate_update_hook(self, repository, sample_user):
+        """Should call validate_update hook."""
+
+        class ValidatingService(BaseCrudService[User, UserCreate, UserUpdate]):
+            def validate_update(self, id, data: UserUpdate) -> None:
+                if data.age and data.age < 18:
+                    raise ValueError("Age must be 18 or older")
+
+        service = ValidatingService(repository)
+
+        # Valid update
+        service.update(sample_user.id, UserUpdate(age=25))
+
+        # Invalid update
+        with pytest.raises(ValueError) as exc_info:
+            service.update(sample_user.id, UserUpdate(age=15))
+
+        assert "Age must be 18" in str(exc_info.value)
