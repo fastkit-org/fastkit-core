@@ -599,3 +599,106 @@ class TestRequestIDMiddleware:
         # Should be UUID format (with hyphens)
         parts = request_id.split('-')
         assert len(parts) == 5
+
+class TestLocaleMiddleware:
+    """Test LocaleMiddleware."""
+
+    def test_locale_from_accept_language_header(self, setup_i18n):
+        """Should detect locale from Accept-Language header."""
+        app = FastAPI()
+        app.add_middleware(LocaleMiddleware)
+
+        detected_locale = None
+
+        @app.get("/test")
+        def test_route():
+            from fastkit_core.i18n import get_locale
+            nonlocal detected_locale
+            detected_locale = get_locale()
+            return {"ok": True}
+
+        client = TestClient(app)
+        client.get("/test", headers={"Accept-Language": "es-ES"})
+
+        assert detected_locale == "es"
+
+    def test_locale_from_query_parameter(self, setup_i18n):
+        """Should detect locale from query parameter."""
+        app = FastAPI()
+        app.add_middleware(LocaleMiddleware)
+
+        detected_locale = None
+
+        @app.get("/test")
+        def test_route():
+            from fastkit_core.i18n import get_locale
+            nonlocal detected_locale
+            detected_locale = get_locale()
+            return {"ok": True}
+
+        client = TestClient(app)
+        client.get("/test?lang=fr")
+
+        assert detected_locale == "fr"
+
+    def test_locale_from_cookie(self, setup_i18n):
+        """Should detect locale from cookie."""
+        app = FastAPI()
+        app.add_middleware(LocaleMiddleware)
+
+        detected_locale = None
+
+        @app.get("/test")
+        def test_route():
+            from fastkit_core.i18n import get_locale
+            nonlocal detected_locale
+            detected_locale = get_locale()
+            return {"ok": True}
+
+        client = TestClient(app)
+        client.get("/test", cookies={"locale": "de"})
+
+        assert detected_locale == "de"
+
+    def test_locale_priority(self, setup_i18n):
+        """Should prioritize Accept-Language header."""
+        app = FastAPI()
+        app.add_middleware(LocaleMiddleware)
+
+        detected_locale = None
+
+        @app.get("/test")
+        def test_route():
+            from fastkit_core.i18n import get_locale
+            nonlocal detected_locale
+            detected_locale = get_locale()
+            return {"ok": True}
+
+        client = TestClient(app)
+        # Header should take precedence over cookie
+        client.get(
+            "/test",
+            headers={"Accept-Language": "es-ES"},
+            cookies={"locale": "fr"}
+        )
+
+        assert detected_locale == "es"
+
+    def test_locale_default_fallback(self, setup_i18n):
+        """Should fallback to default locale."""
+        app = FastAPI()
+        app.add_middleware(LocaleMiddleware)
+
+        detected_locale = None
+
+        @app.get("/test")
+        def test_route():
+            from fastkit_core.i18n import get_locale
+            nonlocal detected_locale
+            detected_locale = get_locale()
+            return {"ok": True}
+
+        client = TestClient(app)
+        client.get("/test")
+
+        assert detected_locale == "en"  # Default
