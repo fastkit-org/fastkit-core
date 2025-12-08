@@ -829,3 +829,141 @@ class TestLifecycleHooks:
         service.create(UserCreate(name="John", email="john@example.com"))
 
         assert execution_order == ['validate', 'before', 'after']
+
+# ============================================================================
+# Test Integration Scenarios
+# ============================================================================
+class TestIntegration:
+    """Test real-world integration scenarios."""
+
+    def test_complete_user_lifecycle(self, service):
+        """Should handle complete user lifecycle."""
+        # Create
+        user = service.create(UserCreate(
+            name="John Doe",
+            email="john@example.com",
+            age=30
+        ))
+        assert user.id is not None
+
+        # Read
+        found = service.find(user.id)
+        assert found.name == "John Doe"
+
+        # Update
+        updated = service.update(user.id, UserUpdate(age=31))
+        assert updated.age == 31
+
+        # Delete
+        deleted = service.delete(user.id)
+        assert deleted is True
+
+        # Verify deletion
+        assert service.find(user.id) is None
+
+    def test_bulk_operations(self, service):
+        """Should handle bulk operations."""
+        # Bulk create
+        users_data = [
+            UserCreate(name=f"User {i}", email=f"user{i}@example.com", status='pending')
+            for i in range(10)
+        ]
+        users = service.create_many(users_data)
+        assert len(users) == 10
+
+        # Bulk update
+        updated_count = service.update_many(
+            filters={'status': 'pending'},
+            data=UserUpdate(status='active')
+        )
+        assert updated_count == 10
+
+        # Verify
+        active_count = service.count(status='active')
+        assert active_count == 10
+
+        # Bulk delete
+        deleted_count = service.delete_many(filters={'status': 'active'})
+        assert deleted_count == 10
+
+    def test_complex_filtering_and_pagination(self, service):
+        """Should handle complex queries."""
+        # Create test data
+        for i in range(50):
+            service.create(UserCreate(
+                name=f"User {i}",
+                email=f"user{i}@example.com",
+                age=20 + (i % 30),
+                status='active' if i % 2 == 0 else 'inactive'
+            ))
+
+        # Complex filter with pagination
+        users, meta = service.paginate(
+            page=1,
+            per_page=10,
+            status='active',
+            age__gte=30
+        )
+
+        assert len(users) <= 10
+        assert all(u.status == 'active' for u in users)
+        assert all(u.age >= 30 for u in users)
+        assert meta['total'] > 0
+
+    def test_service_with_all_hooks(self, repository):
+        """Should work with all hooks together."""
+        execution_log = []
+
+        class CompleteService(BaseCrudService[User, UserCreate, UserUpdate]):
+            def validate_create(self, data: UserCreate) -> None:
+                execution_log.append('validate_create')
+                if self.exists(email=data.email):
+                    raise ValueError("Duplicate email")
+
+            def before_create(self, data: dict) -> dict:
+                execution_log.append('before_create')
+                data['name'] = data['name'].upper()
+                return data
+
+            def after_create(self, instance: User) -> None:
+                execution_log.append('after_create')
+
+            def validate_update(self, id, data: UserUpdate) -> None:
+                execution_log.append('validate_update')
+
+            def before_update(self, id, data: dict) -> dict:
+                execution_log.append('before_update')
+                return data
+
+            def after_update(self, instance: User) -> None:
+                execution_log.append('after_update')
+
+            def before_delete(self, id) -> None:
+                execution_log.append('before_delete')
+
+            def after_delete(self, id) -> None:
+                execution_log.append('after_delete')
+
+        service = CompleteService(repository)
+
+        # Create
+        user = service.create(UserCreate(name="john", email="john@example.com"))
+        assert user.name == "JOHN"  # Modified by before_create
+        assert 'validate_create' in execution_log
+        assert 'before_create' in execution_log
+        assert 'after_create' in execution_log
+
+        execution_log.clear()
+
+        # Update
+        service.update(user.id, UserUpdate(age=25))
+        assert 'validate_update' in execution_log
+        assert 'before_update' in execution_log
+        assert 'after_update' in execution_log
+
+        execution_log.clear()
+
+        # Delete
+        service.delete(user.id)
+        assert 'before_delete' in execution_log
+        assert 'after_delete' in execution_log
