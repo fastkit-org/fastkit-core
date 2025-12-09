@@ -175,6 +175,7 @@ class TestToDict:
         from fastkit_core.database import BaseWithTimestamps
 
         class Article(BaseWithTimestamps, IntIdMixin):
+            __tablename__='base_tmp_articles'
             title: Mapped[str] = mapped_column(String(200))
 
         Base.metadata.create_all(session.bind)

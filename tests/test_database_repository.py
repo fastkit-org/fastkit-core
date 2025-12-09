@@ -33,7 +33,7 @@ from fastkit_core.database import (
 
 class User(Base, IntIdMixin, TimestampMixin):
     """User model for testing."""
-    __tablename__ = 'users'
+    __tablename__ = 'users_rep_test'
 
     name: Mapped[str] = mapped_column(String(100))
     email: Mapped[str] = mapped_column(String(100), unique=True)
@@ -43,19 +43,19 @@ class User(Base, IntIdMixin, TimestampMixin):
 
 class Post(Base, IntIdMixin, SoftDeleteMixin):
     """Post model with soft delete."""
-    __tablename__ = 'posts'
+    __tablename__ = 'posts_rep_test'
 
     title: Mapped[str] = mapped_column(String(200))
     content: Mapped[str] = mapped_column(String(1000))
-    user_id: Mapped[int] = mapped_column(ForeignKey('users.id'))
+    user_id: Mapped[int] = mapped_column(ForeignKey('users_rep_test.id'))
     views: Mapped[int] = mapped_column(Integer, default=0)
 
-    user: Mapped[User] = relationship(User, backref='posts')
+    user: Mapped[User] = relationship(User, backref='posts_rep_test')
 
 
 class Product(Base, IntIdMixin):
     """Product model for filtering tests."""
-    __tablename__ = 'products'
+    __tablename__ = 'products_rep_test'
 
     name: Mapped[str] = mapped_column(String(100))
     price: Mapped[int] = mapped_column(Integer)

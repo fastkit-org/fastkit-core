@@ -14,13 +14,11 @@ Tests multi-language field support:
 """
 
 import pytest
-import json
-from datetime import datetime
 from sqlalchemy import create_engine, String, JSON, Integer, ForeignKey
 from sqlalchemy.orm import sessionmaker, Mapped, mapped_column, relationship
 
 from fastkit_core.database import Base, IntIdMixin, TranslatableMixin
-from fastkit_core.i18n import set_locale, get_locale
+from fastkit_core.i18n import set_locale
 
 
 # ============================================================================
@@ -50,7 +48,7 @@ class Product(Base, IntIdMixin, TranslatableMixin):
 
 class Category(Base, IntIdMixin, TranslatableMixin):
     """Category with single translatable field."""
-    __tablename__ = 'categories'
+    __tablename__ = 'categories_trans_test'
     __translatable__ = ['name']
 
     name: Mapped[dict] = mapped_column(JSON)
@@ -63,7 +61,7 @@ class Page(Base, IntIdMixin, TranslatableMixin):
 
     title: Mapped[dict] = mapped_column(JSON)
     body: Mapped[dict] = mapped_column(JSON)
-    category_id: Mapped[int] = mapped_column(ForeignKey('categories.id'))
+    category_id: Mapped[int] = mapped_column(ForeignKey('categories_trans_test.id'))
 
     category: Mapped[Category] = relationship(Category, backref='pages')
 

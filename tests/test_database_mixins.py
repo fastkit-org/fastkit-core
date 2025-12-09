@@ -145,6 +145,7 @@ class TestTimestampMixin:
         """Should work with BaseWithTimestamps."""
 
         class Article(BaseWithTimestamps, IntIdMixin):
+            __tablename__ = 'mixin_tmp_articles'
             title: Mapped[str] = mapped_column(String(200))
 
         Base.metadata.create_all(session.bind)
