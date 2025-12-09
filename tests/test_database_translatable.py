@@ -234,3 +234,139 @@ class TestLocaleManagement:
         TranslatableMixin.set_global_locale('fr')
 
         assert TranslatableMixin.get_global_locale() == 'fr'
+
+
+# ============================================================================
+# Test Translation Methods
+# ============================================================================
+
+class TestTranslationMethods:
+    """Test translation helper methods."""
+
+    def test_get_translations(self, session):
+        """Should get all translations for a field."""
+        article = Article(author="John")
+
+        set_locale('en')
+        article.title = "Hello"
+
+        set_locale('es')
+        article.title = "Hola"
+
+        translations = article.get_translations('title')
+
+        assert translations == {'en': 'Hello', 'es': 'Hola'}
+
+    def test_get_translations_empty(self, session):
+        """Should return empty dict for field with no translations."""
+        article = Article(author="John")
+
+        translations = article.get_translations('title')
+
+        assert translations == {}
+
+    def test_get_translations_invalid_field(self, session):
+        """Should raise error for non-translatable field."""
+        article = Article(author="John")
+
+        with pytest.raises(ValueError) as exc_info:
+            article.get_translations('author')
+
+        assert 'not translatable' in str(exc_info.value).lower()
+
+    def test_set_translation_explicit(self, session):
+        """Should set translation for specific locale."""
+        article = Article(author="John")
+
+        article.set_translation('title', 'Bonjour', locale='fr')
+
+        set_locale('fr')
+        assert article.title == "Bonjour"
+
+    def test_set_translation_current_locale(self, session):
+        """Should use current locale if not specified."""
+        article = Article(author="John")
+
+        set_locale('es')
+        article.set_translation('title', 'Hola')
+
+        assert article.title == "Hola"
+
+    def test_set_translation_chainable(self, session):
+        """Should return self for chaining."""
+        article = Article(author="John")
+
+        result = article.set_translation('title', 'Hello')
+
+        assert result is article
+
+    def test_set_translation_invalid_field(self, session):
+        """Should raise error for non-translatable field."""
+        article = Article(author="John")
+
+        with pytest.raises(ValueError) as exc_info:
+            article.set_translation('author', 'John', locale='es')
+
+        assert 'not translatable' in str(exc_info.value).lower()
+
+    def test_get_translation_explicit(self, session):
+        """Should get translation for specific locale."""
+        article = Article(author="John")
+
+        set_locale('en')
+        article.title = "Hello"
+
+        translation = article.get_translation('title', locale='en')
+
+        assert translation == "Hello"
+
+    def test_get_translation_with_fallback(self, session):
+        """Should fallback to default locale."""
+        article = Article(author="John")
+
+        set_locale('en')
+        article.title = "Hello"
+
+        # Request French (doesn't exist), should fallback to English
+        translation = article.get_translation('title', locale='fr', fallback=True)
+
+        assert translation == "Hello"
+
+    def test_get_translation_without_fallback(self, session):
+        """Should not fallback when disabled."""
+        article = Article(author="John")
+
+        set_locale('en')
+        article.title = "Hello"
+
+        translation = article.get_translation('title', locale='fr', fallback=False)
+
+        assert translation is None
+
+    def test_has_translation(self, session):
+        """Should check if translation exists."""
+        article = Article(author="John")
+
+        set_locale('en')
+        article.title = "Hello"
+
+        assert article.has_translation('title', locale='en') is True
+        assert article.has_translation('title', locale='es') is False
+
+    def test_has_translation_current_locale(self, session):
+        """Should check current locale if not specified."""
+        article = Article(author="John")
+
+        set_locale('en')
+        article.title = "Hello"
+
+        assert article.has_translation('title') is True
+
+        set_locale('es')
+        assert article.has_translation('title') is False
+
+    def test_has_translation_invalid_field(self, session):
+        """Should return False for non-translatable field."""
+        article = Article(author="John")
+
+        assert article.has_translation('author') is False
