@@ -52,3 +52,24 @@ class Comment(Base):
     post_id: Mapped[int] = mapped_column(ForeignKey('posts.id'))
 
     post: Mapped[Post] = relationship(Post, backref='comments')
+
+# ============================================================================
+# Fixtures
+# ============================================================================
+
+@pytest.fixture
+def engine():
+    """Create in-memory SQLite engine."""
+    engine = create_engine('sqlite:///:memory:', echo=False)
+    Base.metadata.create_all(engine)
+    return engine
+
+
+@pytest.fixture
+def session(engine):
+    """Create database session."""
+    SessionLocal = sessionmaker(bind=engine)
+    session = SessionLocal()
+    yield session
+    session.close()
+
