@@ -108,3 +108,33 @@ class TestTableNames:
             name: Mapped[str] = mapped_column(String(50))
 
         assert CustomModel.__tablename__ == 'my_custom_table'
+
+
+# ============================================================================
+# Test Primary Key
+# ============================================================================
+
+class TestPrimaryKey:
+    """Test primary key functionality."""
+
+    def test_has_id_column(self, session):
+        """Should have auto-incrementing id."""
+        user = User(name="John", email="john@example.com")
+        session.add(user)
+        session.commit()
+
+        assert user.id is not None
+        assert isinstance(user.id, int)
+        assert user.id > 0
+
+    def test_auto_increment(self, session):
+        """Should auto-increment IDs."""
+        user1 = User(name="John", email="john@example.com")
+        user2 = User(name="Jane", email="jane@example.com")
+
+        session.add(user1)
+        session.add(user2)
+        session.commit()
+
+        assert user2.id == user1.id + 1
+
