@@ -113,3 +113,31 @@ def sample_users(user_repo):
         {'name': 'Eve', 'email': 'eve@example.com', 'age': 28, 'is_active': True},
     ]
     return user_repo.create_many(users)
+
+
+# ============================================================================
+# Test Repository Initialization
+# ============================================================================
+
+class TestRepositoryInit:
+    """Test repository initialization."""
+
+    def test_init_with_model_and_session(self, session):
+        """Should initialize with model and session."""
+        repo = Repository(User, session)
+
+        assert repo.model == User
+        assert repo.session == session
+
+    def test_create_repository_function(self, session):
+        """Should create repository with helper function."""
+        repo = create_repository(User, session)
+
+        assert isinstance(repo, Repository)
+        assert repo.model == User
+
+    def test_repository_repr(self, user_repo):
+        """Should have meaningful repr."""
+        repr_str = repr(user_repo)
+
+        assert 'Repository' in repr_str
