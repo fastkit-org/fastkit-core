@@ -544,3 +544,76 @@ class TestPagination:
 
         assert users == []
         assert meta['page'] == 100
+
+
+# ============================================================================
+# Test UPDATE Operations
+# ============================================================================
+
+class TestUpdateOperations:
+    """Test update operations."""
+
+    def test_update_by_id(self, user_repo, sample_users):
+        """Should update record by ID."""
+        user = sample_users[0]
+
+        updated = user_repo.update(user.id, {'name': 'Updated Name'})
+
+        assert updated is not None
+        assert updated.name == 'Updated Name'
+        assert updated.email == user.email  # Unchanged
+
+    def test_update_multiple_fields(self, user_repo, sample_users):
+        """Should update multiple fields."""
+        user = sample_users[0]
+
+        updated = user_repo.update(user.id, {
+            'name': 'New Name',
+            'age': 99
+        })
+
+        assert updated.name == 'New Name'
+        assert updated.age == 99
+
+    def test_update_nonexistent(self, user_repo):
+        """Should return None for nonexistent ID."""
+        updated = user_repo.update(9999, {'name': 'Nobody'})
+
+        assert updated is None
+
+    def test_update_with_commit_false(self, user_repo, sample_users, session):
+        """Should not commit when commit=False."""
+        user = sample_users[0]
+        original_name = user.name
+
+        user_repo.update(user.id, {'name': 'Changed'}, commit=False)
+
+        # Rollback
+        session.rollback()
+
+        # Should be unchanged
+        session.expire_all()
+        found = user_repo.get(user.id)
+        assert found.name == original_name
+
+    def test_update_many(self, user_repo, sample_users):
+        """Should update multiple records."""
+        count = user_repo.update_many(
+            filters={'is_active': True},
+            data={'age': 50}
+        )
+
+        assert count == 4  # 4 active users
+
+        # Verify
+        active_users = user_repo.filter(is_active=True)
+        assert all(u.age == 50 for u in active_users)
+
+    def test_update_many_no_matches(self, user_repo, sample_users):
+        """Should return 0 when no matches."""
+        count = user_repo.update_many(
+            filters={'name': 'Nonexistent'},
+            data={'age': 99}
+        )
+
+        assert count == 0
