@@ -138,3 +138,120 @@ class TestPrimaryKey:
 
         assert user2.id == user1.id + 1
 
+
+# ============================================================================
+# Test to_dict() Serialization
+# ============================================================================
+
+class TestToDict:
+    """Test to_dict() serialization."""
+
+    def test_to_dict_basic(self, session):
+        """Should convert to dict."""
+        user = User(name="John", email="john@example.com")
+        session.add(user)
+        session.commit()
+
+        data = user.to_dict()
+
+        assert isinstance(data, dict)
+        assert data['name'] == "John"
+        assert data['email'] == "john@example.com"
+        assert 'id' in data
+
+    def test_to_dict_with_exclude(self, session):
+        """Should exclude specified fields."""
+        user = User(name="John", email="john@example.com")
+        session.add(user)
+        session.commit()
+
+        data = user.to_dict(exclude=['email'])
+
+        assert 'name' in data
+        assert 'email' not in data
+        assert 'id' in data
+
+    def test_to_dict_datetime_serialization(self, session):
+        """Should serialize datetime to ISO format."""
+        from fastkit_core.database import BaseWithTimestamps
+
+        class Article(BaseWithTimestamps):
+            title: Mapped[str] = mapped_column(String(200))
+
+        Base.metadata.create_all(session.bind)
+
+        article = Article(title="Test")
+        session.add(article)
+        session.commit()
+
+        data = article.to_dict()
+
+        assert isinstance(data['created_at'], str)
+        assert 'T' in data['created_at']  # ISO format
+
+    def test_to_dict_with_relationships(self, session):
+        """Should include relationships when requested."""
+        user = User(name="John", email="john@example.com")
+        session.add(user)
+        session.commit()
+
+        post = Post(title="My Post", user_id=user.id)
+        session.add(post)
+        session.commit()
+
+        data = post.to_dict(include_relationships=True)
+
+        assert 'user' in data
+        assert data['user']['name'] == "John"
+
+    def test_to_dict_relationships_max_depth(self, session):
+        """Should respect max_depth for nested relationships."""
+        user = User(name="John", email="john@example.com")
+        session.add(user)
+        session.commit()
+
+        post = Post(title="My Post", user_id=user.id)
+        session.add(post)
+        session.commit()
+
+        comment = Comment(content="Great post!", post_id=post.id)
+        session.add(comment)
+        session.commit()
+
+        # Depth 1: comment -> post (stop here)
+        data = comment.to_dict(include_relationships=True, max_depth=1)
+        assert 'post' in data
+        assert 'user' not in data['post']  # Stopped at depth 1
+
+        # Depth 2: comment -> post -> user
+        data = comment.to_dict(include_relationships=True, max_depth=2)
+        assert 'post' in data
+        assert 'user' in data['post']
+
+    def test_to_dict_with_list_relationships(self, session):
+        """Should handle one-to-many relationships."""
+        user = User(name="John", email="john@example.com")
+        session.add(user)
+        session.commit()
+
+        post1 = Post(title="Post 1", user_id=user.id)
+        post2 = Post(title="Post 2", user_id=user.id)
+        session.add_all([post1, post2])
+        session.commit()
+
+        data = user.to_dict(include_relationships=True)
+
+        assert 'posts' in data
+        assert isinstance(data['posts'], list)
+        assert len(data['posts']) == 2
+
+    def test_to_json_alias(self, session):
+        """Should work as alias for to_dict()."""
+        user = User(name="John", email="john@example.com")
+        session.add(user)
+        session.commit()
+
+        data = user.to_json()
+
+        assert isinstance(data, dict)
+        assert data['name'] == "John"
