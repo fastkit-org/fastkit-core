@@ -141,3 +141,99 @@ class TestRepositoryInit:
         repr_str = repr(user_repo)
 
         assert 'Repository' in repr_str
+
+
+# ============================================================================
+# Test CREATE Operations
+# ============================================================================
+
+class TestCreateOperations:
+    """Test create operations."""
+
+    def test_create_basic(self, user_repo):
+        """Should create a record."""
+        user = user_repo.create({
+            'name': 'John',
+            'email': 'john@example.com',
+            'age': 30
+        })
+
+        assert user.id is not None
+        assert user.name == 'John'
+        assert user.email == 'john@example.com'
+
+    def test_create_with_commit_true(self, user_repo, session):
+        """Should commit when commit=True."""
+        user = user_repo.create(
+            {'name': 'John', 'email': 'john@example.com', 'age': 30},
+            commit=True
+        )
+
+        # Should be committed
+        session.expire_all()
+        found = session.query(User).filter_by(id=user.id).first()
+        assert found is not None
+
+    def test_create_with_commit_false(self, user_repo, session):
+        """Should not commit when commit=False."""
+        user = user_repo.create(
+            {'name': 'John', 'email': 'john@example.com', 'age': 30},
+            commit=False
+        )
+
+        # Rollback
+        session.rollback()
+
+        # Should not exist
+        found = session.query(User).filter_by(id=user.id).first()
+        assert found is None
+
+    def test_create_many(self, user_repo):
+        """Should create multiple records."""
+        users_data = [
+            {'name': f'User{i}', 'email': f'user{i}@example.com', 'age': 20 + i}
+            for i in range(5)
+        ]
+
+        users = user_repo.create_many(users_data)
+
+        assert len(users) == 5
+        assert all(u.id is not None for u in users)
+
+    def test_create_many_with_commit_false(self, user_repo, session):
+        """Should not commit bulk create when commit=False."""
+        users_data = [
+            {'name': f'User{i}', 'email': f'user{i}@example.com', 'age': 20 + i}
+            for i in range(3)
+        ]
+
+        users = user_repo.create_many(users_data, commit=False)
+
+        # Rollback
+        session.rollback()
+
+        # Should not exist
+        count = session.query(User).count()
+        assert count == 0
+
+    def test_create_with_defaults(self, user_repo):
+        """Should use model defaults."""
+        user = user_repo.create({
+            'name': 'John',
+            'email': 'john@example.com',
+            'age': 30
+        })
+
+        # is_active has default=True
+        assert user.is_active is True
+
+    def test_create_with_timestamps(self, user_repo):
+        """Should auto-set timestamps."""
+        user = user_repo.create({
+            'name': 'John',
+            'email': 'john@example.com',
+            'age': 30
+        })
+
+        assert user.created_at is not None
+        assert user.updated_at is not None
