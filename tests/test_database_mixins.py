@@ -37,7 +37,7 @@ class TimestampedUser(Base, IntIdMixin, TimestampMixin):
     name: Mapped[str] = mapped_column(String(100))
 
 
-class SoftDeletablePost(Base, SoftDeleteMixin):
+class SoftDeletablePost(Base, IntIdMixin, SoftDeleteMixin):
     """Post with soft delete."""
     title: Mapped[str] = mapped_column(String(200))
 
@@ -48,12 +48,12 @@ class UUIDUser(Base, UUIDMixin):
     name: Mapped[str] = mapped_column(String(100))
 
 
-class SluggedArticle(Base, SlugMixin):
+class SluggedArticle(Base, IntIdMixin, SlugMixin):
     """Article with slug."""
     title: Mapped[str] = mapped_column(String(200))
 
 
-class PublishablePost(Base, PublishableMixin):
+class PublishablePost(Base, IntIdMixin, PublishableMixin):
     """Post with publishing workflow."""
     title: Mapped[str] = mapped_column(String(200))
 
@@ -144,7 +144,7 @@ class TestTimestampMixin:
     def test_base_with_timestamps(self, session):
         """Should work with BaseWithTimestamps."""
 
-        class Article(BaseWithTimestamps):
+        class Article(BaseWithTimestamps, IntIdMixin):
             title: Mapped[str] = mapped_column(String(200))
 
         Base.metadata.create_all(session.bind)
@@ -280,7 +280,7 @@ class TestUUIDMixin:
         session.commit()
 
         # UUID4 version byte should be 4
-        assert user.id == 1
+        assert user.id.version == 4
 
     def test_find_by_uuid(self, session):
         """Should find by UUID."""

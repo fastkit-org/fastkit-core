@@ -10,34 +10,33 @@ Tests Base model functionality:
 """
 
 import pytest
-from datetime import datetime
-from sqlalchemy import create_engine, String, Integer, ForeignKey
+from sqlalchemy import create_engine, String, ForeignKey
 from sqlalchemy.orm import sessionmaker, Mapped, mapped_column, relationship
 
-from fastkit_core.database import Base
+from fastkit_core.database import Base, IntIdMixin
 
 
 # ============================================================================
 # Test Models
 # ============================================================================
 
-class User(Base):
+class User(Base, IntIdMixin):
     """Test user model."""
     name: Mapped[str] = mapped_column(String(100))
     email: Mapped[str] = mapped_column(String(100))
 
 
-class UserProfile(Base):
+class UserProfile(Base, IntIdMixin):
     """Test model with CamelCase name."""
     bio: Mapped[str] = mapped_column(String(500))
 
 
-class Category(Base):
+class Category(Base, IntIdMixin):
     """Test model ending in 'y'."""
     name: Mapped[str] = mapped_column(String(100))
 
 
-class Post(Base):
+class Post(Base, IntIdMixin):
     """Test model with relationships."""
     title: Mapped[str] = mapped_column(String(200))
     user_id: Mapped[int] = mapped_column(ForeignKey('users.id'))
@@ -46,7 +45,7 @@ class Post(Base):
     user: Mapped[User] = relationship(User, backref='posts')
 
 
-class Comment(Base):
+class Comment(Base, IntIdMixin):
     """Test model with nested relationships."""
     content: Mapped[str] = mapped_column(String(500))
     post_id: Mapped[int] = mapped_column(ForeignKey('posts.id'))
@@ -95,7 +94,7 @@ class TestTableNames:
     def test_name_ending_in_s(self):
         """Should handle names ending in 's'."""
 
-        class Status(Base):
+        class Status(Base, IntIdMixin):
             name: Mapped[str] = mapped_column(String(50))
 
         assert Status.__tablename__ == 'statuses'
@@ -103,7 +102,7 @@ class TestTableNames:
     def test_custom_tablename(self):
         """Should allow custom table name override."""
 
-        class CustomModel(Base):
+        class CustomModel(Base, IntIdMixin):
             __tablename_override__ = 'my_custom_table'
             name: Mapped[str] = mapped_column(String(50))
 
@@ -175,7 +174,7 @@ class TestToDict:
         """Should serialize datetime to ISO format."""
         from fastkit_core.database import BaseWithTimestamps
 
-        class Article(BaseWithTimestamps):
+        class Article(BaseWithTimestamps, IntIdMixin):
             title: Mapped[str] = mapped_column(String(200))
 
         Base.metadata.create_all(session.bind)
@@ -370,7 +369,7 @@ class TestRepr:
     def test_repr_custom(self, session):
         """Should allow custom repr attributes."""
 
-        class CustomUser(Base):
+        class CustomUser(Base, IntIdMixin):
             name: Mapped[str] = mapped_column(String(100))
 
             def __repr_attrs__(self):
@@ -399,7 +398,7 @@ class TestEdgeCases:
     def test_to_dict_with_none_values(self, session):
         """Should handle None values."""
 
-        class OptionalModel(Base):
+        class OptionalModel(Base, IntIdMixin):
             name: Mapped[str] = mapped_column(String(100))
             optional: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
