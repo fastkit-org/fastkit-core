@@ -66,3 +66,34 @@ class Page(Base, IntIdMixin, TranslatableMixin):
     category_id: Mapped[int] = mapped_column(ForeignKey('categories.id'))
 
     category: Mapped[Category] = relationship(Category, backref='pages')
+
+
+# ============================================================================
+# Fixtures
+# ============================================================================
+
+@pytest.fixture
+def engine():
+    """Create in-memory SQLite engine."""
+    engine = create_engine('sqlite:///:memory:', echo=False)
+    Base.metadata.create_all(engine)
+    return engine
+
+
+@pytest.fixture
+def session(engine):
+    """Create database session."""
+    SessionLocal = sessionmaker(bind=engine)
+    session = SessionLocal()
+    yield session
+    session.close()
+
+
+@pytest.fixture(autouse=True)
+def reset_locale():
+    """Reset locale before each test."""
+    set_locale('en')
+    TranslatableMixin.set_global_locale('en')
+    yield
+    set_locale('en')
+    TranslatableMixin.set_global_locale('en')
