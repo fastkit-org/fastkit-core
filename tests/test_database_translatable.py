@@ -370,3 +370,64 @@ class TestTranslationMethods:
         article = Article(author="John")
 
         assert article.has_translation('author') is False
+
+
+# ============================================================================
+# Test Validation
+# ============================================================================
+
+class TestValidation:
+    """Test translation validation."""
+
+    def test_validate_translations_all_present(self, session):
+        """Should validate when all required translations present."""
+        article = Article(author="John")
+
+        set_locale('en')
+        article.title = "Hello"
+        article.content = "Content"
+
+        missing = article.validate_translations(required_locales=['en'])
+
+        assert missing == {}
+
+    def test_validate_translations_missing(self, session):
+        """Should detect missing translations."""
+        article = Article(author="John")
+
+        set_locale('en')
+        article.title = "Hello"
+        # content not set
+
+        missing = article.validate_translations(required_locales=['en'])
+
+        assert 'content' in missing
+        assert 'en' in missing['content']
+
+    def test_validate_translations_multiple_locales(self, session):
+        """Should validate across multiple locales."""
+        article = Article(author="John")
+
+        set_locale('en')
+        article.title = "Hello"
+        article.content = "Content"
+
+        set_locale('es')
+        article.title = "Hola"
+        # content not set in Spanish
+
+        missing = article.validate_translations(required_locales=['en', 'es'])
+
+        assert 'content' in missing
+        assert 'es' in missing['content']
+        assert 'en' not in missing.get('content', [])
+
+    def test_validate_translations_default_locale(self, session):
+        """Should default to fallback locale."""
+        article = Article(author="John")
+
+        missing = article.validate_translations()
+
+        # Should check default locale (en)
+        assert 'title' in missing
+        assert 'content' in missing
