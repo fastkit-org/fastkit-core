@@ -431,3 +431,121 @@ class TestValidation:
         # Should check default locale (en)
         assert 'title' in missing
         assert 'content' in missing
+
+
+# ============================================================================
+# Test Database Persistence
+# ============================================================================
+
+class TestDatabasePersistence:
+    """Test database save and load."""
+
+    def test_save_and_load_single_locale(self, session):
+        """Should persist single locale to database."""
+        article = Article(author="John")
+
+        set_locale('en')
+        article.title = "Hello World"
+        article.content = "English content"
+
+        session.add(article)
+        session.commit()
+
+        # Reload from database
+        session.expire_all()
+        loaded = session.query(Article).first()
+
+        set_locale('en')
+        assert loaded.title == "Hello World"
+        assert loaded.content == "English content"
+
+    def test_save_and_load_multiple_locales(self, session):
+        """Should persist multiple locales."""
+        article = Article(author="John")
+
+        set_locale('en')
+        article.title = "Hello"
+        article.content = "English"
+
+        set_locale('es')
+        article.title = "Hola"
+        article.content = "Español"
+
+        session.add(article)
+        session.commit()
+
+        # Reload
+        session.expire_all()
+        loaded = session.query(Article).first()
+
+        set_locale('en')
+        assert loaded.title == "Hello"
+
+        set_locale('es')
+        assert loaded.title == "Hola"
+
+    def test_update_translation(self, session):
+        """Should update existing translation."""
+        article = Article(author="John")
+
+        set_locale('en')
+        article.title = "Original"
+
+        session.add(article)
+        session.commit()
+
+        # Update
+        article.title = "Updated"
+        session.commit()
+
+        # Reload
+        session.expire_all()
+        loaded = session.query(Article).first()
+
+        assert loaded.title == "Updated"
+
+    def test_add_new_locale(self, session):
+        """Should add new locale to existing record."""
+        article = Article(author="John")
+
+        set_locale('en')
+        article.title = "Hello"
+
+        session.add(article)
+        session.commit()
+
+        # Add Spanish
+        set_locale('es')
+        article.title = "Hola"
+        session.commit()
+
+        # Reload
+        session.expire_all()
+        loaded = session.query(Article).first()
+
+        set_locale('en')
+        assert loaded.title == "Hello"
+
+        set_locale('es')
+        assert loaded.title == "Hola"
+
+    def test_partial_update(self, session):
+        """Should update one field without affecting others."""
+        article = Article(author="John")
+
+        set_locale('en')
+        article.title = "Hello"
+        article.content = "Content"
+
+        session.add(article)
+        session.commit()
+
+        # Update only title
+        article.title = "Updated Title"
+        session.commit()
+
+        session.expire_all()
+        loaded = session.query(Article).first()
+
+        assert loaded.title == "Updated Title"
+        assert loaded.content == "Content"  # Unchanged
