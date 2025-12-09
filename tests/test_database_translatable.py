@@ -549,3 +549,48 @@ class TestDatabasePersistence:
 
         assert loaded.title == "Updated Title"
         assert loaded.content == "Content"  # Unchanged
+
+
+# ============================================================================
+# Test Fallback Behavior
+# ============================================================================
+
+class TestFallbackBehavior:
+    """Test locale fallback behavior."""
+
+    def test_fallback_to_default_locale(self, session):
+        """Should fallback to default locale."""
+        article = Article(author="John")
+
+        set_locale('en')
+        article.title = "Hello"
+
+        # Request non-existent locale
+        set_locale('fr')
+        translation = article.get_translation('title', fallback=True)
+
+        assert translation == "Hello"
+
+    def test_custom_fallback_locale(self, session):
+        """Should use custom fallback locale."""
+        product = Product(price=100)
+
+        # Product has __fallback_locale__ = 'es'
+        product.set_locale('es')
+        product.name = "Producto"
+
+        # Request non-existent locale, should fallback to es
+        translation = product.get_translation('name', locale='fr', fallback=True)
+
+        assert translation == "Producto"
+
+    def test_no_fallback_returns_none(self, session):
+        """Should return None when fallback disabled."""
+        article = Article(author="John")
+
+        set_locale('en')
+        article.title = "Hello"
+
+        translation = article.get_translation('title', locale='fr', fallback=False)
+
+        assert translation is None
