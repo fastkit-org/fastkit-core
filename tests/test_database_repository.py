@@ -617,3 +617,58 @@ class TestUpdateOperations:
         )
 
         assert count == 0
+
+
+# ============================================================================
+# Test DELETE Operations
+# ============================================================================
+
+class TestDeleteOperations:
+    """Test delete operations."""
+
+    def test_delete_by_id(self, user_repo, sample_users):
+        """Should delete record by ID."""
+        user = sample_users[0]
+
+        deleted = user_repo.delete(user.id)
+
+        assert deleted is True
+
+        # Verify deleted
+        found = user_repo.get(user.id)
+        assert found is None
+
+    def test_delete_nonexistent(self, user_repo):
+        """Should return False for nonexistent ID."""
+        deleted = user_repo.delete(9999)
+
+        assert deleted is False
+
+    def test_delete_with_commit_false(self, user_repo, sample_users, session):
+        """Should not commit when commit=False."""
+        user = sample_users[0]
+
+        user_repo.delete(user.id, commit=False)
+
+        # Rollback
+        session.rollback()
+
+        # Should still exist
+        found = user_repo.get(user.id)
+        assert found is not None
+
+    def test_delete_many(self, user_repo, sample_users):
+        """Should delete multiple records."""
+        count = user_repo.delete_many(filters={'is_active': False})
+
+        assert count == 1  # Charlie is inactive
+
+        # Verify
+        remaining = user_repo.get_all()
+        assert len(remaining) == 4
+
+    def test_delete_many_no_matches(self, user_repo, sample_users):
+        """Should return 0 when no matches."""
+        count = user_repo.delete_many(filters={'name': 'Nonexistent'})
+
+        assert count == 0
