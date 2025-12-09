@@ -55,3 +55,23 @@ class SluggedArticle(Base, SlugMixin):
 class PublishablePost(Base, PublishableMixin):
     """Post with publishing workflow."""
     title: Mapped[str] = mapped_column(String(200))
+
+# ============================================================================
+# Fixtures
+# ============================================================================
+
+@pytest.fixture
+def engine():
+    """Create in-memory SQLite engine."""
+    engine = create_engine('sqlite:///:memory:', echo=False)
+    Base.metadata.create_all(engine)
+    return engine
+
+
+@pytest.fixture
+def session(engine):
+    """Create database session."""
+    SessionLocal = sessionmaker(bind=engine)
+    session = SessionLocal()
+    yield session
+    session.close()
