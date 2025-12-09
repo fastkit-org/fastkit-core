@@ -284,3 +284,177 @@ class TestReadOperations:
         user = user_repo.filter_one()
 
         assert user is None
+
+
+# ============================================================================
+# Test FILTER Operations
+# ============================================================================
+
+class TestFilterOperations:
+    """Test filtering with Django-style operators."""
+
+    def test_filter_exact_match(self, user_repo, sample_users):
+        """Should filter by exact value."""
+        users = user_repo.filter(name='Alice')
+
+        assert len(users) == 1
+        assert users[0].name == 'Alice'
+
+    def test_filter_multiple_conditions(self, user_repo, sample_users):
+        """Should filter by multiple conditions (AND)."""
+        users = user_repo.filter(is_active=True, age=25)
+
+        assert len(users) == 1
+        assert users[0].name == 'Alice'
+
+    def test_filter_gt_operator(self, user_repo, sample_users):
+        """Should filter with greater than."""
+        users = user_repo.filter(age__gt=30)
+
+        assert len(users) == 2  # Charlie (35) and David (40)
+        assert all(u.age > 30 for u in users)
+
+    def test_filter_gte_operator(self, user_repo, sample_users):
+        """Should filter with greater than or equal."""
+        users = user_repo.filter(age__gte=30)
+
+        assert len(users) == 3  # Bob (30), Charlie (35), David (40)
+        assert all(u.age >= 30 for u in users)
+
+    def test_filter_lt_operator(self, user_repo, sample_users):
+        """Should filter with less than."""
+        users = user_repo.filter(age__lt=30)
+
+        assert len(users) == 2  # Alice (25), Eve (28)
+        assert all(u.age < 30 for u in users)
+
+    def test_filter_lte_operator(self, user_repo, sample_users):
+        """Should filter with less than or equal."""
+        users = user_repo.filter(age__lte=30)
+
+        assert len(users) == 3  # Alice (25), Eve (28), Bob (30)
+        assert all(u.age <= 30 for u in users)
+
+    def test_filter_in_operator(self, user_repo, sample_users):
+        """Should filter with IN clause."""
+        users = user_repo.filter(name__in=['Alice', 'Bob', 'Charlie'])
+
+        assert len(users) == 3
+        names = [u.name for u in users]
+        assert 'Alice' in names
+        assert 'Bob' in names
+        assert 'Charlie' in names
+
+    def test_filter_not_in_operator(self, user_repo, sample_users):
+        """Should filter with NOT IN clause."""
+        users = user_repo.filter(name__not_in=['Alice', 'Bob'])
+
+        assert len(users) == 3
+        names = [u.name for u in users]
+        assert 'Alice' not in names
+        assert 'Bob' not in names
+
+    def test_filter_like_operator(self, user_repo, sample_users):
+        """Should filter with LIKE (case-insensitive contains)."""
+        users = user_repo.filter(name__like='%li%')
+
+        assert len(users) == 2  # Alice, Charlie
+        assert all('li' in u.name.lower() for u in users)
+
+    def test_filter_ilike_operator(self, user_repo, sample_users):
+        """Should filter with ILIKE (case-insensitive)."""
+        users = user_repo.filter(name__ilike='%ALICE%')
+
+        assert len(users) == 1
+        assert users[0].name == 'Alice'
+
+    def test_filter_startswith(self, user_repo, sample_users):
+        """Should filter with startswith."""
+        users = user_repo.filter(name__startswith='A')
+
+        assert len(users) == 1
+        assert users[0].name == 'Alice'
+
+    def test_filter_endswith(self, user_repo, sample_users):
+        """Should filter with endswith."""
+        users = user_repo.filter(email__endswith='example.com')
+
+        assert len(users) == 5  # All emails
+
+    def test_filter_is_null(self, user_repo):
+        """Should filter for NULL values."""
+
+        # Create user with optional field
+        class UserWithOptional(Base, IntIdMixin):
+            __tablename__ = 'users_optional'
+            name: Mapped[str] = mapped_column(String(100))
+            nickname: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+        Base.metadata.create_all(user_repo.session.bind)
+
+        repo = Repository(UserWithOptional, user_repo.session)
+        repo.create({'name': 'John', 'nickname': None})
+        repo.create({'name': 'Jane', 'nickname': 'JJ'})
+
+        users = repo.filter(nickname__is_null=True)
+
+        assert len(users) == 1
+        assert users[0].name == 'John'
+
+    def test_filter_is_not_null(self, user_repo, sample_users):
+        """Should filter for NOT NULL values."""
+        users = user_repo.filter(name__is_not_null=True)
+
+        # All users have names
+        assert len(users) > 0
+
+    def test_filter_with_limit(self, user_repo, sample_users):
+        """Should limit filter results."""
+        users = user_repo.filter(is_active=True, _limit=2)
+
+        assert len(users) == 2
+
+    def test_filter_with_offset(self, user_repo, sample_users):
+        """Should offset filter results."""
+        users = user_repo.filter(is_active=True, _offset=2, _limit=2)
+
+        assert len(users) == 2
+
+    def test_filter_with_order_by_asc(self, user_repo, sample_users):
+        """Should order by ascending."""
+        users = user_repo.filter(_order_by='age')
+
+        assert users[0].age == 25  # Alice
+        assert users[-1].age == 40  # David
+        # Verify ascending order
+        ages = [u.age for u in users]
+        assert ages == sorted(ages)
+
+    def test_filter_with_order_by_desc(self, user_repo, sample_users):
+        """Should order by descending."""
+        users = user_repo.filter(_order_by='-age')
+
+        assert users[0].age == 40  # David
+        assert users[-1].age == 25  # Alice
+        # Verify descending order
+        ages = [u.age for u in users]
+        assert ages == sorted(ages, reverse=True)
+
+    def test_filter_one(self, user_repo, sample_users):
+        """Should get first matching record."""
+        user = user_repo.filter_one(name='Alice')
+
+        assert user is not None
+        assert user.name == 'Alice'
+
+    def test_filter_one_not_found(self, user_repo, sample_users):
+        """Should return None when not found."""
+        user = user_repo.filter_one(name='Nonexistent')
+
+        assert user is None
+
+    def test_filter_no_matches(self, user_repo, sample_users):
+        """Should return empty list when no matches."""
+        users = user_repo.filter(age=999)
+
+        assert users == []

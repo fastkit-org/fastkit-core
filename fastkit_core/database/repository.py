@@ -62,6 +62,7 @@ class Repository(Generic[T]):
         'like': lambda col, val: col.like(val),  # LIKE
         'ilike': lambda col, val: col.ilike(val),  # Case-insensitive LIKE
         'is_null': lambda col, val: col.is_(None) if val else col.isnot(None),
+        'is_not_null': lambda col, val: col.isnot(None),
         'between': lambda col, val: col.between(val[0], val[1]),  # BETWEEN
         'startswith': lambda col, val: col.like(f'{val}%'),
         'endswith': lambda col, val: col.like(f'%{val}'),
@@ -228,6 +229,7 @@ class Repository(Generic[T]):
         - in, not_in: IN/NOT IN lists
         - like, ilike: LIKE patterns
         - is_null: IS NULL (pass True/False)
+        - is_not_null: IS NOT NULL (pass True/False)
         - between: BETWEEN (pass tuple/list of 2 values)
         - startswith, endswith, contains: String patterns
 
