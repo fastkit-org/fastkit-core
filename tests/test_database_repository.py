@@ -762,3 +762,47 @@ class TestSoftDelete:
         posts = post_repo.get_all()
 
         assert len(posts) == 1
+
+
+# ============================================================================
+# Test EXISTS and COUNT
+# ============================================================================
+
+class TestExistsAndCount:
+    """Test exists and count operations."""
+
+    def test_exists_true(self, user_repo, sample_users):
+        """Should return True when record exists."""
+        exists = user_repo.exists(name='Alice')
+
+        assert exists is True
+
+    def test_exists_false(self, user_repo, sample_users):
+        """Should return False when not exists."""
+        exists = user_repo.exists(name='Nonexistent')
+
+        assert exists is False
+
+    def test_exists_with_multiple_conditions(self, user_repo, sample_users):
+        """Should check multiple conditions."""
+        exists = user_repo.exists(name='Alice', age=25)
+
+        assert exists is True
+
+    def test_count_all(self, user_repo, sample_users):
+        """Should count all records."""
+        count = user_repo.count()
+
+        assert count == 5
+
+    def test_count_with_filters(self, user_repo, sample_users):
+        """Should count filtered records."""
+        count = user_repo.count(is_active=True)
+
+        assert count == 4
+
+    def test_count_with_operators(self, user_repo, sample_users):
+        """Should count with filter operators."""
+        count = user_repo.count(age__gte=30)
+
+        assert count == 3
