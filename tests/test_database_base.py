@@ -387,3 +387,51 @@ class TestRepr:
         assert 'CustomUser' in repr_str
         assert 'name=' in repr_str
         assert 'John' in repr_str
+
+
+# ============================================================================
+# Test Edge Cases
+# ============================================================================
+
+class TestEdgeCases:
+    """Test edge cases."""
+
+    def test_to_dict_with_none_values(self, session):
+        """Should handle None values."""
+
+        class OptionalModel(Base):
+            name: Mapped[str] = mapped_column(String(100))
+            optional: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+        Base.metadata.create_all(session.bind)
+
+        model = OptionalModel(name="Test", optional=None)
+        session.add(model)
+        session.commit()
+
+        data = model.to_dict()
+
+        assert data['optional'] is None
+
+    def test_to_dict_empty_relationships(self, session):
+        """Should handle empty relationships."""
+        user = User(name="John", email="john@example.com")
+        session.add(user)
+        session.commit()
+
+        data = user.to_dict(include_relationships=True)
+
+        assert 'posts' in data
+        assert data['posts'] == []
+
+    def test_update_from_dict_empty_dict(self, session):
+        """Should handle empty dict."""
+        user = User(name="John", email="john@example.com")
+        session.add(user)
+        session.commit()
+
+        original_name = user.name
+
+        user.update_from_dict({})
+
+        assert user.name == original_name
