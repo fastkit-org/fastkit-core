@@ -80,6 +80,10 @@ class Repository(Generic[T]):
         self.model = model
         self.session = session
 
+    def _has_soft_delete(self) -> bool:
+        """Check if model has soft delete support."""
+        return hasattr(self.model, 'deleted_at')
+
     def query(self):
         """Get query builder for complex queries."""
         return select(self.model)
@@ -152,20 +156,24 @@ class Repository(Generic[T]):
 
     def get(self, id: Any) -> T | None:
         """
-        Get record by ID.
+        Get record by primary key.
+
+        Excludes soft-deleted records by default.
 
         Args:
             id: Primary key value
 
         Returns:
-            Model instance or None
-
-        Example:
-```python
-            user = repo.get(1)
-```
+            Model instance or None if not found or soft-deleted
         """
-        return self.session.get(self.model, id)
+        query = select(self.model).where(self.model.id == id)
+
+        # Exclude soft-deleted records
+        if self._has_soft_delete():
+            query = query.where(self.model.deleted_at.is_(None))
+
+        result = self.session.execute(query)
+        return result.scalar_one_or_none()
 
     def get_or_404(self, id: Any) -> T:
         """
@@ -202,6 +210,9 @@ class Repository(Generic[T]):
 ```
         """
         query = select(self.model)
+
+        if self._has_soft_delete():
+            query = query.where(self.model.deleted_at.is_(None))
 
         if limit:
             query = query.limit(limit)
@@ -253,6 +264,9 @@ class Repository(Generic[T]):
             repo.filter(age__gte=18, _order_by='-created_at')  # DESC
         """
         query = select(self.model)
+
+        if self._has_soft_delete():
+            query = query.where(self.model.deleted_at.is_(None))
 
         # Build WHERE conditions
         conditions = []
@@ -334,6 +348,9 @@ class Repository(Generic[T]):
         """
         query = select(self.model)
 
+        if self._has_soft_delete():
+            query = query.where(self.model.deleted_at.is_(None))
+
         # OR conditions
         if filter_groups:
             or_conditions = []
@@ -371,6 +388,9 @@ class Repository(Generic[T]):
     ```
         """
         query = select(func.count()).select_from(self.model)
+
+        if self._has_soft_delete():
+            query = query.where(self.model.deleted_at.is_(None))
 
         # Build WHERE conditions using operator support
         conditions = []

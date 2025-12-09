@@ -672,3 +672,93 @@ class TestDeleteOperations:
         count = user_repo.delete_many(filters={'name': 'Nonexistent'})
 
         assert count == 0
+
+
+# ============================================================================
+# Test Soft Delete Support
+# ============================================================================
+
+class TestSoftDelete:
+    """Test soft delete functionality."""
+
+    def test_soft_delete_basic(self, post_repo, sample_users):
+        """Should soft delete by default."""
+        post = post_repo.create({
+            'title': 'Test Post',
+            'content': 'Content',
+            'user_id': sample_users[0].id
+        })
+
+        # Delete (soft)
+        deleted = post_repo.delete(post.id)
+
+        assert deleted is True
+
+        # Should not be in regular queries
+        found = post_repo.get(post.id)
+        assert found is None
+
+        # But should exist in database with deleted_at set
+        all_posts = post_repo.session.query(Post).filter_by(id=post.id).first()
+        assert all_posts is not None
+        assert all_posts.deleted_at is not None
+
+    def test_force_delete(self, post_repo, sample_users):
+        """Should force delete when force=True."""
+        post = post_repo.create({
+            'title': 'Test Post',
+            'content': 'Content',
+            'user_id': sample_users[0].id
+        })
+
+        # Force delete
+        deleted = post_repo.delete(post.id, force=True)
+
+        assert deleted is True
+
+        # Should be completely gone from database
+        all_posts = post_repo.session.query(Post).filter_by(id=post.id).first()
+        assert all_posts is None
+
+    def test_filter_excludes_soft_deleted(self, post_repo, sample_users):
+        """Should exclude soft deleted records from filter."""
+        post1 = post_repo.create({
+            'title': 'Active Post',
+            'content': 'Content',
+            'user_id': sample_users[0].id
+        })
+
+        post2 = post_repo.create({
+            'title': 'Deleted Post',
+            'content': 'Content',
+            'user_id': sample_users[0].id
+        })
+
+        # Soft delete post2
+        post_repo.delete(post2.id)
+
+        # Filter should only return active
+        posts = post_repo.filter()
+
+        assert len(posts) == 1
+        assert posts[0].id == post1.id
+
+    def test_get_all_excludes_soft_deleted(self, post_repo, sample_users):
+        """Should exclude soft deleted from get_all."""
+        post1 = post_repo.create({
+            'title': 'Active',
+            'content': 'Content',
+            'user_id': sample_users[0].id
+        })
+
+        post2 = post_repo.create({
+            'title': 'Deleted',
+            'content': 'Content',
+            'user_id': sample_users[0].id
+        })
+
+        post_repo.delete(post2.id)
+
+        posts = post_repo.get_all()
+
+        assert len(posts) == 1
