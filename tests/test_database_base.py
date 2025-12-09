@@ -255,3 +255,96 @@ class TestToDict:
 
         assert isinstance(data, dict)
         assert data['name'] == "John"
+
+
+# ============================================================================
+# Test update_from_dict()
+# ============================================================================
+
+class TestUpdateFromDict:
+    """Test update_from_dict() method."""
+
+    def test_update_from_dict_basic(self, session):
+        """Should update attributes from dict."""
+        user = User(name="John", email="john@example.com")
+        session.add(user)
+        session.commit()
+
+        user.update_from_dict({
+            'name': 'Jane',
+            'email': 'jane@example.com'
+        })
+        session.commit()
+
+        assert user.name == 'Jane'
+        assert user.email == 'jane@example.com'
+
+    def test_update_from_dict_partial(self, session):
+        """Should update only specified fields."""
+        user = User(name="John", email="john@example.com")
+        session.add(user)
+        session.commit()
+
+        user.update_from_dict({'name': 'Jane'})
+        session.commit()
+
+        assert user.name == 'Jane'
+        assert user.email == 'john@example.com'  # Unchanged
+
+    def test_update_from_dict_with_exclude(self, session):
+        """Should exclude specified fields."""
+        user = User(name="John", email="john@example.com")
+        session.add(user)
+        session.commit()
+
+        user.update_from_dict(
+            {'name': 'Jane', 'email': 'jane@example.com'},
+            exclude=['email']
+        )
+
+        assert user.name == 'Jane'
+        assert user.email == 'john@example.com'  # Excluded
+
+    def test_update_from_dict_with_allow_only(self, session):
+        """Should only update allowed fields."""
+        user = User(name="John", email="john@example.com")
+        session.add(user)
+        session.commit()
+
+        user.update_from_dict(
+            {'name': 'Jane', 'email': 'jane@example.com'},
+            allow_only=['name']
+        )
+
+        assert user.name == 'Jane'
+        assert user.email == 'john@example.com'  # Not in allow_only
+
+    def test_update_from_dict_ignores_nonexistent(self, session):
+        """Should ignore non-existent attributes."""
+        user = User(name="John", email="john@example.com")
+        session.add(user)
+        session.commit()
+
+        user.update_from_dict({
+            'name': 'Jane',
+            'nonexistent_field': 'value'
+        })
+
+        assert user.name == 'Jane'
+        assert not hasattr(user, 'nonexistent_field')
+
+    def test_update_from_dict_ignores_id(self, session):
+        """Should not update ID."""
+        user = User(name="John", email="john@example.com")
+        session.add(user)
+        session.commit()
+
+        original_id = user.id
+
+        user.update_from_dict({
+            'id': 999,
+            'name': 'Jane'
+        })
+
+        assert user.id == original_id  # ID unchanged
+        assert user.name == 'Jane'
