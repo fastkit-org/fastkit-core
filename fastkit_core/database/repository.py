@@ -559,74 +559,55 @@ class Repository(Generic[T]):
             self,
             page: int = 1,
             per_page: int = 20,
+            _order_by: str | None = None,
             **filters
     ) -> tuple[list[T], dict[str, Any]]:
         """
-        Paginate records with operator support.
+        Paginate records with metadata.
+
+        Excludes soft-deleted records by default.
 
         Args:
             page: Page number (1-indexed)
             per_page: Items per page
-            **filters: Keyword arguments for filtering (supports operators)
+            _order_by: Order by field (prefix with - for DESC)
+            **filters: Filter conditions with operators
 
         Returns:
-            Tuple of (items, metadata dict)
+            Tuple of (items, metadata)
 
         Example:
-    ```python
-            users, meta = repo.paginate(page=2, per_page=10)
-
-            # With operator filters
-            active_adults, meta = repo.paginate(
-                page=1,
+            # Page 2, 20 items per page, sorted by created_at descending
+            users, meta = repo.paginate(
+                page=2,
                 per_page=20,
-                status='active',
-                age__gte=18,
-                deleted_at__is_null=True
+                _order_by='-created_at',
+                is_active=True
             )
-
-            print(meta['total'])  # Total count
-            print(meta['has_next'])  # Has next page?
-    ```
         """
-        # Build base query
-        query = select(self.model)
+        # Get total count (with filters)
+        total = self.count(**filters)
 
-        # Build WHERE conditions using operator support
-        conditions = []
-        for key, value in filters.items():
-            self._parse_field_operator(key, value, conditions)
-
-        if conditions:
-            query = query.where(and_(*conditions))
-
-        # Get total count with same conditions
-        count_query = select(func.count()).select_from(self.model)
-        if conditions:
-            count_query = count_query.where(and_(*conditions))
-
-        total = self.session.execute(count_query).scalar() or 0
-
-        # Apply pagination
+        # Calculate pagination metadata
+        total_pages = (total + per_page - 1) // per_page if total > 0 else 0
         offset = (page - 1) * per_page
-        query = query.offset(offset).limit(per_page)
 
-        # Execute query
-        result = self.session.execute(query)
-        items = list(result.scalars().all())
+        # Get items with limit, offset, and ordering
+        items = self.filter(
+            _limit=per_page,
+            _offset=offset,
+            _order_by=_order_by,
+            **filters
+        )
 
-        # Calculate metadata
-        total_pages = (total + per_page - 1) // per_page
-        has_next = page < total_pages
-        has_prev = page > 1
-
+        # Build metadata
         metadata = {
-            'total': total,
             'page': page,
             'per_page': per_page,
+            'total': total,
             'total_pages': total_pages,
-            'has_next': has_next,
-            'has_prev': has_prev
+            'has_next': page < total_pages,
+            'has_prev': page > 1
         }
 
         return items, metadata

@@ -851,3 +851,97 @@ class TestEdgeCases:
         users = user_repo.filter(_limit=999999)
 
         assert len(users) == 5  # Only 5 users exist
+
+
+# ============================================================================
+# Test Integration Scenarios
+# ============================================================================
+
+class TestIntegration:
+    """Test real-world integration scenarios."""
+
+    def test_crud_lifecycle(self, user_repo):
+        """Should handle complete CRUD lifecycle."""
+        # Create
+        user = user_repo.create({
+            'name': 'John',
+            'email': 'john@example.com',
+            'age': 30
+        })
+        assert user.id is not None
+
+        # Read
+        found = user_repo.get(user.id)
+        assert found.name == 'John'
+
+        # Update
+        updated = user_repo.update(user.id, {'age': 31})
+        assert updated.age == 31
+
+        # Delete
+        deleted = user_repo.delete(user.id)
+        assert deleted is True
+
+        # Verify deleted
+        assert user_repo.get(user.id) is None
+
+    def test_complex_filtering(self, product_repo):
+        """Should handle complex filtering scenarios."""
+        # Create products
+        products = [
+            {'name': 'Laptop', 'price': 1000, 'stock': 10, 'category': 'Electronics'},
+            {'name': 'Phone', 'price': 500, 'stock': 20, 'category': 'Electronics'},
+            {'name': 'Desk', 'price': 300, 'stock': 5, 'category': 'Furniture'},
+            {'name': 'Chair', 'price': 150, 'stock': 15, 'category': 'Furniture'},
+        ]
+        product_repo.create_many(products)
+
+        # Complex filter: Electronics, price < 600, in stock
+        results = product_repo.filter(
+            category='Electronics',
+            price__lt=600,
+            stock__gte=10
+        )
+
+        assert len(results) == 1
+        assert results[0].name == 'Phone'
+
+    def test_pagination_with_sorting(self, user_repo):
+        """Should combine pagination with sorting."""
+        users_data = [
+            {'name': f'User{i}', 'email': f'user{i}@example.com', 'age': 20 + (i % 10)}
+            for i in range(30)
+        ]
+        user_repo.create_many(users_data)
+
+        # Page 2, sorted by age descending
+        users, meta = user_repo.paginate(
+            page=2,
+            per_page=10,
+            _order_by='-age'
+        )
+
+        assert len(users) == 10
+        # Should be sorted descending
+        ages = [u.age for u in users]
+        assert ages == sorted(ages, reverse=True)
+
+    def test_bulk_operations(self, user_repo):
+        """Should handle bulk operations efficiently."""
+        # Bulk create
+        users_data = [
+            {'name': f'User{i}', 'email': f'user{i}@example.com', 'age': 20}
+            for i in range(100)
+        ]
+        users = user_repo.create_many(users_data)
+        assert len(users) == 100
+
+        # Bulk update
+        count = user_repo.update_many(
+            filters={'age': 20},
+            data={'age': 21}
+        )
+        assert count == 100
+
+        # Verify
+        assert user_repo.count(age=21) == 100
