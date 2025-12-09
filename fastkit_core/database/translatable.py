@@ -172,9 +172,19 @@ class TranslatableMixin:
 
         translations[locale] = value
 
-        # Mark as modified for SQLAlchemy
-        from sqlalchemy.orm import attributes
-        attributes.flag_modified(self, field)
+        # Mark as modified for SQLAlchemy only if object is persistent
+        from sqlalchemy import inspect as sa_inspect
+
+        try:
+            inspector = sa_inspect(self)
+            # Only flag modified if object is persistent (has been committed)
+            # or pending (added to session but not committed)
+            if inspector.persistent or inspector.pending:
+                from sqlalchemy.orm import attributes
+                attributes.flag_modified(self, field)
+        except Exception:
+            # Object not yet tracked by SQLAlchemy, skip flag_modified
+            pass
 
         return self
 

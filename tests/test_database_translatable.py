@@ -97,3 +97,80 @@ def reset_locale():
     yield
     set_locale('en')
     TranslatableMixin.set_global_locale('en')
+
+
+# ============================================================================
+# Test Basic Get/Set Operations
+# ============================================================================
+
+class TestBasicGetSet:
+    """Test basic get/set operations."""
+
+    def test_set_single_locale(self, session):
+        """Should set translation for current locale."""
+        article = Article(author="John")
+        session.add(article)  # Add to session FIRST
+        session.flush()  # Ensure it's tracked
+
+        article.title = "Hello World"
+
+        assert article.title == "Hello World"
+
+    def test_set_multiple_locales(self, session):
+        """Should set translations for multiple locales."""
+        article = Article(author="John")
+        session.add(article)  # Add to session FIRST
+        session.flush()
+
+        set_locale('en')
+        article.title = "Hello World"
+
+        set_locale('es')
+        article.title = "Hola Mundo"
+
+        set_locale('fr')
+        article.title = "Bonjour le Monde"
+
+        # Verify all are stored
+        set_locale('en')
+        assert article.title == "Hello World"
+
+        set_locale('es')
+        assert article.title == "Hola Mundo"
+
+        set_locale('fr')
+        assert article.title == "Bonjour le Monde"
+
+    def test_set_multiple_fields(self, session):
+        """Should handle multiple translatable fields."""
+        article = Article(author="John")
+
+        set_locale('en')
+        article.title = "Hello"
+        article.content = "Content in English"
+
+        assert article.title == "Hello"
+        assert article.content == "Content in English"
+
+    def test_get_fallback_translation(self, session):
+        """Should return None for non-existent translation."""
+        article = Article(author="John")
+
+        set_locale('en')
+        article.title = "Hello"
+
+        set_locale('fr')
+        # No French translation set
+        assert article.title == "Hello"
+
+    def test_non_translatable_field_works_normally(self, session):
+        """Should handle non-translatable fields normally."""
+        article = Article(author="John")
+        article.title = "Test"
+
+        # Author is not translatable
+        assert article.author == "John"
+
+        # Should work the same regardless of locale
+        set_locale('es')
+        assert article.author == "John"
