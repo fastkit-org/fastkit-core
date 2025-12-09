@@ -348,3 +348,42 @@ class TestUpdateFromDict:
 
         assert user.id == original_id  # ID unchanged
         assert user.name == 'Jane'
+
+# ============================================================================
+# Test __repr__()
+# ============================================================================
+
+class TestRepr:
+    """Test string representation."""
+
+    def test_repr_default(self, session):
+        """Should have default repr with ID."""
+        user = User(name="John", email="john@example.com")
+        session.add(user)
+        session.commit()
+
+        repr_str = repr(user)
+
+        assert 'User' in repr_str
+        assert str(user.id) in repr_str
+
+    def test_repr_custom(self, session):
+        """Should allow custom repr attributes."""
+
+        class CustomUser(Base):
+            name: Mapped[str] = mapped_column(String(100))
+
+            def __repr_attrs__(self):
+                return [('id', self.id), ('name', self.name)]
+
+        Base.metadata.create_all(session.bind)
+
+        user = CustomUser(name="John")
+        session.add(user)
+        session.commit()
+
+        repr_str = repr(user)
+
+        assert 'CustomUser' in repr_str
+        assert 'name=' in repr_str
+        assert 'John' in repr_str
