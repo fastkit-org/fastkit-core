@@ -174,3 +174,63 @@ class TestBasicGetSet:
         # Should work the same regardless of locale
         set_locale('es')
         assert article.author == "John"
+
+
+# ============================================================================
+# Test Locale Management
+# ============================================================================
+
+class TestLocaleManagement:
+    """Test locale management."""
+
+    def test_get_locale_default(self, session):
+        """Should return default locale."""
+        article = Article(author="John")
+
+        locale = article.get_locale()
+
+        assert locale == 'en'
+
+    def test_set_locale_instance(self, session):
+        """Should set instance-specific locale."""
+        article = Article(author="John")
+
+        article.set_locale('es')
+
+        assert article.get_locale() == 'es'
+
+    def test_set_locale_chainable(self, session):
+        """Should return self for chaining."""
+        article = Article(author="John")
+
+        result = article.set_locale('es')
+
+        assert result is article
+
+    def test_instance_locale_overrides_global(self, session):
+        """Should prioritize instance locale over global."""
+        article = Article(author="John")
+
+        # Set global locale
+        TranslatableMixin.set_global_locale('en')
+
+        # Set instance locale
+        article.set_locale('es')
+
+        assert article.get_locale() == 'es'
+
+    def test_global_locale_affects_all_instances(self, session):
+        """Should affect all instances without instance locale."""
+        article1 = Article(author="John")
+        article2 = Article(author="Jane")
+
+        TranslatableMixin.set_global_locale('es')
+
+        assert article1.get_locale() == 'es'
+        assert article2.get_locale() == 'es'
+
+    def test_get_global_locale(self, session):
+        """Should get current global locale."""
+        TranslatableMixin.set_global_locale('fr')
+
+        assert TranslatableMixin.get_global_locale() == 'fr'
