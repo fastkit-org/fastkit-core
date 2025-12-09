@@ -806,3 +806,48 @@ class TestExistsAndCount:
         count = user_repo.count(age__gte=30)
 
         assert count == 3
+
+
+# ============================================================================
+# Test Edge Cases
+# ============================================================================
+
+class TestEdgeCases:
+    """Test edge cases and error conditions."""
+
+    def test_create_empty_dict(self, user_repo):
+        """Should handle empty dict gracefully."""
+        with pytest.raises(Exception):
+            # Will fail due to missing required fields
+            user_repo.create({})
+
+    def test_update_with_empty_dict(self, user_repo, sample_users):
+        """Should handle empty update dict."""
+        user = sample_users[0]
+        original_name = user.name
+
+        updated = user_repo.update(user.id, {})
+
+        # Should still return the instance
+        assert updated is not None
+        assert updated.name == original_name
+
+    def test_paginate_page_zero(self, user_repo, sample_users):
+        """Should handle page 0."""
+        users, meta = user_repo.paginate(page=0, per_page=10)
+
+        # Should treat as page 1 or handle gracefully
+        assert isinstance(users, list)
+
+    def test_paginate_negative_page(self, user_repo, sample_users):
+        """Should handle negative page."""
+        users, meta = user_repo.paginate(page=-1, per_page=10)
+
+        # Should handle gracefully
+        assert isinstance(users, list)
+
+    def test_very_large_limit(self, user_repo, sample_users):
+        """Should handle very large limit."""
+        users = user_repo.filter(_limit=999999)
+
+        assert len(users) == 5  # Only 5 users exist
