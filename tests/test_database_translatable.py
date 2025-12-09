@@ -667,3 +667,93 @@ class TestToDictIntegration:
         data = page.to_dict(include_relationships=True, locale='en')
 
         assert 'category' in data
+
+
+# ============================================================================
+# Test Edge Cases
+# ============================================================================
+
+class TestEdgeCases:
+    """Test edge cases and error conditions."""
+
+    def test_empty_string_translation(self, session):
+        """Should handle empty strings."""
+        article = Article(author="John")
+
+        article.title = ""
+
+        assert article.title == ""
+
+    def test_none_translation(self, session):
+        """Should handle None values."""
+        article = Article(author="John")
+
+        article.title = None
+
+        assert article.title is None
+
+    def test_special_characters(self, session):
+        """Should handle special characters."""
+        article = Article(author="John")
+
+        article.title = "Hello! @#$%^&*() 你好 مرحبا"
+
+        assert article.title == "Hello! @#$%^&*() 你好 مرحبا"
+
+    def test_very_long_text(self, session):
+        """Should handle very long text."""
+        article = Article(author="John")
+
+        long_text = "A" * 10000
+        article.content = long_text
+
+        assert len(article.content) == 10000
+
+    def test_unicode_in_locale_code(self, session):
+        """Should handle various locale codes."""
+        article = Article(author="John")
+
+        article.set_locale('zh-CN')
+        article.title = "你好"
+
+        assert article.get_locale() == 'zh-CN'
+        assert article.title == "你好"
+
+    def test_overwrite_existing_translation(self, session):
+        """Should overwrite existing translation."""
+        article = Article(author="John")
+
+        set_locale('en')
+        article.title = "Original"
+
+        article.title = "Updated"
+
+        assert article.title == "Updated"
+
+    def test_multiple_instances_independent(self, session):
+        """Should maintain independent translations per instance."""
+        article1 = Article(author="John")
+        article2 = Article(author="Jane")
+
+        set_locale('en')
+        article1.title = "Article 1"
+        article2.title = "Article 2"
+
+        assert article1.title == "Article 1"
+        assert article2.title == "Article 2"
+
+    def test_empty_translatable_list(self, session):
+        """Should handle model with no translatable fields."""
+
+        class SimpleModel(Base, IntIdMixin, TranslatableMixin):
+            __tablename__ = 'simple_models'
+            __translatable__ = []  # No translatable fields
+
+            name: Mapped[str] = mapped_column(String(100))
+
+        Base.metadata.create_all(session.bind)
+
+        model = SimpleModel(name="Test")
+
+        # Should work normally
+        assert model.name == "Test"
