@@ -61,3 +61,55 @@ class Product(Base, IntIdMixin):
     price: Mapped[int] = mapped_column(Integer)
     stock: Mapped[int] = mapped_column(Integer)
     category: Mapped[str] = mapped_column(String(50))
+
+# ============================================================================
+# Fixtures
+# ============================================================================
+
+@pytest.fixture
+def engine():
+    """Create in-memory SQLite engine."""
+    engine = create_engine('sqlite:///:memory:', echo=False)
+    Base.metadata.create_all(engine)
+    return engine
+
+
+@pytest.fixture
+def session(engine):
+    """Create database session."""
+    SessionLocal = sessionmaker(bind=engine)
+    session = SessionLocal()
+    yield session
+    session.rollback()
+    session.close()
+
+
+@pytest.fixture
+def user_repo(session):
+    """Create user repository."""
+    return Repository(User, session)
+
+
+@pytest.fixture
+def post_repo(session):
+    """Create post repository."""
+    return Repository(Post, session)
+
+
+@pytest.fixture
+def product_repo(session):
+    """Create product repository."""
+    return Repository(Product, session)
+
+
+@pytest.fixture
+def sample_users(user_repo):
+    """Create sample users."""
+    users = [
+        {'name': 'Alice', 'email': 'alice@example.com', 'age': 25, 'is_active': True},
+        {'name': 'Bob', 'email': 'bob@example.com', 'age': 30, 'is_active': True},
+        {'name': 'Charlie', 'email': 'charlie@example.com', 'age': 35, 'is_active': False},
+        {'name': 'David', 'email': 'david@example.com', 'age': 40, 'is_active': True},
+        {'name': 'Eve', 'email': 'eve@example.com', 'age': 28, 'is_active': True},
+    ]
+    return user_repo.create_many(users)
