@@ -53,6 +53,7 @@ from fastkit_core.database.mixins import (
     SoftDeleteMixin,
     TimestampMixin,
     UUIDMixin,
+    IntIdMixin,
 )
 from fastkit_core.database.repository import Repository, create_repository
 from fastkit_core.database.session import (
@@ -86,6 +87,7 @@ __all__ = [
     'Repository',
     'create_repository',
     # Mixins
+    'IntIdMixin',
     'UUIDMixin',
     'SoftDeleteMixin',
     'TimestampMixin',

@@ -17,11 +17,18 @@ import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import DateTime, String, select, event
+from sqlalchemy import DateTime, String, select, event, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
+
+class IntIdMixin:
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True
+    )
 
 
 class UUIDMixin:

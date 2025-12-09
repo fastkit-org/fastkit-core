@@ -14,8 +14,7 @@ import re
 from datetime import datetime
 from typing import Any, TypeVar
 
-from sqlalchemy import  Integer
-from sqlalchemy.orm import DeclarativeBase, Mapped, declared_attr, mapped_column
+from sqlalchemy.orm import DeclarativeBase, declared_attr
 
 T = TypeVar('T', bound='Base')
 
@@ -25,7 +24,6 @@ class Base(DeclarativeBase):
     Base model for all FastKit models.
 
     Provides common functionality:
-    - Auto-incrementing ID
     - Dict serialization with relationship support
     - JSON export
     - Auto-generated table names
@@ -78,12 +76,6 @@ class Base(DeclarativeBase):
 
         return name
 
-    # Primary key (auto-incrementing)
-    id: Mapped[int] = mapped_column(
-        Integer,
-        primary_key=True,
-        autoincrement=True
-    )
 
     # ========================================================================
     # Serialization

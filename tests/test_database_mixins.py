@@ -24,6 +24,7 @@ from fastkit_core.database import (
     UUIDMixin,
     SlugMixin,
     PublishableMixin,
+    IntIdMixin,
 )
 
 
@@ -31,7 +32,7 @@ from fastkit_core.database import (
 # Test Models
 # ============================================================================
 
-class TimestampedUser(Base, TimestampMixin):
+class TimestampedUser(Base, IntIdMixin, TimestampMixin):
     """User with timestamps."""
     name: Mapped[str] = mapped_column(String(100))
 
@@ -245,3 +246,49 @@ class TestSoftDeleteMixin:
         all_posts = list(SoftDeletablePost.with_deleted(session))
 
         assert len(all_posts) == 2
+
+
+# ============================================================================
+# Test UUIDMixin
+# ============================================================================
+
+class TestUUIDMixin:
+    """Test UUIDMixin functionality."""
+
+    def test_uuid_auto_generated(self, session):
+        """Should auto-generate UUID."""
+        user = UUIDUser(name="John")
+        session.add(user)
+        session.commit()
+
+        assert user.id is not None
+        assert isinstance(user.id, uuid.UUID)
+
+    def test_uuid_uniqueness(self, session):
+        """Should generate unique UUIDs."""
+        user1 = UUIDUser(name="John")
+        user2 = UUIDUser(name="Jane")
+        session.add_all([user1, user2])
+        session.commit()
+
+        assert user1.id != user2.id
+
+    def test_uuid_format(self, session):
+        """Should be valid UUID4 format."""
+        user = UUIDUser(name="John")
+        session.add(user)
+        session.commit()
+
+        # UUID4 version byte should be 4
+        assert user.id == 1
+
+    def test_find_by_uuid(self, session):
+        """Should find by UUID."""
+        user = UUIDUser(name="John")
+        session.add(user)
+        session.commit()
+
+        found = session.query(UUIDUser).filter_by(id=user.id).first()
+
+        assert found is not None
+        assert found.name == "John"
