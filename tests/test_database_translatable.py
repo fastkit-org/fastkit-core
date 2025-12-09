@@ -792,3 +792,87 @@ class TestI18nIntegration:
         # (This depends on implementation - they share _current_locale ContextVar)
         article = Article(author="John")
         assert article.get_locale() == 'fr'
+
+
+# ============================================================================
+# Test Real-World Scenarios
+# ============================================================================
+
+class TestRealWorldScenarios:
+    """Test real-world usage scenarios."""
+
+    def test_cms_article_workflow(self, session):
+        """Should handle typical CMS workflow."""
+        # Create article in English
+        article = Article(author="John")
+
+        set_locale('en')
+        article.title = "Getting Started with FastAPI"
+        article.content = "FastAPI is a modern web framework..."
+
+        session.add(article)
+        session.commit()
+
+        # Later, add Spanish translation
+        set_locale('es')
+        article.title = "Comenzando con FastAPI"
+        article.content = "FastAPI es un framework web moderno..."
+        session.commit()
+
+        # API returns appropriate language
+        set_locale('en')
+        en_data = article.to_dict(locale='en')
+
+        set_locale('es')
+        es_data = article.to_dict(locale='es')
+
+        assert en_data['title'] == "Getting Started with FastAPI"
+        assert es_data['title'] == "Comenzando con FastAPI"
+
+    def test_ecommerce_product_catalog(self, session):
+        """Should handle e-commerce product translations."""
+        product = Product(price=2999)
+
+        # English
+        product.set_locale('en')
+        product.name = "Laptop"
+        product.description = "High-performance laptop"
+
+        # Spanish (fallback locale for this model)
+        product.set_locale('es')
+        product.name = "Portátil"
+        product.description = "Portátil de alto rendimiento"
+
+        # French
+        product.set_locale('fr')
+        product.name = "Ordinateur portable"
+        product.description = "Ordinateur portable haute performance"
+
+        session.add(product)
+        session.commit()
+
+        # Verify all translations
+        assert product.get_translation('name', 'en') == "Laptop"
+        assert product.get_translation('name', 'es') == "Portátil"
+        assert product.get_translation('name', 'fr') == "Ordinateur portable"
+
+    def test_partial_translation_coverage(self, session):
+        """Should handle partial translation coverage gracefully."""
+        article = Article(author="John")
+
+        # Full English
+        set_locale('en')
+        article.title = "Article Title"
+        article.content = "Full content in English"
+
+        # Only title in Spanish
+        set_locale('es')
+        article.title = "Título del artículo"
+        # content not translated
+
+        session.add(article)
+        session.commit()
+
+        # Spanish: has title, should fallback for content
+        assert article.get_translation('title', 'es') == "Título del artículo"
+        assert article.get_translation('content', 'es', fallback=True) == "Full content in English"
