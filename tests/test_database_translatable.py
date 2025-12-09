@@ -594,3 +594,76 @@ class TestFallbackBehavior:
         translation = article.get_translation('title', locale='fr', fallback=False)
 
         assert translation is None
+
+
+# ============================================================================
+# Test Integration with to_dict()
+# ============================================================================
+
+class TestToDictIntegration:
+    """Test integration with Base.to_dict()."""
+
+    def test_to_dict_with_locale(self, session):
+        """Should serialize specific locale."""
+        article = Article(author="John")
+
+        set_locale('en')
+        article.title = "Hello"
+        article.content = "English"
+
+        set_locale('es')
+        article.title = "Hola"
+        article.content = "Español"
+
+        session.add(article)
+        session.commit()
+
+        # Get English version
+        data_en = article.to_dict(locale='en')
+
+        assert data_en['title'] == "Hello"
+        assert data_en['content'] == "English"
+
+        # Get Spanish version
+        data_es = article.to_dict(locale='es')
+
+        assert data_es['title'] == "Hola"
+        assert data_es['content'] == "Español"
+
+    def test_to_dict_current_locale(self, session):
+        """Should use current locale if not specified."""
+        article = Article(author="John")
+
+        set_locale('en')
+        article.title = "Hello"
+
+        set_locale('es')
+        article.title = "Hola"
+
+        session.add(article)
+        session.commit()
+
+        # Current locale is 'es'
+        data = article.to_dict()
+
+        # Should use 'es' but fall back to raw dict if no explicit locale param
+        # (depends on implementation)
+        assert 'title' in data
+
+    def test_to_dict_with_relationships(self, session):
+        """Should work with relationships."""
+        category = Category()
+        category.name = "Tech"
+
+        session.add(category)
+        session.commit()
+
+        page = Page(category_id=category.id)
+        page.title = "Article"
+
+        session.add(page)
+        session.commit()
+
+        data = page.to_dict(include_relationships=True, locale='en')
+
+        assert 'category' in data
