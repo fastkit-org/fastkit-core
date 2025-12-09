@@ -311,6 +311,7 @@ class PublishableMixin:
     )
 
     def _get_published_at(self):
+        """Get published_at with guaranteed timezone."""
         published = self.published_at
         if published.tzinfo is None:  # fix naive values
             published = published.replace(tzinfo=timezone.utc)
