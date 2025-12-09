@@ -73,3 +73,38 @@ def session(engine):
     yield session
     session.close()
 
+# ============================================================================
+# Test Table Name Generation
+# ============================================================================
+
+class TestTableNames:
+    """Test automatic table name generation."""
+
+    def test_simple_name(self):
+        """Should pluralize simple names."""
+        assert User.__tablename__ == 'users'
+
+    def test_camelcase_name(self):
+        """Should convert CamelCase to snake_case and pluralize."""
+        assert UserProfile.__tablename__ == 'user_profiles'
+
+    def test_name_ending_in_y(self):
+        """Should handle names ending in 'y'."""
+        assert Category.__tablename__ == 'categories'
+
+    def test_name_ending_in_s(self):
+        """Should handle names ending in 's'."""
+
+        class Status(Base):
+            name: Mapped[str] = mapped_column(String(50))
+
+        assert Status.__tablename__ == 'statuses'
+
+    def test_custom_tablename(self):
+        """Should allow custom table name override."""
+
+        class CustomModel(Base):
+            __tablename_override__ = 'my_custom_table'
+            name: Mapped[str] = mapped_column(String(50))
+
+        assert CustomModel.__tablename__ == 'my_custom_table'
