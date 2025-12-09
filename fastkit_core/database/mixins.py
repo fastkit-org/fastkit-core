@@ -310,19 +310,26 @@ class PublishableMixin:
         index=True  # Index for faster queries
     )
 
+    def _get_published_at(self):
+        published = self.published_at
+        if published.tzinfo is None:  # fix naive values
+            published = published.replace(tzinfo=timezone.utc)
+
+        return published
+
     @property
     def is_published(self) -> bool:
         """Check if record is published."""
         if self.published_at is None:
             return False
-        return self.published_at <= datetime.now(timezone.utc)
+        return self._get_published_at() <= datetime.now(timezone.utc)
 
     @property
     def is_scheduled(self) -> bool:
         """Check if record is scheduled for future."""
         if self.published_at is None:
             return False
-        return self.published_at > datetime.now(timezone.utc)
+        return self._get_published_at() > datetime.now(timezone.utc)
 
     @property
     def is_draft(self) -> bool:

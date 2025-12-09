@@ -385,3 +385,139 @@ class TestSlugMixin:
             article.generate_slug()
 
         assert "empty" in str(exc_info.value).lower()
+
+
+# ============================================================================
+# Test PublishableMixin
+# ============================================================================
+
+class TestPublishableMixin:
+    """Test PublishableMixin functionality."""
+
+    def test_publish(self, session):
+        """Should publish immediately."""
+        post = PublishablePost(title="Test")
+        session.add(post)
+        session.commit()
+
+        post.publish()
+        session.commit()
+
+        assert post.published_at is not None
+        assert post.is_published is True
+        assert post.is_draft is False
+
+    def test_unpublish(self, session):
+        """Should unpublish to draft."""
+        post = PublishablePost(title="Test")
+        session.add(post)
+        session.commit()
+
+        post.publish()
+        post.unpublish()
+        session.commit()
+
+        assert post.published_at is None
+        assert post.is_draft is True
+        assert post.is_published is False
+
+    def test_schedule(self, session):
+        """Should schedule for future."""
+        post = PublishablePost(title="Test")
+        session.add(post)
+        session.commit()
+
+        future = datetime.now(timezone.utc) + timedelta(days=1)
+        post.schedule(future)
+        session.commit()
+
+        assert post.published_at is not None
+        assert post.is_scheduled is True
+        assert post.is_published is False
+
+    def test_is_draft_property(self, session):
+        """Should check if draft."""
+        post = PublishablePost(title="Test")
+        session.add(post)
+        session.commit()
+
+        assert post.is_draft is True
+
+        post.publish()
+        assert post.is_draft is False
+
+    def test_is_published_property(self, session):
+        """Should check if published."""
+        post = PublishablePost(title="Test")
+        session.add(post)
+        session.commit()
+
+        assert post.is_published is False
+
+        post.publish()
+        assert post.is_published is True
+
+    def test_is_scheduled_property(self, session):
+        """Should check if scheduled."""
+        post = PublishablePost(title="Test")
+        session.add(post)
+        session.commit()
+
+        future = datetime.now(timezone.utc) + timedelta(days=1)
+        post.schedule(future)
+
+        assert post.is_scheduled is True
+        assert post.is_published is False
+
+    def test_published_query(self, session):
+        """Should query only published posts."""
+        post1 = PublishablePost(title="Published")
+        post2 = PublishablePost(title="Draft")
+        post3 = PublishablePost(title="Scheduled")
+
+        session.add_all([post1, post2, post3])
+        session.commit()
+
+        post1.publish()
+        future = datetime.now(timezone.utc) + timedelta(days=1)
+        post3.schedule(future)
+        session.commit()
+
+        published = list(PublishablePost.published(session))
+
+        assert len(published) == 1
+        assert published[0].title == "Published"
+
+    def test_drafts_query(self, session):
+        """Should query only drafts."""
+        post1 = PublishablePost(title="Published")
+        post2 = PublishablePost(title="Draft")
+
+        session.add_all([post1, post2])
+        session.commit()
+
+        post1.publish()
+        session.commit()
+
+        drafts = list(PublishablePost.drafts(session))
+
+        assert len(drafts) == 1
+        assert drafts[0].title == "Draft"
+
+    def test_scheduled_query(self, session):
+        """Should query only scheduled posts."""
+        post1 = PublishablePost(title="Published")
+        post2 = PublishablePost(title="Scheduled")
+
+        session.add_all([post1, post2])
+        session.commit()
+
+        post1.publish()
+        future = datetime.now(timezone.utc) + timedelta(days=1)
+        post2.schedule(future)
+        session.commit()
+
+        scheduled = list(PublishablePost.scheduled(session))
+
+        assert len(scheduled) == 1
+        assert scheduled[0].title == "Scheduled"
