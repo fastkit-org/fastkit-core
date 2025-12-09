@@ -458,3 +458,89 @@ class TestFilterOperations:
         users = user_repo.filter(age=999)
 
         assert users == []
+
+
+# ============================================================================
+# Test PAGINATION
+# ============================================================================
+
+class TestPagination:
+    """Test pagination functionality."""
+
+    def test_paginate_first_page(self, user_repo):
+        """Should paginate first page."""
+        # Create 25 users
+        users_data = [
+            {'name': f'User{i}', 'email': f'user{i}@example.com', 'age': 20}
+            for i in range(25)
+        ]
+        user_repo.create_many(users_data)
+
+        users, meta = user_repo.paginate(page=1, per_page=10)
+
+        assert len(users) == 10
+        assert meta['page'] == 1
+        assert meta['per_page'] == 10
+        assert meta['total'] == 25
+        assert meta['total_pages'] == 3
+        assert meta['has_next'] is True
+        assert meta['has_prev'] is False
+
+    def test_paginate_middle_page(self, user_repo):
+        """Should paginate middle page."""
+        users_data = [
+            {'name': f'User{i}', 'email': f'user{i}@example.com', 'age': 20}
+            for i in range(25)
+        ]
+        user_repo.create_many(users_data)
+
+        users, meta = user_repo.paginate(page=2, per_page=10)
+
+        assert len(users) == 10
+        assert meta['page'] == 2
+        assert meta['has_next'] is True
+        assert meta['has_prev'] is True
+
+    def test_paginate_last_page(self, user_repo):
+        """Should paginate last page."""
+        users_data = [
+            {'name': f'User{i}', 'email': f'user{i}@example.com', 'age': 20}
+            for i in range(25)
+        ]
+        user_repo.create_many(users_data)
+
+        users, meta = user_repo.paginate(page=3, per_page=10)
+
+        assert len(users) == 5  # Remaining items
+        assert meta['page'] == 3
+        assert meta['has_next'] is False
+        assert meta['has_prev'] is True
+
+    def test_paginate_with_filters(self, user_repo, sample_users):
+        """Should paginate filtered results."""
+        users, meta = user_repo.paginate(
+            page=1,
+            per_page=2,
+            is_active=True
+        )
+
+        assert len(users) <= 2
+        assert all(u.is_active for u in users)
+        assert meta['total'] == 4  # 4 active users
+
+    def test_paginate_empty_results(self, user_repo):
+        """Should handle empty results."""
+        users, meta = user_repo.paginate(page=1, per_page=10)
+
+        assert users == []
+        assert meta['total'] == 0
+        assert meta['total_pages'] == 0
+        assert meta['has_next'] is False
+        assert meta['has_prev'] is False
+
+    def test_paginate_beyond_last_page(self, user_repo, sample_users):
+        """Should handle page beyond total pages."""
+        users, meta = user_repo.paginate(page=100, per_page=10)
+
+        assert users == []
+        assert meta['page'] == 100
