@@ -155,3 +155,93 @@ class TestTimestampMixin:
         assert hasattr(article, 'created_at')
         assert hasattr(article, 'updated_at')
         assert article.created_at is not None
+
+
+# ============================================================================
+# Test SoftDeleteMixin
+# ============================================================================
+
+class TestSoftDeleteMixin:
+    """Test SoftDeleteMixin functionality."""
+
+    def test_soft_delete(self, session):
+        """Should mark as deleted."""
+        post = SoftDeletablePost(title="Test Post")
+        session.add(post)
+        session.commit()
+
+        post.soft_delete()
+        session.commit()
+
+        assert post.deleted_at is not None
+        assert post.is_deleted is True
+
+    def test_restore(self, session):
+        """Should restore deleted record."""
+        post = SoftDeletablePost(title="Test Post")
+        session.add(post)
+        session.commit()
+
+        post.soft_delete()
+        session.commit()
+
+        post.restore()
+        session.commit()
+
+        assert post.deleted_at is None
+        assert post.is_deleted is False
+
+    def test_is_deleted_property(self, session):
+        """Should check if deleted."""
+        post = SoftDeletablePost(title="Test Post")
+        session.add(post)
+        session.commit()
+
+        assert post.is_deleted is False
+
+        post.soft_delete()
+        assert post.is_deleted is True
+
+    def test_active_query(self, session):
+        """Should query only active records."""
+        post1 = SoftDeletablePost(title="Active")
+        post2 = SoftDeletablePost(title="Deleted")
+        session.add_all([post1, post2])
+        session.commit()
+
+        post2.soft_delete()
+        session.commit()
+
+        active = list(SoftDeletablePost.active(session))
+
+        assert len(active) == 1
+        assert active[0].title == "Active"
+
+    def test_deleted_query(self, session):
+        """Should query only deleted records."""
+        post1 = SoftDeletablePost(title="Active")
+        post2 = SoftDeletablePost(title="Deleted")
+        session.add_all([post1, post2])
+        session.commit()
+
+        post2.soft_delete()
+        session.commit()
+
+        deleted = list(SoftDeletablePost.deleted(session))
+
+        assert len(deleted) == 1
+        assert deleted[0].title == "Deleted"
+
+    def test_with_deleted_query(self, session):
+        """Should query all records including deleted."""
+        post1 = SoftDeletablePost(title="Active")
+        post2 = SoftDeletablePost(title="Deleted")
+        session.add_all([post1, post2])
+        session.commit()
+
+        post2.soft_delete()
+        session.commit()
+
+        all_posts = list(SoftDeletablePost.with_deleted(session))
+
+        assert len(all_posts) == 2
