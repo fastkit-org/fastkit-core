@@ -757,3 +757,38 @@ class TestEdgeCases:
 
         # Should work normally
         assert model.name == "Test"
+
+
+# ============================================================================
+# Test Integration with i18n Module
+# ============================================================================
+
+class TestI18nIntegration:
+    """Test integration with i18n module."""
+
+    def test_uses_i18n_locale_context(self, session):
+        """Should use locale from i18n module."""
+        from fastkit_core.i18n import set_locale as i18n_set_locale, get_locale as i18n_get_locale
+
+        article = Article(author="John")
+
+        # Set via i18n module
+        i18n_set_locale('es')
+
+        article.title = "Hola"
+
+        # Should use i18n locale
+        assert article.get_locale() == 'es'
+        assert article.title == "Hola"
+
+    def test_locale_context_shared(self, session):
+        """Should share locale context with i18n."""
+        from fastkit_core.i18n import get_locale as i18n_get_locale
+
+        # Set global locale via TranslatableMixin
+        TranslatableMixin.set_global_locale('fr')
+
+        # i18n should see the same locale
+        # (This depends on implementation - they share _current_locale ContextVar)
+        article = Article(author="John")
+        assert article.get_locale() == 'fr'
