@@ -237,3 +237,50 @@ class TestCreateOperations:
 
         assert user.created_at is not None
         assert user.updated_at is not None
+
+
+# ============================================================================
+# Test READ Operations
+# ============================================================================
+
+class TestReadOperations:
+    """Test read operations."""
+
+    def test_get_by_id(self, user_repo, sample_users):
+        """Should get record by ID."""
+        user = user_repo.get(sample_users[0].id)
+
+        assert user is not None
+        assert user.id == sample_users[0].id
+        assert user.name == sample_users[0].name
+
+    def test_get_nonexistent(self, user_repo):
+        """Should return None for nonexistent ID."""
+        user = user_repo.get(9999)
+
+        assert user is None
+
+    def test_get_all(self, user_repo, sample_users):
+        """Should get all records."""
+        users = user_repo.get_all()
+
+        assert len(users) == len(sample_users)
+
+    def test_get_all_with_limit(self, user_repo, sample_users):
+        """Should limit results."""
+        users = user_repo.get_all(limit=3)
+
+        assert len(users) == 3
+
+    def test_first(self, user_repo, sample_users):
+        """Should get first record."""
+        user = user_repo.filter_one()
+
+        assert user is not None
+        assert user.id == sample_users[0].id
+
+    def test_first_empty_table(self, user_repo):
+        """Should return None for empty table."""
+        user = user_repo.filter_one()
+
+        assert user is None
