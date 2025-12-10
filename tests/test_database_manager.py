@@ -87,3 +87,32 @@ def cleanup_global_manager():
     # Reset global manager
     import fastkit_core.database.manager as manager_module
     manager_module._global_manager = None
+
+
+# ============================================================================
+# Test ConnectionManager Initialization
+# ============================================================================
+
+class TestConnectionManagerInit:
+    """Test ConnectionManager initialization."""
+
+    def test_init_with_config(self, config):
+        """Should initialize with config."""
+        manager = ConnectionManager(config)
+
+        assert manager.config == config
+        assert manager.echo is False
+        assert len(manager) == 0
+
+    def test_init_with_echo(self, config):
+        """Should support echo parameter."""
+        manager = ConnectionManager(config, echo=True)
+
+        assert manager.echo is True
+
+    def test_init_empty_connections(self, config):
+        """Should start with no connections."""
+        manager = ConnectionManager(config)
+
+        assert len(manager) == 0
+        assert manager.list_connections() == []
