@@ -3,7 +3,7 @@
   
   [![PyPI version](https://badge.fury.io/py/fastkit-core.svg)](https://pypi.org/project/fastkit-core/)
   [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-  [![Tests](https://github.com/fastkit/fastkit-core/workflows/Tests/badge.svg)](https://github.com/fastkit/fastkit-core/actions)
+  [![Tests](https://github.com/fastkit/fastkit-core/workflows/Tests/badge.svg)](https://github.com/fastkit/fastkit-core/actions/workflows/tests.yml)
   [![Coverage](https://codecov.io/gh/fastkit/fastkit-core/branch/main/graph/badge.svg)](https://codecov.io/gh/fastkit/fastkit-core)
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 </div>
