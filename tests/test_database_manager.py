@@ -258,3 +258,48 @@ class TestHasConnection:
         conn_manager.add_connection('default')
 
         assert conn_manager.has_connection('default') is True
+
+
+# ============================================================================
+# Test Listing Connections
+# ============================================================================
+
+class TestListConnections:
+    """Test listing all connections."""
+
+    def test_list_empty(self, conn_manager):
+        """Should return empty list initially."""
+        connections = conn_manager.list_connections()
+
+        assert connections == []
+
+    def test_list_single_connection(self, conn_manager):
+        """Should list single connection."""
+        conn_manager.add_connection('default')
+
+        connections = conn_manager.list_connections()
+
+        assert connections == ['default']
+
+    def test_list_multiple_connections(self, conn_manager):
+        """Should list all connections."""
+        conn_manager.add_connection('default')
+        conn_manager.add_connection('analytics')
+        conn_manager.add_connection('cache')
+
+        connections = conn_manager.list_connections()
+
+        assert len(connections) == 3
+        assert 'default' in connections
+        assert 'analytics' in connections
+        assert 'cache' in connections
+
+    def test_list_returns_copy(self, conn_manager):
+        """Should return a list (not affect internal state)."""
+        conn_manager.add_connection('default')
+
+        connections = conn_manager.list_connections()
+        connections.append('fake')
+
+        # Should not affect manager
+        assert conn_manager.list_connections() == ['default']
