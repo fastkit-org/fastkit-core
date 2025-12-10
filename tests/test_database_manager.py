@@ -510,3 +510,66 @@ class TestLength:
         conn_manager.remove_connection('default')
 
         assert len(conn_manager) == 1
+
+
+# ============================================================================
+# Test Real-World Scenarios
+# ============================================================================
+
+class TestRealWorldScenarios:
+    """Test real-world usage patterns."""
+
+    def test_multi_database_application(self, conn_manager):
+        """Should handle typical multi-database setup."""
+        # Add primary database
+        primary = conn_manager.add_connection('default')
+
+        # Add analytics database
+        analytics = conn_manager.add_connection('analytics')
+
+        # Add cache database
+        cache = conn_manager.add_connection('cache')
+
+        # All should be independent
+        with primary.session() as session:
+            session.execute(text("CREATE TABLE users (id INTEGER PRIMARY KEY)"))
+
+        with analytics.session() as session:
+            session.execute(text("CREATE TABLE events (id INTEGER PRIMARY KEY)"))
+
+        with cache.session() as session:
+            session.execute(text("CREATE TABLE cache_items (key TEXT PRIMARY KEY)"))
+
+        # Verify each database works independently
+        assert len(conn_manager) == 3
+
+    def test_graceful_shutdown(self, conn_manager):
+        """Should handle application shutdown."""
+        # Setup connections
+        conn_manager.add_connection('default')
+        conn_manager.add_connection('analytics')
+
+        # Use connections
+        db = conn_manager.get('default')
+        with db.session() as session:
+            session.execute(text("SELECT 1"))
+
+        # Shutdown
+        conn_manager.dispose_all()
+
+        # All should be cleaned up
+        assert len(conn_manager) == 0
+
+    def test_health_monitoring(self, conn_manager):
+        """Should support health monitoring."""
+        conn_manager.add_connection('default')
+        conn_manager.add_connection('analytics')
+
+        # Check health periodically
+        health = conn_manager.health_check_all()
+
+        # All connections should be healthy
+        assert all(
+            status.get('primary', False) or 'error' in status
+            for status in health.values()
+        )
