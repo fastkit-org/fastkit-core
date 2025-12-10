@@ -116,3 +116,63 @@ class TestConnectionManagerInit:
 
         assert len(manager) == 0
         assert manager.list_connections() == []
+
+
+# ============================================================================
+# Test Adding Connections
+# ============================================================================
+
+class TestAddConnection:
+    """Test adding database connections."""
+
+    def test_add_single_connection(self, conn_manager):
+        """Should add a single connection."""
+        db = conn_manager.add_connection('default')
+
+        assert isinstance(db, DatabaseManager)
+        assert db.connection_name == 'default'
+        assert len(conn_manager) == 1
+
+    def test_add_multiple_connections(self, conn_manager):
+        """Should add multiple connections."""
+        db1 = conn_manager.add_connection('default')
+        db2 = conn_manager.add_connection('analytics')
+        db3 = conn_manager.add_connection('cache')
+
+        assert len(conn_manager) == 3
+        assert conn_manager.has_connection('default')
+        assert conn_manager.has_connection('analytics')
+        assert conn_manager.has_connection('cache')
+
+    def test_add_connection_with_replicas(self, config_with_replicas):
+        """Should add connection with read replicas."""
+        manager = ConnectionManager(config_with_replicas)
+
+        db = manager.add_connection(
+            'default',
+            read_replicas=['read_1', 'read_2']
+        )
+
+        assert db.read_replicas == ['read_1', 'read_2']
+
+    def test_add_connection_with_custom_echo(self, conn_manager):
+        """Should override global echo setting."""
+        db = conn_manager.add_connection('default', echo=True)
+
+        assert db.echo is True
+
+    def test_add_duplicate_connection(self, conn_manager):
+        """Should return existing connection for duplicate name."""
+        db1 = conn_manager.add_connection('default')
+        db2 = conn_manager.add_connection('default')  # Duplicate
+
+        assert db1 is db2
+        assert len(conn_manager) == 1
+
+    def test_add_connection_returns_database_manager(self, conn_manager):
+        """Should return DatabaseManager instance."""
+        db = conn_manager.add_connection('default')
+
+        assert isinstance(db, DatabaseManager)
+        assert hasattr(db, 'session')
+        assert hasattr(db, 'engine')
