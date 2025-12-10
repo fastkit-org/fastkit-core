@@ -1,0 +1,71 @@
+# FastKit Core - Development Dependencies
+# For testing, linting, and CI/CD
+
+# ============================================================================
+# Testing Framework
+# ============================================================================
+pytest==8.3.4
+pytest-cov==6.0.0
+pytest-asyncio==0.24.0
+pytest-mock==3.14.0
+
+# ============================================================================
+# Code Quality
+# ============================================================================
+# Linting
+ruff==0.8.4
+black==24.10.0
+isort==5.13.2
+mypy==1.13.0
+
+# Type checking stubs
+types-python-dateutil==2.9.0.20241206
+
+# ============================================================================
+# Core Dependencies (for testing)
+# ============================================================================
+# Web Framework
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.3
+pydantic-settings==2.6.1
+
+# Database
+sqlalchemy==2.0.36
+alembic==1.14.0
+
+# Database drivers (for testing different databases)
+psycopg2-binary==2.9.10  # PostgreSQL
+pymysql==1.1.1           # MySQL
+cryptography==44.0.0     # For MySQL secure connections
+
+# Configuration
+python-dotenv==1.0.1
+
+# Internationalization
+babel==2.16.0
+
+# HTTP client (for testing)
+httpx==0.28.1
+
+# ============================================================================
+# Development Tools
+# ============================================================================
+# Documentation
+mkdocs==1.6.1
+mkdocs-material==9.5.48
+mkdocstrings[python]==0.27.0
+
+# Package building
+build==1.2.2.post1
+twine==6.0.1
+wheel==0.45.1
+
+# Pre-commit hooks
+pre-commit==4.0.1
+
+# ============================================================================
+# Utilities
+# ============================================================================
+# Better tracebacks
+rich==13.9.4
