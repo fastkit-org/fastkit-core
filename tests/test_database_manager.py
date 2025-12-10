@@ -232,3 +232,29 @@ class TestGetConnection:
 
         error_msg = str(exc_info.value)
         assert 'default' in error_msg or 'analytics' in error_msg
+
+
+# ============================================================================
+# Test Connection Existence
+# ============================================================================
+
+class TestHasConnection:
+    """Test checking connection existence."""
+
+    def test_has_connection_true(self, conn_manager):
+        """Should return True for existing connection."""
+        conn_manager.add_connection('default')
+
+        assert conn_manager.has_connection('default') is True
+
+    def test_has_connection_false(self, conn_manager):
+        """Should return False for nonexistent connection."""
+        assert conn_manager.has_connection('nonexistent') is False
+
+    def test_has_connection_after_add(self, conn_manager):
+        """Should return True after adding connection."""
+        assert conn_manager.has_connection('default') is False
+
+        conn_manager.add_connection('default')
+
+        assert conn_manager.has_connection('default') is True
