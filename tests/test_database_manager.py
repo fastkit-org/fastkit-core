@@ -352,3 +352,51 @@ class TestRemoveConnection:
         assert not conn_manager.has_connection('default')
         assert conn_manager.has_connection('analytics')
         assert len(conn_manager) == 1
+
+
+# ============================================================================
+# Test Health Checks
+# ============================================================================
+
+class TestHealthCheckAll:
+    """Test health checking all connections."""
+
+    def test_health_check_single_connection(self, conn_manager):
+        """Should check health of single connection."""
+        conn_manager.add_connection('default')
+
+        health = conn_manager.health_check_all()
+
+        assert 'default' in health
+        assert 'primary' in health['default']
+        assert health['default']['primary'] is True
+
+    def test_health_check_multiple_connections(self, conn_manager):
+        """Should check health of all connections."""
+        conn_manager.add_connection('default')
+        conn_manager.add_connection('analytics')
+        conn_manager.add_connection('cache')
+
+        health = conn_manager.health_check_all()
+
+        assert len(health) == 3
+        assert 'default' in health
+        assert 'analytics' in health
+        assert 'cache' in health
+
+    def test_health_check_with_replicas(self, config_with_replicas):
+        """Should check health of replicas too."""
+        manager = ConnectionManager(config_with_replicas)
+        manager.add_connection('default', read_replicas=['read_1', 'read_2'])
+
+        health = manager.health_check_all()
+
+        assert 'default' in health
+        # Replica health is per-connection
+        assert 'primary' in health['default']
+
+    def test_health_check_empty(self, conn_manager):
+        """Should return empty dict for no connections."""
+        health = conn_manager.health_check_all()
+
+        assert health == {}
