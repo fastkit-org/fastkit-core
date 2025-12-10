@@ -473,3 +473,40 @@ class TestGlobalManager:
         manager = get_connection_manager()
         assert manager is custom_manager
         assert manager.echo is True
+
+
+# ============================================================================
+# Test Length
+# ============================================================================
+
+class TestLength:
+    """Test length/count of connections."""
+
+    def test_len_empty(self, conn_manager):
+        """Should return 0 for empty manager."""
+        assert len(conn_manager) == 0
+
+    def test_len_single(self, conn_manager):
+        """Should return correct count."""
+        conn_manager.add_connection('default')
+
+        assert len(conn_manager) == 1
+
+    def test_len_multiple(self, conn_manager):
+        """Should count all connections."""
+        conn_manager.add_connection('default')
+        conn_manager.add_connection('analytics')
+        conn_manager.add_connection('cache')
+
+        assert len(conn_manager) == 3
+
+    def test_len_after_remove(self, conn_manager):
+        """Should update count after removal."""
+        conn_manager.add_connection('default')
+        conn_manager.add_connection('analytics')
+
+        assert len(conn_manager) == 2
+
+        conn_manager.remove_connection('default')
+
+        assert len(conn_manager) == 1
