@@ -126,58 +126,127 @@ class DatabaseManager:
         )
 
     def _create_engine(self, connection_name: str) -> Engine:
-        """Create SQLAlchemy engine from config."""
-        # Get connection config
-        conn_config = self.config.get(
-            f'database.CONNECTIONS.{connection_name}'
-        )
+        """
+        Create SQLAlchemy engine from config.
+
+        Supports two config formats:
+
+        1. Direct URL:
+            'default': {
+                'url': 'postgresql://user:pass@localhost/db'
+            }
+
+        2. Connection parameters (like Laravel):
+            'default': {
+                'driver': 'postgresql',
+                'host': 'localhost',
+                'port': 5432,
+                'database': 'mydb',
+                'username': 'user',
+                'password': 'secret'
+            }
+        """
+        # Get all connections dict
+        connections = self.config.get('database.CONNECTIONS', {})
+
+        # Get specific connection config
+        conn_config = connections.get(connection_name)
 
         if not conn_config:
+            available = list(connections.keys())
             raise ValueError(
                 f"Database connection '{connection_name}' not found in config. "
-                f"Available connections: {list(self.config.get('database.CONNECTIONS', {}).keys())}"
+                f"Available connections: {available}"
             )
 
-        # Build connection URL
-        driver = conn_config.get('driver', 'postgresql')
+        # Get or build connection URL
+        url = conn_config.get('url')
+
+        if not url:
+            # Build URL from parameters (Laravel-style)
+            url = self._build_url_from_params(conn_config, connection_name)
+
+        is_sqlite = url.startswith('sqlite')
+
+        # Base engine options (always applicable)
+        engine_options = {
+            'echo': conn_config.get('echo', self.echo),
+        }
+
+        # Add pooling options only for non-SQLite databases
+        if not is_sqlite:
+            engine_options.update({
+                'pool_size': conn_config.get('pool_size', 5),
+                'max_overflow': conn_config.get('max_overflow', 10),
+                'pool_timeout': conn_config.get('pool_timeout', 30),
+                'pool_recycle': conn_config.get('pool_recycle', 3600),
+            })
+
+        # Create and return engine
+        return create_engine(url, **engine_options)
+
+    def _build_url_from_params(self, conn_config: dict, connection_name: str) -> str:
+        """
+        Build database URL from connection parameters.
+
+        Supports Laravel-style configuration:
+        - driver: postgresql, mysql, sqlite, etc.
+        - host, port, database, username, password
+        """
+        driver = conn_config.get('driver')
+
+        if not driver:
+            raise ValueError(
+                f"Connection '{connection_name}' must have either 'url' or 'driver' in config"
+            )
+
+        # Handle SQLite (special case - file-based)
+        if driver == 'sqlite':
+            database = conn_config.get('database', ':memory:')
+            return f'sqlite:///{database}'
+
+        # For other databases, build URL
         host = conn_config.get('host', 'localhost')
-        port = conn_config.get('port', 5432)
+        port = conn_config.get('port')
         database = conn_config.get('database')
         username = conn_config.get('username')
         password = conn_config.get('password')
 
-        # Validate required fields
-        if not all([database, username, password]):
+        if not database:
             raise ValueError(
-                f"Connection '{connection_name}' missing required fields: "
-                "database, username, password"
+                f"Connection '{connection_name}' missing 'database' parameter"
             )
 
-        # URL-encode credentials to handle special characters
-        username_encoded = quote_plus(username)
-        password_encoded = quote_plus(password)
+        # Map common driver names to SQLAlchemy dialects
+        driver_mapping = {
+            'postgres': 'postgresql',
+            'postgresql': 'postgresql',
+            'mysql': 'mysql+pymysql',  # Using pymysql by default
+            'mariadb': 'mysql+pymysql',
+            'mssql': 'mssql+pyodbc',
+            'oracle': 'oracle+cx_oracle',
+        }
 
-        url = (
-            f"{driver}://{username_encoded}:{password_encoded}"
-            f"@{host}:{port}/{database}"
-        )
+        dialect = driver_mapping.get(driver.lower(), driver)
 
-        # Pool configuration
-        pool_config = self.config.get('database.POOL', {})
+        # Build URL based on whether we have credentials
+        if username and password:
+            if port:
+                url = f"{dialect}://{username}:{password}@{host}:{port}/{database}"
+            else:
+                url = f"{dialect}://{username}:{password}@{host}/{database}"
+        elif username:
+            if port:
+                url = f"{dialect}://{username}@{host}:{port}/{database}"
+            else:
+                url = f"{dialect}://{username}@{host}/{database}"
+        else:
+            if port:
+                url = f"{dialect}://{host}:{port}/{database}"
+            else:
+                url = f"{dialect}://{host}/{database}"
 
-        # Create engine
-        engine = create_engine(
-            url,
-            echo=self.echo,
-            pool_size=pool_config.get('pool_size', 5),
-            max_overflow=pool_config.get('max_overflow', 10),
-            pool_timeout=pool_config.get('pool_timeout', 30),
-            pool_recycle=pool_config.get('pool_recycle', 3600),
-            pool_pre_ping=pool_config.get('pool_pre_ping', True),  # Auto-reconnect
-        )
-
-        logger.debug(f"Engine created for connection '{connection_name}'")
-        return engine
+        return url
 
     @contextmanager
     def session(self) -> Generator[Session, None, None]:
