@@ -400,3 +400,46 @@ class TestHealthCheckAll:
         health = conn_manager.health_check_all()
 
         assert health == {}
+
+# ============================================================================
+# Test Disposing All Connections
+# ============================================================================
+
+class TestDisposeAll:
+    """Test disposing all connections."""
+
+    def test_dispose_all_connections(self, conn_manager):
+        """Should dispose all connections."""
+        conn_manager.add_connection('default')
+        conn_manager.add_connection('analytics')
+
+        assert len(conn_manager) == 2
+
+        conn_manager.dispose_all()
+
+        assert len(conn_manager) == 0
+
+    def test_dispose_all_empty(self, conn_manager):
+        """Should handle disposing when no connections."""
+        # Should not raise error
+        conn_manager.dispose_all()
+
+        assert len(conn_manager) == 0
+
+    def test_dispose_all_clears_list(self, conn_manager):
+        """Should clear connection list."""
+        conn_manager.add_connection('default')
+        conn_manager.add_connection('analytics')
+
+        conn_manager.dispose_all()
+
+        assert conn_manager.list_connections() == []
+
+    def test_connections_unusable_after_dispose(self, conn_manager):
+        """Connections should be disposed after dispose_all."""
+        db = conn_manager.add_connection('default')
+
+        conn_manager.dispose_all()
+
+        # Connection no longer in manager
+        assert not conn_manager.has_connection('default')
