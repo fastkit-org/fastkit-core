@@ -303,3 +303,52 @@ class TestListConnections:
 
         # Should not affect manager
         assert conn_manager.list_connections() == ['default']
+
+
+# ============================================================================
+# Test Removing Connections
+# ============================================================================
+
+class TestRemoveConnection:
+    """Test removing connections."""
+
+    def test_remove_existing_connection(self, conn_manager):
+        """Should remove existing connection."""
+        conn_manager.add_connection('default')
+        assert len(conn_manager) == 1
+
+        conn_manager.remove_connection('default')
+
+        assert len(conn_manager) == 0
+        assert not conn_manager.has_connection('default')
+
+    def test_remove_nonexistent_connection(self, conn_manager):
+        """Should handle removing nonexistent connection gracefully."""
+        # Should not raise error
+        conn_manager.remove_connection('nonexistent')
+
+        assert len(conn_manager) == 0
+
+    def test_remove_disposes_connection(self, conn_manager):
+        """Should dispose connection when removing."""
+        db = conn_manager.add_connection('default')
+
+        # Connection should work
+        with db.session() as session:
+            session.execute(text("SELECT 1"))
+
+        conn_manager.remove_connection('default')
+
+        # Connection should be disposed
+        assert not conn_manager.has_connection('default')
+
+    def test_remove_one_keeps_others(self, conn_manager):
+        """Should only remove specified connection."""
+        conn_manager.add_connection('default')
+        conn_manager.add_connection('analytics')
+
+        conn_manager.remove_connection('default')
+
+        assert not conn_manager.has_connection('default')
+        assert conn_manager.has_connection('analytics')
+        assert len(conn_manager) == 1
