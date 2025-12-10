@@ -176,3 +176,59 @@ class TestAddConnection:
         assert isinstance(db, DatabaseManager)
         assert hasattr(db, 'session')
         assert hasattr(db, 'engine')
+
+
+# ============================================================================
+# Test Getting Connections
+# ============================================================================
+
+class TestGetConnection:
+    """Test retrieving connections."""
+
+    def test_get_existing_connection(self, conn_manager):
+        """Should retrieve existing connection."""
+        conn_manager.add_connection('default')
+
+        db = conn_manager.get('default')
+
+        assert isinstance(db, DatabaseManager)
+        assert db.connection_name == 'default'
+
+    def test_get_nonexistent_connection(self, conn_manager):
+        """Should raise KeyError for nonexistent connection."""
+        with pytest.raises(KeyError) as exc_info:
+            conn_manager.get('nonexistent')
+
+        assert 'not found' in str(exc_info.value).lower()
+        assert 'nonexistent' in str(exc_info.value)
+
+    def test_get_with_default_name(self, conn_manager):
+        """Should use 'default' as default connection name."""
+        conn_manager.add_connection('default')
+
+        db = conn_manager.get()  # No name = 'default'
+
+        assert db.connection_name == 'default'
+
+    def test_get_different_connections(self, conn_manager):
+        """Should retrieve different connections correctly."""
+        conn_manager.add_connection('default')
+        conn_manager.add_connection('analytics')
+
+        db1 = conn_manager.get('default')
+        db2 = conn_manager.get('analytics')
+
+        assert db1 is not db2
+        assert db1.connection_name == 'default'
+        assert db2.connection_name == 'analytics'
+
+    def test_get_shows_available_connections(self, conn_manager):
+        """Should list available connections in error."""
+        conn_manager.add_connection('default')
+        conn_manager.add_connection('analytics')
+
+        with pytest.raises(KeyError) as exc_info:
+            conn_manager.get('nonexistent')
+
+        error_msg = str(exc_info.value)
+        assert 'default' in error_msg or 'analytics' in error_msg
