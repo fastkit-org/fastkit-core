@@ -443,3 +443,33 @@ class TestDisposeAll:
 
         # Connection no longer in manager
         assert not conn_manager.has_connection('default')
+
+# ============================================================================
+# Test Global Manager
+# ============================================================================
+
+class TestGlobalManager:
+    """Test global connection manager instance."""
+
+    def test_get_global_manager(self):
+        """Should get global manager instance."""
+        manager = get_connection_manager()
+
+        assert isinstance(manager, ConnectionManager)
+
+    def test_global_manager_singleton(self):
+        """Should return same instance."""
+        manager1 = get_connection_manager()
+        manager2 = get_connection_manager()
+
+        assert manager1 is manager2
+
+    def test_set_global_manager(self, config):
+        """Should set custom global manager."""
+        custom_manager = ConnectionManager(config, echo=True)
+
+        set_connection_manager(custom_manager)
+
+        manager = get_connection_manager()
+        assert manager is custom_manager
+        assert manager.echo is True
