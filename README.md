@@ -3,8 +3,7 @@
   
   [![PyPI version](https://badge.fury.io/py/fastkit-core.svg)](https://pypi.org/project/fastkit-core/)
   [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-  [![CI](https://github.com/fast-kit/fastkit-core/actions/workflows/tests.yml/badge.svg)](https://github.com/fast-kit/fastkit-core/actions/workflows/tests.yml)
-  [![Coverage](https://codecov.io/gh/fastkit/fastkit-core/branch/main/graph/badge.svg)](https://codecov.io/gh/fastkit/fastkit-core)
+  [![CI](https://github.com/codevelo-pub/fastkit-core/actions/workflows/tests.yml/badge.svg)](https://github.com/codevelo-pub/fastkit-core/actions/workflows/tests.yml)
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 </div>
 
@@ -98,7 +97,7 @@ Inspired by Laravel and Django, built for FastAPI's modern Python.
 # Before FastKit: 100+ lines of boilerplate
 # With FastKit: 10 lines
 
-class Article(BaseWithTimestamps, TranslatableMixin):
+class Article(BaseWithTimestamps, IntIdMixin, TranslatableMixin):
     __translatable__ = ['title', 'content']
     title: Mapped[dict] = mapped_column(JSON)
     content: Mapped[dict] = mapped_column(JSON)
@@ -124,7 +123,7 @@ pip install fastkit-core
 ```python
 from fastapi import FastAPI, Depends
 from sqlalchemy.orm import Session
-from fastkit_core.database import BaseWithTimestamps, Repository, get_db
+from fastkit_core.database import BaseWithTimestamps, Repository, get_db, IntIdMixin
 from fastkit_core.services import BaseCrudService
 from fastkit_core.validation import BaseSchema
 from fastkit_core.http import success_response, register_exception_handlers
@@ -132,12 +131,12 @@ from fastkit_core.i18n import _
 from pydantic import EmailStr
 
 # 1. Define your model
-class User(BaseWithTimestamps):
+class User(BaseWithTimestamps, IntIdMixin):
     email: Mapped[str]
     name: Mapped[str]
 
 # 2. Define your schema
-class UserCreate(BaseSchema):
+class UserCreate(BaseSchema, IntIdMixin):
     email: EmailStr
     name: str
 
@@ -212,7 +211,7 @@ from fastkit_core.database import (
 )
 
 # Rich model with automatic features
-class Article(BaseWithTimestamps, TranslatableMixin, SoftDeleteMixin):
+class Article(BaseWithTimestamps, IntIdMixin, TranslatableMixin, SoftDeleteMixin):
     __translatable__ = ['title', 'content']
     
     title: Mapped[dict] = mapped_column(JSON)
@@ -413,10 +412,10 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md).
 
 ## License
 
-FastKit Core is open-source software licensed under the [MIT License](LICENSE).
+FastKit Core is open-source software licensed under the [MIT License](https://opensource.org/license/MIT).
 
 ---
 
 ## Built by CodeVelo
 
-FastKit is developed and maintained by [CodeVelo](https://codevelo.io) for the FastAPI community.
+FastKit is developed and maintained by [Codevelo](https://codevelo.io) for the FastAPI community.
