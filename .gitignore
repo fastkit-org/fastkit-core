@@ -1,3 +1,5 @@
 .idea
 venv
 .coverage
+dist/*
+fastkit_core.egg-info
