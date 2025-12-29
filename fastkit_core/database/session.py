@@ -219,8 +219,7 @@ class DatabaseManager:
 
         # Map common driver names to SQLAlchemy dialects
         driver_mapping = {
-            'postgres': 'postgresql',
-            'postgresql': 'postgresql',
+            'postgresql': 'postgresql+psycopg2',
             'mysql': 'mysql+pymysql',  # Using pymysql by default
             'mariadb': 'mysql+pymysql',
             'mssql': 'mssql+pyodbc',
@@ -247,6 +246,31 @@ class DatabaseManager:
                 url = f"{dialect}://{host}/{database}"
 
         return url
+
+    @property
+    def url(self) -> str:
+        """
+        Get database URL for this manager's connection.
+
+        Example:
+            >>> manager = DatabaseManager(config, connection_name='default')
+            >>> print(manager.url)
+            'postgresql+psycopg2://user:***@localhost:5432/mydb'
+        """
+        connections = self.config.get('database.CONNECTIONS', {})
+        conn_config = connections.get(self.connection_name)
+
+        if not conn_config:
+            raise ValueError(
+                f"Database connection '{self.connection_name}' not found"
+            )
+
+        # Return existing URL or build from params
+        url = conn_config.get('url')
+        if url:
+            return url
+
+        return self._build_url_from_params(conn_config, self.connection_name)
 
     @contextmanager
     def session(self) -> Generator[Session, None, None]:
@@ -626,3 +650,104 @@ def health_check_all() -> dict[str, dict[str, bool]]:
                 results[name] = {'error': str(e)}
 
     return results
+
+
+def build_database_url(config: ConfigManager, connection_name: str = 'default') -> str:
+    """
+    Build database URL from configuration without creating engine.
+
+    Useful for Alembic and other tools that need the URL
+    but don't need a full DatabaseManager instance.
+
+    Args:
+        config: ConfigManager instance with database configuration
+        connection_name: Name of the connection (default: 'default')
+
+    Returns:
+        Database connection URL string
+
+    Raises:
+        ValueError: If connection not found or missing required params
+
+    Example:
+        >>> from fastkit_core.config import ConfigManager
+        >>> from fastkit_core.database import build_database_url
+        >>>
+        >>> config = ConfigManager(modules=['database'])
+        >>> url = build_database_url(config, 'default')
+        >>> print(url)
+        'postgresql+psycopg2://user:***@localhost:5432/mydb'
+    """
+    # Get connections config
+    connections = config.get('database.CONNECTIONS', {})
+
+    if not connections:
+        raise ValueError(
+            "No database connections found in config. "
+            "Ensure 'database.CONNECTIONS' is configured."
+        )
+
+    # Get specific connection config
+    conn_config = connections.get(connection_name)
+
+    if not conn_config:
+        available = list(connections.keys())
+        raise ValueError(
+            f"Database connection '{connection_name}' not found. "
+            f"Available connections: {available}"
+        )
+
+    # If URL is directly provided, return it
+    url = conn_config.get('url')
+    if url:
+        return url
+
+    # Build URL from parameters
+    driver = conn_config.get('driver')
+
+    if not driver:
+        raise ValueError(
+            f"Connection '{connection_name}' must have either 'url' or 'driver'"
+        )
+
+    # Handle SQLite (file-based)
+    if driver == 'sqlite':
+        database = conn_config.get('database', ':memory:')
+        return f'sqlite:///{database}'
+
+    # Build URL for server-based databases
+    host = conn_config.get('host', 'localhost')
+    port = conn_config.get('port')
+    database = conn_config.get('database')
+    username = conn_config.get('username')
+    password = conn_config.get('password')
+
+    if not database:
+        raise ValueError(
+            f"Connection '{connection_name}' missing 'database' parameter"
+        )
+
+    # Map driver names to SQLAlchemy dialects
+    driver_mapping = {
+        'postgresql': 'postgresql+psycopg2',
+        'mysql': 'mysql+pymysql',
+        'mariadb': 'mysql+pymysql',
+        'mssql': 'mssql+pyodbc',
+        'oracle': 'oracle+cx_oracle',
+    }
+
+    dialect = driver_mapping.get(driver.lower(), driver)
+
+    # Build authentication part
+    if username and password:
+        auth = f"{username}:{password}@"
+    elif username:
+        auth = f"{username}@"
+    else:
+        auth = ""
+
+    # Build full URL
+    if port:
+        return f"{dialect}://{auth}{host}:{port}/{database}"
+    else:
+        return f"{dialect}://{auth}{host}/{database}"

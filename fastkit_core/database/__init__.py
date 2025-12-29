@@ -64,6 +64,7 @@ from fastkit_core.database.session import (
     health_check_all,
     init_database,
     shutdown_database,
+    build_database_url
 )
 
 from fastkit_core.database.translatable import TranslatableMixin, set_locale_from_request
@@ -79,6 +80,7 @@ __all__ = [
     'get_read_db',
     'shutdown_database',
     'health_check_all',
+    'build_database_url',
     # Connection Manager
     'ConnectionManager',
     'get_connection_manager',
