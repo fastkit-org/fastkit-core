@@ -5,7 +5,7 @@
   [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
   [![CI](https://github.com/codevelo-pub/fastkit-core/actions/workflows/tests.yml/badge.svg)](https://github.com/codevelo-pub/fastkit-core/actions/workflows/tests.yml)
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-  [![cov](https://codevelo-pub.github.io/codevelo-pub/badges/coverage.svg)](https://github.com/codevelo-pub/fastkit-core/actions)
+  [![cov](https://github.io/codevelo-pub/badges/coverage.svg)](https://github.com/codevelo-pub/fastkit-core/actions)
 </div>
 
 ---
