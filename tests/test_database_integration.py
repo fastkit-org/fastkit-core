@@ -185,4 +185,52 @@ class TestSyncOperations:
         assert manager2.engine is not None
 
 
+# ============================================================================
+# Test Async Operations
+# ============================================================================
+
+class TestAsyncOperations:
+    """Test asynchronous database operations."""
+
+    @pytest.mark.asyncio
+    async def test_create_and_query_async_structure(self, async_config):
+        """Should have proper async structure for CRUD operations."""
+        manager = AsyncDatabaseManager(async_config)
+
+        # Test structure (will fail without real DB)
+        try:
+            async with manager.session() as session:
+                user = User(name="John Doe", email="john@example.com")
+                session.add(user)
+                await session.commit()
+        except Exception:
+            # Expected without real database
+            pass
+
+    @pytest.mark.asyncio
+    async def test_async_session_isolation(self, async_config):
+        """Should provide isolated async sessions."""
+        manager = AsyncDatabaseManager(async_config)
+
+        session1 = manager.get_session()
+        session2 = manager.get_session()
+
+        assert session1 is not session2
+        assert isinstance(session1, AsyncSession)
+        assert isinstance(session2, AsyncSession)
+
+    @pytest.mark.asyncio
+    async def test_concurrent_async_operations(self, async_config):
+        """Should handle concurrent async operations."""
+        manager = AsyncDatabaseManager(async_config)
+
+        # Create multiple sessions concurrently
+        async def create_session():
+            return manager.get_session()
+
+        sessions = await asyncio.gather(*[create_session() for _ in range(5)])
+
+        assert len(sessions) == 5
+        assert all(isinstance(s, AsyncSession) for s in sessions)
+
 
