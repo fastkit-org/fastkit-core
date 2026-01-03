@@ -750,3 +750,101 @@ class TestAsyncErrorHandling:
 
         assert 'not initialized' in str(exc_info.value).lower()
 
+# ============================================================================
+# Test Thread Safety
+# ============================================================================
+
+class TestAsyncThreadSafety:
+    """Test thread safety of async manager."""
+
+    def test_multiple_init_same_connection(self, config):
+        """Should handle multiple initializations of same connection."""
+        init_async_database(config, connection_name='default')
+        init_async_database(config, connection_name='default')  # Second time
+
+        manager = get_async_db_manager('default')
+        assert manager is not None
+
+    @pytest.mark.asyncio
+    async def test_concurrent_sessions(self, config):
+        """Should handle concurrent async sessions."""
+        manager = AsyncDatabaseManager(config)
+
+        # Create multiple sessions concurrently
+        sessions = [manager.get_session() for _ in range(5)]
+
+        assert len(sessions) == 5
+        for session in sessions:
+            assert isinstance(session, AsyncSession)
+
+
+# ============================================================================
+# Test Driver Aliases
+# ============================================================================
+
+class TestDriverAliases:
+    """Test driver name aliases."""
+
+    def test_postgres_alias(self):
+        """Should accept 'postgres' as alias for 'postgresql'."""
+        config = ConfigManager(modules=[], auto_load=False)
+        config.load()
+        config.set('database.CONNECTIONS', {
+            'default': {
+                'driver': 'postgres',  # Alias
+                'host': 'localhost',
+                'database': 'test',
+                'username': 'user',
+                'password': 'pass'
+            }
+        })
+
+        url = build_database_url(config, 'default', is_async=True)
+        assert 'postgresql+asyncpg' in url
+
+    def test_sqlserver_alias(self):
+        """Should accept 'sqlserver' as alias for 'mssql'."""
+        config = ConfigManager(modules=[], auto_load=False)
+        config.load()
+        config.set('database.CONNECTIONS', {
+            'default': {
+                'driver': 'sqlserver',  # Alias
+                'host': 'localhost',
+                'database': 'test',
+                'username': 'sa',
+                'password': 'pass'
+            }
+        })
+
+        url = build_database_url(config, 'default', is_async=True)
+        assert 'mssql+aioodbc' in url
+
+
+# ============================================================================
+# Test Property Access
+# ============================================================================
+
+class TestAsyncPropertyAccess:
+    """Test property access on AsyncDatabaseManager."""
+
+    def test_url_property(self, config):
+        """Should provide url property."""
+        manager = AsyncDatabaseManager(config)
+
+        url = manager.url
+
+        assert url is not None
+        assert 'postgresql+asyncpg' in url
+
+    def test_url_property_with_direct_config(self):
+        """Should return direct URL from config."""
+        config = ConfigManager(modules=[], auto_load=False)
+        config.load()
+        config.set('database.CONNECTIONS', {
+            'default': {
+                'url': 'postgresql+asyncpg://user:pass@localhost/mydb'
+            }
+        })
+
+        manager = AsyncDatabaseManager(config)
+        assert manager.url == 'postgresql+asyncpg://user:pass@localhost/mydb'
