@@ -619,3 +619,83 @@ class TestFastAPIAsyncIntegration:
         assert default_mgr.connection_name == 'default'
         assert analytics_mgr.connection_name == 'analytics'
         assert cache_mgr.connection_name == 'cache'
+
+# ============================================================================
+# Test Connection Options and Advanced Features
+# ============================================================================
+
+class TestAdvancedAsyncFeatures:
+    """Test advanced async features."""
+
+    def test_connection_with_options(self):
+        """Should support connection options in URL."""
+        config = ConfigManager(modules=[], auto_load=False)
+        config.load()
+        config.set('database.CONNECTIONS', {
+            'default': {
+                'driver': 'postgresql',
+                'host': 'localhost',
+                'database': 'mydb',
+                'username': 'user',
+                'password': 'pass',
+                'options': {
+                    'sslmode': 'require',
+                    'connect_timeout': '10'
+                }
+            }
+        })
+
+        url = build_database_url(config, 'default', is_async=True)
+
+        assert 'sslmode=require' in url
+        assert 'connect_timeout=10' in url
+
+    def test_url_without_port(self):
+        """Should build URL without port (use default)."""
+        config = ConfigManager(modules=[], auto_load=False)
+        config.load()
+        config.set('database.CONNECTIONS', {
+            'default': {
+                'driver': 'postgresql',
+                'host': 'localhost',
+                'database': 'mydb',
+                'username': 'user',
+                'password': 'pass'
+                # No port specified
+            }
+        })
+
+        url = build_database_url(config, 'default', is_async=True)
+
+        assert url == 'postgresql+asyncpg://user:pass@localhost/mydb'
+
+    def test_url_without_credentials(self):
+        """Should build URL without credentials."""
+        config = ConfigManager(modules=[], auto_load=False)
+        config.load()
+        config.set('database.CONNECTIONS', {
+            'default': {
+                'driver': 'postgresql',
+                'host': 'localhost',
+                'database': 'mydb'
+                # No username/password
+            }
+        })
+
+        url = build_database_url(config, 'default', is_async=True)
+
+        assert url == 'postgresql+asyncpg://localhost/mydb'
+
+    def test_direct_async_url_config(self):
+        """Should support direct async URL in config."""
+        config = ConfigManager(modules=[], auto_load=False)
+        config.load()
+        config.set('database.CONNECTIONS', {
+            'default': {
+                'url': 'postgresql+asyncpg://user:pass@localhost/mydb'
+            }
+        })
+
+
+        manager = AsyncDatabaseManager(config)
+        assert str(manager.engine.url) == 'postgresql+asyncpg://user:***@localhost/mydb'
