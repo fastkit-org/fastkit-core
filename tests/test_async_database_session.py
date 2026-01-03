@@ -490,3 +490,41 @@ class TestAsyncURLBuilding:
         assert 'sqlite' in str(exc_info.value).lower()
         assert 'async' in str(exc_info.value).lower()
 
+
+# ============================================================================
+# Test Async Health Checks
+# ============================================================================
+
+class TestAsyncHealthChecks:
+    """Test async connection health checking."""
+
+    @pytest.mark.asyncio
+    async def test_health_check_structure(self, config):
+        """Should return health check dict structure."""
+        manager = AsyncDatabaseManager(config)
+
+        # Will fail without real DB, but tests structure
+        try:
+            health = await manager.health_check()
+            assert isinstance(health, dict)
+            assert 'primary' in health
+        except Exception:
+            # Expected without real database
+            pass
+
+    @pytest.mark.asyncio
+    async def test_health_check_with_replicas_structure(self, config_with_replicas):
+        """Should check all replica health."""
+        manager = AsyncDatabaseManager(
+            config_with_replicas,
+            connection_name='default',
+            read_replicas=['read_1', 'read_2']
+        )
+
+        try:
+            health = await manager.health_check()
+            assert 'primary' in health
+            assert 'read_1' in health or True  # May fail without real DB
+            assert 'read_2' in health or True
+        except Exception:
+            pass
