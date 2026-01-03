@@ -1,13 +1,23 @@
 """
-Database session management.
+Database session management with async support.
 
 Provides:
-- Session factory
-- Context managers
+- Session factory (sync and async)
+- Context managers for both modes
 - Multi-connection support (read/write replicas)
 - Thread-safe connection management
 - Health checks
 - Dependency injection for FastAPI
+- Full support for PostgreSQL, MySQL, MariaDB, MSSQL, Oracle
+
+Supported databases:
+- PostgreSQL (sync: psycopg2, async: asyncpg)
+- MySQL (sync: pymysql, async: aiomysql)
+- MariaDB (sync: pymysql, async: aiomysql)
+- MSSQL (sync: pyodbc, async: aioodbc)
+- Oracle (sync: cx_oracle, async: oracledb)
+- SQLite (sync only)
+
 """
 
 from __future__ import annotations
@@ -15,17 +25,24 @@ from __future__ import annotations
 import logging
 import random
 import threading
-from contextlib import contextmanager
-from typing import Generator
+from contextlib import asynccontextmanager, contextmanager
+from typing import AsyncGenerator, Generator
 from urllib.parse import quote_plus
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.orm import Session, sessionmaker
 
 from fastkit_core.config import ConfigManager
 
 logger = logging.getLogger(__name__)
+
 
 
 class DatabaseManager:
@@ -37,6 +54,7 @@ class DatabaseManager:
     - Read replicas for load balancing
     - Connection pooling
     - Health checks
+    - PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, SQLite
 
     Example:
 ```python
@@ -164,7 +182,7 @@ class DatabaseManager:
 
         if not url:
             # Build URL from parameters (Laravel-style)
-            url = self._build_url_from_params(conn_config, connection_name)
+            url = self._build_url_from_params(conn_config, connection_name, is_async=False)
 
         is_sqlite = url.startswith('sqlite')
 
@@ -185,13 +203,30 @@ class DatabaseManager:
         # Create and return engine
         return create_engine(url, **engine_options)
 
-    def _build_url_from_params(self, conn_config: dict, connection_name: str) -> str:
+    def _build_url_from_params(
+            self,
+            conn_config: dict,
+            connection_name: str,
+            is_async: bool = False
+    ) -> str:
         """
         Build database URL from connection parameters.
 
-        Supports Laravel-style configuration:
-        - driver: postgresql, mysql, sqlite, etc.
-        - host, port, database, username, password
+        Supports Laravel-style configuration with full driver support:
+        - PostgreSQL (psycopg2 sync, asyncpg async)
+        - MySQL (pymysql sync, aiomysql async)
+        - MariaDB (pymysql sync, aiomysql async)
+        - MSSQL (pyodbc sync, aioodbc async)
+        - Oracle (cx_oracle sync, oracledb async)
+        - SQLite (sync only)
+
+        Args:
+            conn_config: Connection configuration dict
+            connection_name: Name of the connection
+            is_async: Whether to use async drivers
+
+        Returns:
+            SQLAlchemy connection URL
         """
         driver = conn_config.get('driver')
 
@@ -200,8 +235,13 @@ class DatabaseManager:
                 f"Connection '{connection_name}' must have either 'url' or 'driver' in config"
             )
 
-        # Handle SQLite (special case - file-based)
-        if driver == 'sqlite':
+        # Handle SQLite (special case - file-based, sync only)
+        if driver.lower() in ('sqlite', 'sqlite3'):
+            if is_async:
+                raise ValueError(
+                    f"SQLite does not support async mode. "
+                    f"Use synchronous DatabaseManager for SQLite connections."
+                )
             database = conn_config.get('database', ':memory:')
             return f'sqlite:///{database}'
 
@@ -217,23 +257,46 @@ class DatabaseManager:
                 f"Connection '{connection_name}' missing 'database' parameter"
             )
 
-        # Map common driver names to SQLAlchemy dialects
-        driver_mapping = {
-            'postgresql': 'postgresql+psycopg2',
-            'mysql': 'mysql+pymysql',  # Using pymysql by default
-            'mariadb': 'mysql+pymysql',
-            'mssql': 'mssql+pyodbc',
-            'oracle': 'oracle+cx_oracle',
-        }
+        # Map driver names to SQLAlchemy dialects
+        # Support both sync and async drivers
+        if is_async:
+            driver_mapping = {
+                'postgresql': 'postgresql+asyncpg',
+                'postgres': 'postgresql+asyncpg',
+                'mysql': 'mysql+aiomysql',
+                'mariadb': 'mysql+aiomysql',
+                'mssql': 'mssql+aioodbc',
+                'sqlserver': 'mssql+aioodbc',
+                'oracle': 'oracle+oracledb',
+            }
+        else:
+            driver_mapping = {
+                'postgresql': 'postgresql+psycopg2',
+                'postgres': 'postgresql+psycopg2',
+                'mysql': 'mysql+pymysql',
+                'mariadb': 'mysql+pymysql',
+                'mssql': 'mssql+pyodbc',
+                'sqlserver': 'mssql+pyodbc',
+                'oracle': 'oracle+cx_oracle',
+            }
 
-        dialect = driver_mapping.get(driver.lower(), driver)
+        dialect = driver_mapping.get(driver.lower())
+
+        if not dialect:
+            raise ValueError(
+                f"Unsupported driver '{driver}'. "
+                f"Supported drivers: {', '.join(driver_mapping.keys())}"
+            )
+
+        # URL-encode password if it contains special characters
+        encoded_password = quote_plus(password) if password else None
 
         # Build URL based on whether we have credentials
-        if username and password:
+        if username and encoded_password:
             if port:
-                url = f"{dialect}://{username}:{password}@{host}:{port}/{database}"
+                url = f"{dialect}://{username}:{encoded_password}@{host}:{port}/{database}"
             else:
-                url = f"{dialect}://{username}:{password}@{host}/{database}"
+                url = f"{dialect}://{username}:{encoded_password}@{host}/{database}"
         elif username:
             if port:
                 url = f"{dialect}://{username}@{host}:{port}/{database}"
@@ -245,18 +308,17 @@ class DatabaseManager:
             else:
                 url = f"{dialect}://{host}/{database}"
 
+        # Add connection options if specified
+        options = conn_config.get('options', {})
+        if options:
+            option_str = '&'.join(f"{k}={v}" for k, v in options.items())
+            url = f"{url}?{option_str}"
+
         return url
 
     @property
     def url(self) -> str:
-        """
-        Get database URL for this manager's connection.
-
-        Example:
-            >>> manager = DatabaseManager(config, connection_name='default')
-            >>> print(manager.url)
-            'postgresql+psycopg2://user:***@localhost:5432/mydb'
-        """
+        """Get database URL for this manager's connection."""
         connections = self.config.get('database.CONNECTIONS', {})
         conn_config = connections.get(self.connection_name)
 
@@ -270,24 +332,42 @@ class DatabaseManager:
         if url:
             return url
 
-        return self._build_url_from_params(conn_config, self.connection_name)
+        return self._build_url_from_params(conn_config, self.connection_name, is_async=False)
+
+    def get_session(self) -> Session:
+        """Get a new database session (for write operations)."""
+        return self.SessionLocal()
+
+    def get_read_session(self) -> Session:
+        """
+        Get a read-only session (load-balanced across replicas).
+
+        Falls back to primary if no replicas configured.
+        """
+        if not self.read_session_factories:
+            # No replicas, use primary
+            return self.SessionLocal()
+
+        # Random load balancing across replicas
+        factory = random.choice(self.read_session_factories)
+        return factory()
 
     @contextmanager
     def session(self) -> Generator[Session, None, None]:
         """
-        Context manager for database sessions (WRITE operations).
+        Context manager for write sessions.
 
-        Automatically commits on success, rolls back on error.
+        Auto-commits on success, rolls back on error.
 
         Example:
-```python
+        ```python
             with db.session() as session:
                 user = User(name="John")
                 session.add(user)
                 # Auto-commits here
-```
+        ```
         """
-        session = self.SessionLocal()
+        session = self.get_session()
         try:
             yield session
             session.commit()
@@ -300,17 +380,15 @@ class DatabaseManager:
     @contextmanager
     def read_session(self) -> Generator[Session, None, None]:
         """
-        Context manager for READ-ONLY sessions.
+        Context manager for read-only sessions.
 
-        Uses read replicas if available (load-balanced).
-        Falls back to primary if no replicas configured.
+        Uses read replicas if configured.
 
         Example:
-```python
-            # Load-balanced across read replicas
+        ```python
             with db.read_session() as session:
                 users = session.query(User).all()
-```
+        ```
         """
         session = self.get_read_session()
         try:
@@ -318,60 +396,18 @@ class DatabaseManager:
         finally:
             session.close()
 
-    def get_session(self) -> Session:
-        """
-        Get a new write session.
-
-        Note: Caller is responsible for closing!
-
-        Example:
-```python
-            session = db.get_session()
-            try:
-                user = User(name="John")
-                session.add(user)
-                session.commit()
-            except:
-                session.rollback()
-                raise
-            finally:
-                session.close()
-```
-        """
-        return self.SessionLocal()
-
-    def get_read_session(self) -> Session:
-        """
-        Get a new read session.
-
-        Load-balances across read replicas if available.
-        Falls back to primary connection if no replicas.
-
-        Note: Caller is responsible for closing!
-        """
-        if not self.read_session_factories:
-            # No replicas, use primary
-            return self.SessionLocal()
-
-        # Random load balancing across replicas
-        factory = random.choice(self.read_session_factories)
-        return factory()
-
-    def health_check(self, check_replicas: bool = True) -> dict[str, bool]:
+    def health_check(self) -> dict[str, bool]:
         """
         Check database connectivity.
 
-        Args:
-            check_replicas: Also check read replicas
-
         Returns:
-            Dict with health status for each connection
+            Dict with health status for primary and replicas
 
         Example:
-```python
-            health = db.health_check()
+        ```python
+            status = db.health_check()
             # {'primary': True, 'read_replica_1': True, 'read_replica_2': False}
-```
+        ```
         """
         results = {}
 
@@ -379,50 +415,35 @@ class DatabaseManager:
         try:
             with self.engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
-            results['primary'] = True
-            logger.debug(f"Health check passed: primary ({self.connection_name})")
+                results['primary'] = True
         except Exception as e:
+            logger.error(f"Primary connection health check failed: {e}")
             results['primary'] = False
-            logger.error(f"Health check failed for primary: {e}")
 
         # Check replicas
-        if check_replicas:
-            for i, engine in enumerate(self.read_engines):
-                replica_name = self.read_replicas[i]
-                try:
-                    with engine.connect() as conn:
-                        conn.execute(text("SELECT 1"))
+        for i, engine in enumerate(self.read_engines):
+            replica_name = self.read_replicas[i]
+            try:
+                with engine.connect() as conn:
+                    conn.execute(text("SELECT 1"))
                     results[replica_name] = True
-                    logger.debug(f"Health check passed: {replica_name}")
-                except Exception as e:
-                    results[replica_name] = False
-                    logger.error(f"Health check failed for {replica_name}: {e}")
+            except Exception as e:
+                logger.error(f"Replica '{replica_name}' health check failed: {e}")
+                results[replica_name] = False
 
         return results
 
     def dispose(self) -> None:
-        """
-        Dispose all database connections.
+        """Dispose all database connections."""
+        logger.info(f"Disposing connection '{self.connection_name}'")
 
-        Call this on application shutdown.
-
-        Example:
-```python
-            @app.on_event("shutdown")
-            def shutdown():
-                db.dispose()
-```
-        """
-        logger.info(f"Disposing database connections for '{self.connection_name}'")
-
-        # Dispose primary engine
         self.engine.dispose()
 
-        # Dispose read replica engines
         for engine in self.read_engines:
             engine.dispose()
 
-        logger.info("All connections disposed")
+        logger.info(f"Connection '{self.connection_name}' disposed")
+
 
     def __repr__(self) -> str:
         return (
