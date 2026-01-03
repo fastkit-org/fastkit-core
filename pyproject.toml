@@ -56,13 +56,99 @@ dev = [
     "isort>=5.13.0",
     "mypy>=1.13.0",
 ]
+
+# ============================================================================
+# Database Drivers - Synchronous
+# ============================================================================
+
 postgresql = [
     "psycopg2-binary>=2.9.10",
 ]
+
 mysql = [
     "pymysql>=1.1.0",
     "cryptography>=44.0.0",
 ]
+
+# MariaDB uses same driver as MySQL
+mariadb = [
+    "pymysql>=1.1.0",
+    "cryptography>=44.0.0",
+]
+
+mssql = [
+    "pyodbc>=5.2.0",
+]
+
+oracle = [
+    "cx-Oracle>=8.3.0",
+]
+
+# ============================================================================
+# Database Drivers - Asynchronous
+# ============================================================================
+
+postgresql-async = [
+    "asyncpg>=0.30.0",
+]
+
+mysql-async = [
+    "aiomysql>=0.2.0",
+    "cryptography>=44.0.0",
+]
+
+# MariaDB async uses same driver as MySQL async
+mariadb-async = [
+    "aiomysql>=0.2.0",
+    "cryptography>=44.0.0",
+]
+
+mssql-async = [
+    "aioodbc>=0.5.0",
+]
+
+oracle-async = [
+    "oracledb>=2.5.0",
+]
+
+# ============================================================================
+# Convenience groups for all sync/async drivers
+# ============================================================================
+
+# All synchronous database drivers
+all-sync = [
+    "psycopg2-binary>=2.9.10",
+    "pymysql>=1.1.0",
+    "pyodbc>=5.2.0",
+    "cx-Oracle>=8.3.0",
+    "cryptography>=44.0.0",
+]
+
+# All asynchronous database drivers
+all-async = [
+    "asyncpg>=0.30.0",
+    "aiomysql>=0.2.0",
+    "aioodbc>=0.5.0",
+    "oracledb>=2.5.0",
+    "cryptography>=44.0.0",
+]
+
+# All database drivers (sync + async)
+all-drivers = [
+    # Sync
+    "psycopg2-binary>=2.9.10",
+    "pymysql>=1.1.0",
+    "pyodbc>=5.2.0",
+    "cx-Oracle>=8.3.0",
+    # Async
+    "asyncpg>=0.30.0",
+    "aiomysql>=0.2.0",
+    "aioodbc>=0.5.0",
+    "oracledb>=2.5.0",
+    # Common
+    "cryptography>=44.0.0",
+]
+
 docs = [
     "mkdocs>=1.6.0",
     "mkdocs-material>=9.5.0",
