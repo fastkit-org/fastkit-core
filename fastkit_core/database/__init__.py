@@ -56,15 +56,28 @@ from fastkit_core.database.mixins import (
     IntIdMixin,
 )
 from fastkit_core.database.repository import Repository, create_repository
+
+# Synchronous session management
 from fastkit_core.database.session import (
     DatabaseManager,
+    build_database_url,
     get_db,
     get_db_manager,
     get_read_db,
     health_check_all,
     init_database,
     shutdown_database,
-    build_database_url
+)
+
+# Asynchronous session management
+from fastkit_core.database.session import (
+    AsyncDatabaseManager,
+    get_async_db,
+    get_async_db_manager,
+    get_async_read_db,
+    health_check_all_async,
+    init_async_database,
+    shutdown_async_database,
 )
 
 from fastkit_core.database.translatable import TranslatableMixin, set_locale_from_request
@@ -81,6 +94,16 @@ __all__ = [
     'shutdown_database',
     'health_check_all',
     'build_database_url',
+
+    # Asynchronous Session Management
+    'AsyncDatabaseManager',
+    'init_async_database',
+    'get_async_db_manager',
+    'get_async_db',
+    'get_async_read_db',
+    'shutdown_async_database',
+    'health_check_all_async',
+
     # Connection Manager
     'ConnectionManager',
     'get_connection_manager',
