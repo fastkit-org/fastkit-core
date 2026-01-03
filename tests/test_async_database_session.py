@@ -331,3 +331,162 @@ class TestAsyncSessionManagement:
         assert session is not None
         # Should be same factory as primary
         assert isinstance(session, AsyncSession)
+
+# ============================================================================
+# Test URL Building for Async Drivers
+# ============================================================================
+
+class TestAsyncURLBuilding:
+    """Test URL building for async database drivers."""
+
+    def test_build_postgresql_async_url(self):
+        """Should build PostgreSQL async URL with asyncpg."""
+        config = ConfigManager(modules=[], auto_load=False)
+        config.load()
+        config.set('database.CONNECTIONS', {
+            'default': {
+                'driver': 'postgresql',
+                'host': 'localhost',
+                'port': 5432,
+                'database': 'mydb',
+                'username': 'user',
+                'password': 'pass'
+            }
+        })
+
+        url = build_database_url(config, 'default', is_async=True)
+
+        assert url == 'postgresql+asyncpg://user:pass@localhost:5432/mydb'
+
+    def test_build_mysql_async_url(self):
+        """Should build MySQL async URL with aiomysql."""
+        config = ConfigManager(modules=[], auto_load=False)
+        config.load()
+        config.set('database.CONNECTIONS', {
+            'default': {
+                'driver': 'mysql',
+                'host': 'localhost',
+                'port': 3306,
+                'database': 'mydb',
+                'username': 'root',
+                'password': 'secret'
+            }
+        })
+
+        url = build_database_url(config, 'default', is_async=True)
+
+        assert url == 'mysql+aiomysql://root:secret@localhost:3306/mydb'
+
+    def test_build_mariadb_async_url(self):
+        """Should build MariaDB async URL with aiomysql."""
+        config = ConfigManager(modules=[], auto_load=False)
+        config.load()
+        config.set('database.CONNECTIONS', {
+            'default': {
+                'driver': 'mariadb',
+                'host': 'localhost',
+                'port': 3306,
+                'database': 'mydb',
+                'username': 'root',
+                'password': 'secret'
+            }
+        })
+
+        url = build_database_url(config, 'default', is_async=True)
+
+        assert url == 'mysql+aiomysql://root:secret@localhost:3306/mydb'
+
+    def test_build_mssql_async_url(self):
+        """Should build MSSQL async URL with aioodbc."""
+        config = ConfigManager(modules=[], auto_load=False)
+        config.load()
+        config.set('database.CONNECTIONS', {
+            'default': {
+                'driver': 'mssql',
+                'host': 'localhost',
+                'port': 1433,
+                'database': 'mydb',
+                'username': 'sa',
+                'password': 'P@ssw0rd'
+            }
+        })
+
+        url = build_database_url(config, 'default', is_async=True)
+
+        assert url.startswith('mssql+aioodbc://sa:P%40ssw0rd@localhost:1433/mydb')
+
+    def test_build_oracle_async_url(self):
+        """Should build Oracle async URL with oracledb."""
+        config = ConfigManager(modules=[], auto_load=False)
+        config.load()
+        config.set('database.CONNECTIONS', {
+            'default': {
+                'driver': 'oracle',
+                'host': 'localhost',
+                'port': 1521,
+                'database': 'ORCL',
+                'username': 'system',
+                'password': 'oracle'
+            }
+        })
+
+        url = build_database_url(config, 'default', is_async=True)
+
+        assert url == 'oracle+oracledb://system:oracle@localhost:1521/ORCL'
+
+    def test_url_encoding_special_chars(self):
+        """Should URL-encode special characters in password."""
+        config = ConfigManager(modules=[], auto_load=False)
+        config.load()
+        config.set('database.CONNECTIONS', {
+            'default': {
+                'driver': 'postgresql',
+                'host': 'localhost',
+                'database': 'mydb',
+                'username': 'user',
+                'password': 'p@ss!w#rd$'
+            }
+        })
+
+        url = build_database_url(config, 'default', is_async=True)
+
+        # Password should be URL-encoded
+        assert 'p%40ss%21w%23rd%24' in url or 'pass' in url
+
+    def test_sync_vs_async_url_difference(self):
+        """Should use different drivers for sync vs async."""
+        config = ConfigManager(modules=[], auto_load=False)
+        config.load()
+        config.set('database.CONNECTIONS', {
+            'default': {
+                'driver': 'postgresql',
+                'host': 'localhost',
+                'database': 'mydb',
+                'username': 'user',
+                'password': 'pass'
+            }
+        })
+
+        sync_url = build_database_url(config, 'default', is_async=False)
+        async_url = build_database_url(config, 'default', is_async=True)
+
+        assert 'psycopg2' in sync_url
+        assert 'asyncpg' in async_url
+
+    def test_sqlite_async_raises_error(self):
+        """Should raise error when trying to build async SQLite URL."""
+        config = ConfigManager(modules=[], auto_load=False)
+        config.load()
+        config.set('database.CONNECTIONS', {
+            'default': {
+                'driver': 'sqlite',
+                'database': '/tmp/test.db'
+            }
+        })
+
+        with pytest.raises(ValueError) as exc_info:
+            build_database_url(config, 'default', is_async=True)
+
+        assert 'sqlite' in str(exc_info.value).lower()
+        assert 'async' in str(exc_info.value).lower()
+
