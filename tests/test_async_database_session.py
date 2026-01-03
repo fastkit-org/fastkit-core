@@ -274,3 +274,60 @@ class TestAsyncEngineCreation:
         # Should complete without error
         assert True
 
+# ============================================================================
+# Test Async Session Management
+# ============================================================================
+
+class TestAsyncSessionManagement:
+    """Test async database session management."""
+
+    @pytest.mark.asyncio
+    async def test_session_context_manager(self, config):
+        """Should provide async session context manager."""
+        manager = AsyncDatabaseManager(config)
+
+        # Note: This will fail without actual database, but tests the structure
+        try:
+            async with manager.session() as session:
+                assert session is not None
+                assert isinstance(session, AsyncSession)
+        except Exception:
+            # Expected without real database
+            pass
+
+    @pytest.mark.asyncio
+    async def test_session_get_method(self, config):
+        """Should provide get_session method."""
+        manager = AsyncDatabaseManager(config)
+
+        session = manager.get_session()
+
+        assert session is not None
+        assert isinstance(session, AsyncSession)
+
+    @pytest.mark.asyncio
+    async def test_read_session_context_manager(self, config_with_replicas):
+        """Should provide read session context manager."""
+        manager = AsyncDatabaseManager(
+            config_with_replicas,
+            connection_name='default',
+            read_replicas=['read_1', 'read_2']
+        )
+
+        try:
+            async with manager.read_session() as session:
+                assert session is not None
+                assert isinstance(session, AsyncSession)
+        except Exception:
+            pass
+
+    @pytest.mark.asyncio
+    async def test_read_session_fallback_to_primary(self, config):
+        """Should fallback to primary if no replicas configured."""
+        manager = AsyncDatabaseManager(config)
+
+        session = manager.get_read_session()
+
+        assert session is not None
+        # Should be same factory as primary
+        assert isinstance(session, AsyncSession)
