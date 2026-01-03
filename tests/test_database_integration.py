@@ -55,3 +55,71 @@ class Post(Base, IntIdMixin, TimestampMixin):
     title: Mapped[str] = mapped_column(String(200))
     content: Mapped[str] = mapped_column(String(1000))
     user_id: Mapped[int]
+
+# ============================================================================
+# Fixtures
+# ============================================================================
+
+@pytest.fixture
+def sync_config():
+    """Config for sync database."""
+    config = ConfigManager(modules=[], auto_load=False)
+    config.load()
+    config.set('database.CONNECTIONS', {
+        'default': {
+            'url': 'sqlite:///:memory:',
+            'echo': False
+        }
+    })
+    return config
+
+
+@pytest.fixture
+def async_config():
+    """Config for async database (PostgreSQL)."""
+    config = ConfigManager(modules=[], auto_load=False)
+    config.load()
+    config.set('database.CONNECTIONS', {
+        'default': {
+            'driver': 'postgresql',
+            'host': 'localhost',
+            'port': 5432,
+            'database': 'test_db',
+            'username': 'test_user',
+            'password': 'test_pass'
+        }
+    })
+    return config
+
+
+@pytest.fixture
+def mixed_config():
+    """Config with both sync (SQLite) and async-compatible (PostgreSQL) connections."""
+    config = ConfigManager(modules=[], auto_load=False)
+    config.load()
+    config.set('database.CONNECTIONS', {
+        'legacy': {
+            'url': 'sqlite:///:memory:',
+        },
+        'modern': {
+            'driver': 'postgresql',
+            'host': 'localhost',
+            'port': 5432,
+            'database': 'modern_db',
+            'username': 'user',
+            'password': 'pass'
+        }
+    })
+    return config
+
+
+@pytest.fixture(autouse=True)
+async def cleanup():
+    """Cleanup after each test."""
+    yield
+    # Reset global managers
+    import fastkit_core.database.session as session_module
+    session_module._db_managers.clear()
+    session_module._async_db_managers.clear()
+
+
