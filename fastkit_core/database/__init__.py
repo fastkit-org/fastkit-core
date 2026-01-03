@@ -56,6 +56,7 @@ from fastkit_core.database.mixins import (
     IntIdMixin,
 )
 from fastkit_core.database.repository import Repository, create_repository
+from fastkit_core.database.async_repository import AsyncRepository, create_async_repository
 
 # Synchronous session management
 from fastkit_core.database.session import (
@@ -111,6 +112,10 @@ __all__ = [
     # Repository
     'Repository',
     'create_repository',
+    # Async Repository
+    'AsyncRepository',
+    'create_async_repository',
+
     # Mixins
     'IntIdMixin',
     'UUIDMixin',
