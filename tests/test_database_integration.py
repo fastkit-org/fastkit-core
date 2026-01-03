@@ -123,3 +123,66 @@ async def cleanup():
     session_module._async_db_managers.clear()
 
 
+# ============================================================================
+# Test Sync Operations
+# ============================================================================
+
+class TestSyncOperations:
+    """Test synchronous database operations."""
+
+    def test_create_and_query_sync(self, sync_config):
+        """Should perform CRUD operations synchronously."""
+        manager = DatabaseManager(sync_config)
+
+        # Create tables
+        Base.metadata.create_all(manager.engine)
+
+        # Create user
+        with manager.session() as session:
+            user = User(name="John Doe", email="john@example.com")
+            session.add(user)
+            session.commit()
+            session.refresh(user)
+            user_id = user.id
+
+        # Query user
+        with manager.read_session() as session:
+            user = session.query(User).filter(User.id == user_id).first()
+            assert user is not None
+            assert user.name == "John Doe"
+            assert user.email == "john@example.com"
+
+    def test_transaction_rollback_sync(self, sync_config):
+        """Should rollback on error (sync)."""
+        manager = DatabaseManager(sync_config)
+        Base.metadata.create_all(manager.engine)
+
+        # Create initial user
+        with manager.session() as session:
+            user = User(name="Alice", email="alice@example.com")
+            session.add(user)
+
+        # Attempt transaction with error
+        try:
+            with manager.session() as session:
+                user = User(name="Bob", email="bob@example.com")
+                session.add(user)
+                raise ValueError("Intentional error")
+        except ValueError:
+            pass
+
+        # Verify rollback
+        with manager.read_session() as session:
+            count = session.query(User).count()
+            assert count == 1  # Only Alice should exist
+
+    def test_multiple_connections_sync(self, mixed_config):
+        """Should handle multiple sync connections."""
+        manager1 = DatabaseManager(mixed_config, connection_name='legacy')
+        manager2 = DatabaseManager(mixed_config, connection_name='legacy')
+
+        assert manager1.engine is not None
+        assert manager2.engine is not None
+
+
+
