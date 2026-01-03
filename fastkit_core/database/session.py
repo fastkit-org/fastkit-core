@@ -734,12 +734,10 @@ class AsyncDatabaseManager:
 
         logger.info(f"Async connection '{self.connection_name}' disposed")
 
-
 # ============================================================================
-# FastAPI Integration
+# Global Manager Registry (Sync)
 # ============================================================================
 
-# Global database managers (thread-safe)
 _db_managers: dict[str, DatabaseManager] = {}
 _lock = threading.Lock()
 
@@ -751,36 +749,32 @@ def init_database(
     echo: bool = False
 ) -> DatabaseManager:
     """
-    Initialize global database manager.
+    Initialize a database connection globally (sync).
 
-    Call this once at app startup for each connection you need.
+    Thread-safe initialization that prevents duplicate connections.
 
     Args:
         config: Configuration manager
-        connection_name: Name of connection to initialize
+        connection_name: Name for this connection
         read_replicas: List of read replica connection names
         echo: Echo SQL queries
 
     Returns:
-        Initialized DatabaseManager
+        DatabaseManager instance
 
     Example:
 ```python
-        # app/main.py
-        from fastkit_core.database.session import init_database
-        from fastkit_core.config import get_config_manager
+        from fastkit_core.config import ConfigManager
+        from fastkit_core.database import init_database
 
         @app.on_event("startup")
         def startup():
-            config = get_config_manager()
+            config = ConfigManager()
 
             # Initialize primary database
-            init_database(config, connection_name='default')
+            init_database(config)
 
-            # Initialize analytics database
-            init_database(config, connection_name='analytics')
-
-            # Initialize with read replicas
+            # Initialize with replicas
             init_database(
                 config,
                 connection_name='default',
@@ -810,7 +804,7 @@ def init_database(
 
 def get_db_manager(connection_name: str = 'default') -> DatabaseManager:
     """
-    Get initialized database manager.
+    Get initialized database manager (sync).
 
     Args:
         connection_name: Name of connection to get
@@ -832,7 +826,7 @@ def get_db_manager(connection_name: str = 'default') -> DatabaseManager:
 
 def get_db(connection_name: str = 'default') -> Generator[Session, None, None]:
     """
-    FastAPI dependency for database sessions (WRITE).
+    FastAPI dependency for database sessions (WRITE) - sync.
 
     Args:
         connection_name: Which database connection to use
@@ -848,14 +842,6 @@ def get_db(connection_name: str = 'default') -> Generator[Session, None, None]:
         @app.get("/users")
         def list_users(db: Session = Depends(get_db)):
             return db.query(User).all()
-
-        # Using specific connection
-        def get_analytics_db():
-            return get_db(connection_name='analytics')
-
-        @app.get("/stats")
-        def get_stats(db: Session = Depends(get_analytics_db)):
-            return db.query(Stats).all()
 ```
     """
     manager = get_db_manager(connection_name)
@@ -868,9 +854,9 @@ def get_db(connection_name: str = 'default') -> Generator[Session, None, None]:
 
 def get_read_db(connection_name: str = 'default') -> Generator[Session, None, None]:
     """
-    FastAPI dependency for READ-ONLY database sessions.
+    FastAPI dependency for READ-ONLY database sessions - sync.
 
-    Uses read replicas if configured, otherwise falls back to primary.
+    Uses read replicas if configured.
 
     Args:
         connection_name: Which database connection to use
@@ -885,7 +871,6 @@ def get_read_db(connection_name: str = 'default') -> Generator[Session, None, No
 
         @app.get("/users")
         def list_users(db: Session = Depends(get_read_db)):
-            # This will use read replicas if configured
             return db.query(User).all()
 ```
     """
@@ -899,7 +884,7 @@ def get_read_db(connection_name: str = 'default') -> Generator[Session, None, No
 
 def shutdown_database() -> None:
     """
-    Cleanup all database connections.
+    Cleanup all sync database connections.
 
     Call this on application shutdown.
 
@@ -926,7 +911,7 @@ def shutdown_database() -> None:
 
 def health_check_all() -> dict[str, dict[str, bool]]:
     """
-    Health check for all initialized databases.
+    Health check for all initialized databases (sync).
 
     Returns:
         Dict mapping connection names to their health status
@@ -936,10 +921,6 @@ def health_check_all() -> dict[str, dict[str, bool]]:
         @app.get("/health/database")
         def database_health():
             return health_check_all()
-            # {
-            #   'default': {'primary': True, 'read_replica_1': True},
-            #   'analytics': {'primary': True}
-            # }
 ```
     """
     results = {}
@@ -955,16 +936,230 @@ def health_check_all() -> dict[str, dict[str, bool]]:
     return results
 
 
-def build_database_url(config: ConfigManager, connection_name: str = 'default') -> str:
+# ============================================================================
+# Global Manager Registry (Async)
+# ============================================================================
+
+_async_db_managers: dict[str, AsyncDatabaseManager] = {}
+_async_lock = threading.Lock()
+
+
+def init_async_database(
+        config: ConfigManager,
+        connection_name: str = 'default',
+        read_replicas: list[str] | None = None,
+        echo: bool = False
+) -> AsyncDatabaseManager:
+    """
+    Initialize an async database connection globally.
+
+    Thread-safe initialization that prevents duplicate connections.
+
+    Args:
+        config: Configuration manager
+        connection_name: Name for this connection
+        read_replicas: List of read replica connection names
+        echo: Echo SQL queries
+
+    Returns:
+        AsyncDatabaseManager instance
+
+    Example:
+    ```python
+        from fastkit_core.config import ConfigManager
+        from fastkit_core.database import init_async_database
+
+        @app.on_event("startup")
+        async def startup():
+            config = ConfigManager()
+
+            # Initialize async database
+            init_async_database(config)
+
+            # With replicas
+            init_async_database(
+                config,
+                connection_name='default',
+                read_replicas=['read_replica_1', 'read_replica_2']
+            )
+    ```
+    """
+    with _async_lock:
+        if connection_name in _async_db_managers:
+            logger.warning(
+                f"Async database manager '{connection_name}' already initialized. "
+                "Skipping."
+            )
+            return _async_db_managers[connection_name]
+
+        manager = AsyncDatabaseManager(
+            config,
+            connection_name=connection_name,
+            read_replicas=read_replicas,
+            echo=echo
+        )
+        _async_db_managers[connection_name] = manager
+
+        logger.info(f"Async database manager '{connection_name}' initialized globally")
+        return manager
+
+
+def get_async_db_manager(connection_name: str = 'default') -> AsyncDatabaseManager:
+    """
+    Get initialized async database manager.
+
+    Args:
+        connection_name: Name of connection to get
+
+    Returns:
+        AsyncDatabaseManager instance
+
+    Raises:
+        RuntimeError: If database not initialized
+    """
+    if connection_name not in _async_db_managers:
+        raise RuntimeError(
+            f"Async database '{connection_name}' not initialized. "
+            f"Call init_async_database(config, connection_name='{connection_name}') "
+            "at app startup."
+        )
+    return _async_db_managers[connection_name]
+
+
+async def get_async_db(
+        connection_name: str = 'default'
+) -> AsyncGenerator[AsyncSession, None]:
+    """
+    FastAPI dependency for async database sessions (WRITE).
+
+    Args:
+        connection_name: Which database connection to use
+
+    Yields:
+        Async database session
+
+    Example:
+    ```python
+        from fastapi import Depends
+        from fastkit_core.database.session import get_async_db
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        @app.get("/users")
+        async def list_users(db: AsyncSession = Depends(get_async_db)):
+            result = await db.execute(select(User))
+            return result.scalars().all()
+    ```
+    """
+    manager = get_async_db_manager(connection_name)
+    session = manager.get_session()
+    try:
+        yield session
+    finally:
+        await session.close()
+
+
+async def get_async_read_db(
+        connection_name: str = 'default'
+) -> AsyncGenerator[AsyncSession, None]:
+    """
+    FastAPI dependency for async READ-ONLY database sessions.
+
+    Uses read replicas if configured.
+
+    Args:
+        connection_name: Which database connection to use
+
+    Yields:
+        Async database session (read-only)
+
+    Example:
+    ```python
+        from fastapi import Depends
+        from fastkit_core.database.session import get_async_read_db
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        @app.get("/users")
+        async def list_users(db: AsyncSession = Depends(get_async_read_db)):
+            result = await db.execute(select(User))
+            return result.scalars().all()
+    ```
+    """
+    manager = get_async_db_manager(connection_name)
+    session = manager.get_read_session()
+    try:
+        yield session
+    finally:
+        await session.close()
+
+
+async def shutdown_async_database() -> None:
+    """
+    Cleanup all async database connections.
+
+    Call this on application shutdown.
+
+    Example:
+    ```python
+        @app.on_event("shutdown")
+        async def shutdown():
+            await shutdown_async_database()
+    ```
+    """
+    with _async_lock:
+        logger.info("Shutting down all async database connections...")
+
+        for name, manager in _async_db_managers.items():
+            try:
+                await manager.dispose()
+                logger.info(f"Async database '{name}' disposed successfully")
+            except Exception as e:
+                logger.error(f"Error disposing async database '{name}': {e}")
+
+        _async_db_managers.clear()
+        logger.info("All async database connections shut down")
+
+
+async def health_check_all_async() -> dict[str, dict[str, bool]]:
+    """
+    Health check for all initialized async databases.
+
+    Returns:
+        Dict mapping connection names to their health status
+
+    Example:
+    ```python
+        @app.get("/health/database")
+        async def database_health():
+            return await health_check_all_async()
+    ```
+    """
+    results = {}
+
+    with _async_lock:
+        for name, manager in _async_db_managers.items():
+            try:
+                results[name] = await manager.health_check()
+            except Exception as e:
+                logger.error(f"Async health check failed for '{name}': {e}")
+                results[name] = {'error': str(e)}
+
+    return results
+
+
+def build_database_url(
+        config: ConfigManager,
+        connection_name: str = 'default',
+        is_async: bool = False
+) -> str:
     """
     Build database URL from configuration without creating engine.
 
-    Useful for Alembic and other tools that need the URL
-    but don't need a full DatabaseManager instance.
+    Useful for Alembic and other tools.
 
     Args:
         config: ConfigManager instance with database configuration
         connection_name: Name of the connection (default: 'default')
+        is_async: Whether to build async URL (default: False)
 
     Returns:
         Database connection URL string
@@ -973,15 +1168,21 @@ def build_database_url(config: ConfigManager, connection_name: str = 'default') 
         ValueError: If connection not found or missing required params
 
     Example:
-        >>> from fastkit_core.config import ConfigManager
-        >>> from fastkit_core.database import build_database_url
-        >>>
-        >>> config = ConfigManager(modules=['database'])
-        >>> url = build_database_url(config, 'default')
-        >>> print(url)
-        'postgresql+psycopg2://user:***@localhost:5432/mydb'
+    ```python
+        from fastkit_core.config import ConfigManager
+        from fastkit_core.database import build_database_url
+
+        config = ConfigManager(modules=['database'])
+
+        # Sync URL
+        url = build_database_url(config, 'default')
+        # 'postgresql+psycopg2://user:***@localhost:5432/mydb'
+
+        # Async URL
+        async_url = build_database_url(config, 'default', is_async=True)
+        # 'postgresql+asyncpg://user:***@localhost:5432/mydb'
+    ```
     """
-    # Get connections config
     connections = config.get('database.CONNECTIONS', {})
 
     if not connections:
@@ -990,7 +1191,6 @@ def build_database_url(config: ConfigManager, connection_name: str = 'default') 
             "Ensure 'database.CONNECTIONS' is configured."
         )
 
-    # Get specific connection config
     conn_config = connections.get(connection_name)
 
     if not conn_config:
@@ -1005,52 +1205,6 @@ def build_database_url(config: ConfigManager, connection_name: str = 'default') 
     if url:
         return url
 
-    # Build URL from parameters
-    driver = conn_config.get('driver')
-
-    if not driver:
-        raise ValueError(
-            f"Connection '{connection_name}' must have either 'url' or 'driver'"
-        )
-
-    # Handle SQLite (file-based)
-    if driver == 'sqlite':
-        database = conn_config.get('database', ':memory:')
-        return f'sqlite:///{database}'
-
-    # Build URL for server-based databases
-    host = conn_config.get('host', 'localhost')
-    port = conn_config.get('port')
-    database = conn_config.get('database')
-    username = conn_config.get('username')
-    password = conn_config.get('password')
-
-    if not database:
-        raise ValueError(
-            f"Connection '{connection_name}' missing 'database' parameter"
-        )
-
-    # Map driver names to SQLAlchemy dialects
-    driver_mapping = {
-        'postgresql': 'postgresql+psycopg2',
-        'mysql': 'mysql+pymysql',
-        'mariadb': 'mysql+pymysql',
-        'mssql': 'mssql+pyodbc',
-        'oracle': 'oracle+cx_oracle',
-    }
-
-    dialect = driver_mapping.get(driver.lower(), driver)
-
-    # Build authentication part
-    if username and password:
-        auth = f"{username}:{password}@"
-    elif username:
-        auth = f"{username}@"
-    else:
-        auth = ""
-
-    # Build full URL
-    if port:
-        return f"{dialect}://{auth}{host}:{port}/{database}"
-    else:
-        return f"{dialect}://{auth}{host}/{database}"
+    # Build URL from parameters using temporary manager instance
+    temp_manager = DatabaseManager.__new__(DatabaseManager)
+    return temp_manager._build_url_from_params(conn_config, connection_name, is_async)
