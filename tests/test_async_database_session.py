@@ -215,3 +215,62 @@ class TestAsyncDatabaseManagerInit:
         assert 'sqlite' in str(exc_info.value).lower()
         assert 'async' in str(exc_info.value).lower()
 
+# ============================================================================
+# Test Async Engine Creation
+# ============================================================================
+
+class TestAsyncEngineCreation:
+    """Test async SQLAlchemy engine creation."""
+
+    def test_create_async_engine(self, config):
+        """Should create async SQLAlchemy engine."""
+        manager = AsyncDatabaseManager(config)
+
+        engine = manager.engine
+
+        assert engine is not None
+        assert str(engine.url).startswith('postgresql+asyncpg')
+
+    def test_engine_cached(self, config):
+        """Should cache engine instance."""
+        manager = AsyncDatabaseManager(config)
+
+        engine1 = manager.engine
+        engine2 = manager.engine
+
+        assert engine1 is engine2
+
+    def test_engine_with_pool_settings(self):
+        """Should apply pool settings from config."""
+        config = ConfigManager(modules=[], auto_load=False)
+        config.load()
+
+        config.set('database.CONNECTIONS', {
+            'default': {
+                'driver': 'postgresql',
+                'host': 'localhost',
+                'database': 'test',
+                'username': 'user',
+                'password': 'pass',
+                'pool_size': 20,
+                'max_overflow': 5
+            }
+        })
+
+        manager = AsyncDatabaseManager(config)
+        engine = manager.engine
+
+        assert engine is not None
+        assert engine.pool.size() == 20
+
+    @pytest.mark.asyncio
+    async def test_dispose_async_engine(self, config):
+        """Should dispose async engine."""
+        manager = AsyncDatabaseManager(config)
+        engine = manager.engine
+
+        await manager.dispose()
+
+        # Should complete without error
+        assert True
+
