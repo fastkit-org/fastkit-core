@@ -268,3 +268,103 @@ class TestAsyncURLBuilding:
         url = build_database_url(config, 'default', is_async=True)
 
         assert url == 'oracle+oracledb://system:oracle@localhost:1521/ORCL'
+
+# ============================================================================
+# Test Special Characters in Passwords
+# ============================================================================
+
+class TestSpecialCharacters:
+    """Test URL encoding of special characters."""
+
+    def test_password_with_at_symbol(self):
+        """Should encode @ in password."""
+        config = ConfigManager(modules=[], auto_load=False)
+        config.load()
+        config.set('database.CONNECTIONS', {
+            'default': {
+                'driver': 'postgresql',
+                'host': 'localhost',
+                'database': 'test',
+                'username': 'user',
+                'password': 'p@ssword'
+            }
+        })
+
+        url = build_database_url(config, 'default', is_async=False)
+
+        assert 'p%40ssword' in url
+
+    def test_password_with_colon(self):
+        """Should encode : in password."""
+        config = ConfigManager(modules=[], auto_load=False)
+        config.load()
+        config.set('database.CONNECTIONS', {
+            'default': {
+                'driver': 'postgresql',
+                'host': 'localhost',
+                'database': 'test',
+                'username': 'user',
+                'password': 'pass:word'
+            }
+        })
+
+        url = build_database_url(config, 'default', is_async=False)
+
+        assert 'pass%3Aword' in url
+
+    def test_password_with_slash(self):
+        """Should encode / in password."""
+        config = ConfigManager(modules=[], auto_load=False)
+        config.load()
+        config.set('database.CONNECTIONS', {
+            'default': {
+                'driver': 'postgresql',
+                'host': 'localhost',
+                'database': 'test',
+                'username': 'user',
+                'password': 'pass/word'
+            }
+        })
+
+        url = build_database_url(config, 'default', is_async=False)
+
+        assert 'pass%2Fword' in url
+
+    def test_password_with_multiple_special_chars(self):
+        """Should encode multiple special characters."""
+        config = ConfigManager(modules=[], auto_load=False)
+        config.load()
+        config.set('database.CONNECTIONS', {
+            'default': {
+                'driver': 'postgresql',
+                'host': 'localhost',
+                'database': 'test',
+                'username': 'user',
+                'password': 'p@ss!w#rd$%'
+            }
+        })
+
+        url = build_database_url(config, 'default', is_async=False)
+
+        # Should have encoded characters
+        assert '%' in url
+        assert 'p%40ss%21w%23rd%24%25' in url
+
+    def test_password_with_unicode(self):
+        """Should handle unicode in password."""
+        config = ConfigManager(modules=[], auto_load=False)
+        config.load()
+        config.set('database.CONNECTIONS', {
+            'default': {
+                'driver': 'postgresql',
+                'host': 'localhost',
+                'database': 'test',
+                'username': 'user',
+                'password': 'пароль'  # Cyrillic
+            }
+        })
+
+        url = build_database_url(config, 'default', is_async=False)
+
+        # Should be encoded
+        assert '%' in url
