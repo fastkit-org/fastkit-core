@@ -234,3 +234,34 @@ class TestAsyncOperations:
         assert all(isinstance(s, AsyncSession) for s in sessions)
 
 
+# ============================================================================
+# Test Mixed Sync/Async Usage
+# ============================================================================
+
+class TestMixedUsage:
+    """Test using both sync and async managers together."""
+
+    def test_sync_and_async_managers_coexist(self, sync_config, async_config):
+        """Should allow sync and async managers to coexist."""
+        sync_manager = DatabaseManager(sync_config)
+        async_manager = AsyncDatabaseManager(async_config)
+
+        assert sync_manager is not None
+        assert async_manager is not None
+        assert isinstance(sync_manager, DatabaseManager)
+        assert isinstance(async_manager, AsyncDatabaseManager)
+
+
+    @pytest.mark.asyncio
+    async def test_cleanup_both_sync_and_async(self, sync_config, async_config):
+        """Should cleanup both sync and async managers."""
+        init_database(sync_config)
+        init_async_database(async_config)
+
+        # Cleanup
+        shutdown_database()
+        await shutdown_async_database()
+
+        # Should complete without errors
+        assert True
+
