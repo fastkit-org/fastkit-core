@@ -453,6 +453,288 @@ class DatabaseManager:
         )
 
 
+class AsyncDatabaseManager:
+    """
+    Manages asynchronous database connections and sessions.
+
+    Supports:
+    - Multiple named connections (default, analytics, etc.)
+    - Read replicas for load balancing
+    - Connection pooling
+    - Health checks
+    - PostgreSQL (asyncpg), MySQL/MariaDB (aiomysql), MSSQL (aioodbc), Oracle (oracledb)
+
+    Example:
+    ```python
+        from fastkit_core.database import AsyncDatabaseManager
+        from fastkit_core.config import ConfigManager
+
+        config = ConfigManager()
+
+        # Single connection
+        db = AsyncDatabaseManager(config)
+
+        # With read replicas
+        db = AsyncDatabaseManager(
+            config,
+            connection_name='default',
+            read_replicas=['read_replica_1', 'read_replica_2']
+        )
+
+        # Write operation
+        async with db.session() as session:
+            user = User(name="John")
+            session.add(user)
+            await session.commit()
+
+        # Read operation (load-balanced across replicas)
+        async with db.read_session() as session:
+            result = await session.execute(select(User))
+            users = result.scalars().all()
+    ```
+    """
+
+    def __init__(
+            self,
+            config: ConfigManager,
+            connection_name: str = 'default',
+            read_replicas: list[str] | None = None,
+            echo: bool = False
+    ):
+        """
+        Initialize async database manager.
+
+        Args:
+            config: Configuration manager
+            connection_name: Which connection to use from config
+            read_replicas: List of read replica connection names
+            echo: Echo SQL queries (for debugging)
+        """
+        self.config = config
+        self.connection_name = connection_name
+        self.echo = echo
+
+        # Build primary (write) engine
+        self.engine = self._create_async_engine(connection_name)
+
+        # Create primary session factory
+        self.AsyncSessionLocal = async_sessionmaker(
+            bind=self.engine,
+            class_=AsyncSession,
+            autocommit=False,
+            autoflush=False,
+            expire_on_commit=False
+        )
+
+        # Setup read replicas
+        self.read_replicas = read_replicas or []
+        self.read_engines: list[AsyncEngine] = []
+        self.read_session_factories: list[async_sessionmaker] = []
+
+        for replica_name in self.read_replicas:
+            try:
+                engine = self._create_async_engine(replica_name)
+                self.read_engines.append(engine)
+                self.read_session_factories.append(
+                    async_sessionmaker(
+                        bind=engine,
+                        class_=AsyncSession,
+                        autocommit=False,
+                        autoflush=False,
+                        expire_on_commit=False
+                    )
+                )
+                logger.info(f"Async read replica '{replica_name}' configured")
+            except Exception as e:
+                logger.warning(
+                    f"Failed to configure async read replica '{replica_name}': {e}"
+                )
+
+        logger.info(
+            f"AsyncDatabaseManager initialized: "
+            f"connection='{connection_name}', "
+            f"replicas={len(self.read_session_factories)}"
+        )
+
+    def _create_async_engine(self, connection_name: str) -> AsyncEngine:
+        """Create async SQLAlchemy engine from config."""
+        # Get all connections dict
+        connections = self.config.get('database.CONNECTIONS', {})
+
+        # Get specific connection config
+        conn_config = connections.get(connection_name)
+
+        if not conn_config:
+            available = list(connections.keys())
+            raise ValueError(
+                f"Database connection '{connection_name}' not found in config. "
+                f"Available connections: {available}"
+            )
+
+        # Get or build connection URL
+        url = conn_config.get('url')
+
+        if not url:
+            # Build URL from parameters with async drivers
+            url = self._build_url_from_params(conn_config, connection_name, is_async=True)
+
+        # Validate that URL is async-compatible
+        if url.startswith('sqlite'):
+            raise ValueError(
+                f"SQLite does not support async mode. "
+                f"Use synchronous DatabaseManager for connection '{connection_name}'."
+            )
+
+        # Base engine options
+        engine_options = {
+            'echo': conn_config.get('echo', self.echo),
+            'pool_size': conn_config.get('pool_size', 5),
+            'max_overflow': conn_config.get('max_overflow', 10),
+            'pool_timeout': conn_config.get('pool_timeout', 30),
+            'pool_recycle': conn_config.get('pool_recycle', 3600),
+        }
+
+        # Create and return async engine
+        return create_async_engine(url, **engine_options)
+
+    def _build_url_from_params(
+            self,
+            conn_config: dict,
+            connection_name: str,
+            is_async: bool = True
+    ) -> str:
+        """
+        Build async database URL from connection parameters.
+
+        Reuses the sync version's logic with is_async=True.
+        """
+        # Create a temporary sync manager instance just to use its method
+        # This avoids code duplication
+        temp_manager = DatabaseManager.__new__(DatabaseManager)
+        return temp_manager._build_url_from_params(conn_config, connection_name, is_async)
+
+    @property
+    def url(self) -> str:
+        """Get database URL for this manager's connection."""
+        connections = self.config.get('database.CONNECTIONS', {})
+        conn_config = connections.get(self.connection_name)
+
+        if not conn_config:
+            raise ValueError(
+                f"Database connection '{self.connection_name}' not found"
+            )
+
+        url = conn_config.get('url')
+        if url:
+            return url
+
+        return self._build_url_from_params(conn_config, self.connection_name, is_async=True)
+
+    def get_session(self) -> AsyncSession:
+        """Get a new async database session (for write operations)."""
+        return self.AsyncSessionLocal()
+
+    def get_read_session(self) -> AsyncSession:
+        """
+        Get an async read-only session (load-balanced across replicas).
+
+        Falls back to primary if no replicas configured.
+        """
+        if not self.read_session_factories:
+            return self.AsyncSessionLocal()
+
+        # Random load balancing across replicas
+        factory = random.choice(self.read_session_factories)
+        return factory()
+
+    @asynccontextmanager
+    async def session(self) -> AsyncGenerator[AsyncSession, None]:
+        """
+        Async context manager for write sessions.
+
+        Auto-commits on success, rolls back on error.
+
+        Example:
+```python
+            async with db.session() as session:
+                user = User(name="John")
+                session.add(user)
+                await session.commit()
+```
+        """
+        session = self.get_session()
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
+
+    @asynccontextmanager
+    async def read_session(self) -> AsyncGenerator[AsyncSession, None]:
+        """
+        Async context manager for read-only sessions.
+
+        Uses read replicas if configured.
+
+        Example:
+```python
+            async with db.read_session() as session:
+                result = await session.execute(select(User))
+                users = result.scalars().all()
+```
+        """
+        session = self.get_read_session()
+        try:
+            yield session
+        finally:
+            await session.close()
+
+    async def health_check(self) -> dict[str, bool]:
+        """
+        Check async database connectivity.
+
+        Returns:
+            Dict with health status for primary and replicas
+        """
+        results = {}
+
+        # Check primary
+        try:
+            async with self.engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
+                results['primary'] = True
+        except Exception as e:
+            logger.error(f"Async primary connection health check failed: {e}")
+            results['primary'] = False
+
+        # Check replicas
+        for i, engine in enumerate(self.read_engines):
+            replica_name = self.read_replicas[i]
+            try:
+                async with engine.connect() as conn:
+                    await conn.execute(text("SELECT 1"))
+                    results[replica_name] = True
+            except Exception as e:
+                logger.error(f"Async replica '{replica_name}' health check failed: {e}")
+                results[replica_name] = False
+
+        return results
+
+    async def dispose(self) -> None:
+        """Dispose all async database connections."""
+        logger.info(f"Disposing async connection '{self.connection_name}'")
+
+        await self.engine.dispose()
+
+        for engine in self.read_engines:
+            await engine.dispose()
+
+        logger.info(f"Async connection '{self.connection_name}' disposed")
+
+
 # ============================================================================
 # FastAPI Integration
 # ============================================================================
