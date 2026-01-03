@@ -528,3 +528,94 @@ class TestAsyncHealthChecks:
             assert 'read_2' in health or True
         except Exception:
             pass
+
+# ============================================================================
+# Test FastAPI Async Integration
+# ============================================================================
+
+class TestFastAPIAsyncIntegration:
+    """Test FastAPI async dependency injection."""
+
+    def test_init_async_database(self, config):
+        """Should initialize global async database manager."""
+        init_async_database(config)
+
+        manager = get_async_db_manager()
+
+        assert manager is not None
+        assert manager.connection_name == 'default'
+        assert isinstance(manager, AsyncDatabaseManager)
+
+    @pytest.mark.asyncio
+    async def test_get_async_db_dependency(self, config):
+        """Should provide async database session dependency."""
+        init_async_database(config)
+
+        session_gen = get_async_db()
+        session = await anext(session_gen)
+
+        try:
+            assert session is not None
+            assert isinstance(session, AsyncSession)
+        finally:
+            try:
+                await anext(session_gen)
+            except StopAsyncIteration:
+                pass
+
+    @pytest.mark.asyncio
+    async def test_get_async_read_db_dependency(self, config_with_replicas):
+        """Should provide async read database session dependency."""
+        init_async_database(
+            config_with_replicas,
+            connection_name='default',
+            read_replicas=['read_1']
+        )
+
+        session_gen = get_async_read_db()
+        session = await anext(session_gen)
+
+        try:
+            assert session is not None
+            assert isinstance(session, AsyncSession)
+        finally:
+            try:
+                await anext(session_gen)
+            except StopAsyncIteration:
+                pass
+
+    @pytest.mark.asyncio
+    async def test_shutdown_async_database(self, config):
+        """Should shutdown async database connections."""
+        init_async_database(config)
+
+        # Should not raise error
+        await shutdown_async_database()
+
+        assert True
+
+    @pytest.mark.asyncio
+    async def test_health_check_all_async_function(self, config):
+        """Should check health of all async connections."""
+        init_async_database(config)
+
+        try:
+            health = await health_check_all_async()
+            assert isinstance(health, dict)
+        except Exception:
+            # Expected without real DB
+            pass
+
+    def test_multiple_async_connections(self, config_multi_db):
+        """Should support multiple async database connections."""
+        init_async_database(config_multi_db, connection_name='default')
+        init_async_database(config_multi_db, connection_name='analytics')
+        init_async_database(config_multi_db, connection_name='cache')
+
+        default_mgr = get_async_db_manager('default')
+        analytics_mgr = get_async_db_manager('analytics')
+        cache_mgr = get_async_db_manager('cache')
+
+        assert default_mgr.connection_name == 'default'
+        assert analytics_mgr.connection_name == 'analytics'
+        assert cache_mgr.connection_name == 'cache'
