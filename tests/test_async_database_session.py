@@ -142,3 +142,76 @@ async def cleanup_global_manager():
     import fastkit_core.database.session as session_module
     session_module._async_db_managers.clear()
 
+# ============================================================================
+# Test AsyncDatabaseManager Initialization
+# ============================================================================
+
+class TestAsyncDatabaseManagerInit:
+    """Test AsyncDatabaseManager initialization."""
+
+    def test_init_with_config(self, config):
+        """Should initialize with config."""
+        manager = AsyncDatabaseManager(config)
+
+        assert manager.config == config
+        assert manager.connection_name == 'default'
+        assert manager.echo is False
+
+    def test_init_custom_connection(self, config_multi_db):
+        """Should initialize with custom connection name."""
+        manager = AsyncDatabaseManager(config_multi_db, connection_name='analytics')
+
+        assert manager.connection_name == 'analytics'
+
+    def test_init_with_echo(self, config):
+        """Should support echo parameter."""
+        manager = AsyncDatabaseManager(config, echo=True)
+
+        assert manager.echo is True
+
+    def test_init_with_read_replicas(self, config_with_replicas):
+        """Should initialize with read replicas."""
+        manager = AsyncDatabaseManager(
+            config_with_replicas,
+            connection_name='default',
+            read_replicas=['read_1', 'read_2']
+        )
+
+        assert manager.read_replicas == ['read_1', 'read_2']
+        assert len(manager.read_session_factories) == 2
+
+    def test_init_without_read_replicas(self, config):
+        """Should work without read replicas."""
+        manager = AsyncDatabaseManager(config)
+
+        assert manager.read_replicas == []
+
+    def test_missing_connection_raises_error(self):
+        """Should raise error for missing connection."""
+        config = ConfigManager(modules=[], auto_load=False)
+        config.load()
+        config.set('database.CONNECTIONS', {})
+
+        with pytest.raises(ValueError) as exc_info:
+            AsyncDatabaseManager(config, connection_name='nonexistent')
+
+        assert 'not found' in str(exc_info.value).lower()
+        assert 'nonexistent' in str(exc_info.value)
+
+    def test_sqlite_raises_error(self):
+        """Should raise error for SQLite (not supported in async)."""
+        config = ConfigManager(modules=[], auto_load=False)
+        config.load()
+        config.set('database.CONNECTIONS', {
+            'default': {
+                'driver': 'sqlite',
+                'database': ':memory:'
+            }
+        })
+
+        with pytest.raises(ValueError) as exc_info:
+            AsyncDatabaseManager(config)
+
+        assert 'sqlite' in str(exc_info.value).lower()
+        assert 'async' in str(exc_info.value).lower()
+

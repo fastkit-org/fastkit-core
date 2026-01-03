@@ -39,6 +39,14 @@ alembic==1.14.0
 psycopg2-binary==2.9.10  # PostgreSQL
 pymysql==1.1.1           # MySQL
 cryptography==44.0.0     # For MySQL secure connections
+pyodbc==5.2.0
+cx-Oracle==8.3.0
+
+# Async
+asyncpg==0.30.0
+aiomysql==0.2.0
+aioodbc==0.5.0
+oracledb==2.5.0
 
 # Configuration
 python-dotenv==1.0.1
