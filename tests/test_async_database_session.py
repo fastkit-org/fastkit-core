@@ -699,3 +699,54 @@ class TestAdvancedAsyncFeatures:
 
         manager = AsyncDatabaseManager(config)
         assert str(manager.engine.url) == 'postgresql+asyncpg://user:***@localhost/mydb'
+
+# ============================================================================
+# Test Error Handling
+# ============================================================================
+
+class TestAsyncErrorHandling:
+    """Test async error handling."""
+
+    def test_unsupported_driver_raises_error(self):
+        """Should raise error for unsupported driver."""
+        config = ConfigManager(modules=[], auto_load=False)
+        config.load()
+        config.set('database.CONNECTIONS', {
+            'default': {
+                'driver': 'unsupported_db',
+                'host': 'localhost',
+                'database': 'test'
+            }
+        })
+
+        with pytest.raises(ValueError) as exc_info:
+            build_database_url(config, 'default', is_async=True)
+
+        assert 'unsupported' in str(exc_info.value).lower()
+
+    def test_missing_database_param_raises_error(self):
+        """Should raise error when database parameter is missing."""
+        config = ConfigManager(modules=[], auto_load=False)
+        config.load()
+        config.set('database.CONNECTIONS', {
+            'default': {
+                'driver': 'postgresql',
+                'host': 'localhost',
+                'username': 'user',
+                'password': 'pass'
+                # Missing 'database'
+            }
+        })
+
+        with pytest.raises(ValueError) as exc_info:
+            build_database_url(config, 'default', is_async=True)
+
+        assert 'database' in str(exc_info.value).lower()
+
+    def test_get_nonexistent_manager_raises_error(self):
+        """Should raise error when getting non-initialized manager."""
+        with pytest.raises(RuntimeError) as exc_info:
+            get_async_db_manager('nonexistent')
+
+        assert 'not initialized' in str(exc_info.value).lower()
+
