@@ -192,3 +192,137 @@ class TestAsyncCreate:
 
         assert user.is_active is True  # Default value
         assert user.age is None  # Nullable
+
+
+# ============================================================================
+# Test READ Operations
+# ============================================================================
+
+class TestAsyncRead:
+    """Test async read operations."""
+
+    @pytest.mark.asyncio
+    async def test_get(self, user_repo):
+        """Should get record by ID."""
+        user = await user_repo.create({
+            'name': 'John',
+            'email': 'john@example.com'
+        })
+
+        found = await user_repo.get(user.id)
+
+        assert found is not None
+        assert found.id == user.id
+        assert found.name == 'John'
+
+    @pytest.mark.asyncio
+    async def test_get_nonexistent(self, user_repo):
+        """Should return None for nonexistent ID."""
+        found = await user_repo.get(999)
+
+        assert found is None
+
+    @pytest.mark.asyncio
+    async def test_get_or_404(self, user_repo):
+        """Should get or raise error."""
+        user = await user_repo.create({
+            'name': 'John',
+            'email': 'john@example.com'
+        })
+
+        found = await user_repo.get_or_404(user.id)
+
+        assert found.id == user.id
+
+    @pytest.mark.asyncio
+    async def test_get_or_404_raises(self, user_repo):
+        """Should raise error for nonexistent ID."""
+        with pytest.raises(ValueError) as exc_info:
+            await user_repo.get_or_404(999)
+
+        assert 'not found' in str(exc_info.value).lower()
+
+    @pytest.mark.asyncio
+    async def test_get_all(self, user_repo):
+        """Should get all records."""
+        await user_repo.create_many([
+            {'name': f'User {i}', 'email': f'user{i}@example.com'}
+            for i in range(5)
+        ])
+
+        users = await user_repo.get_all()
+
+        assert len(users) == 5
+
+    @pytest.mark.asyncio
+    async def test_get_all_with_limit(self, user_repo):
+        """Should respect limit."""
+        await user_repo.create_many([
+            {'name': f'User {i}', 'email': f'user{i}@example.com'}
+            for i in range(10)
+        ])
+
+        users = await user_repo.get_all(limit=3)
+
+        assert len(users) == 3
+
+    @pytest.mark.asyncio
+    async def test_first(self, user_repo):
+        """Should get first record."""
+        await user_repo.create_many([
+            {'name': 'Alice', 'email': 'alice@example.com', 'age': 25},
+            {'name': 'Bob', 'email': 'bob@example.com', 'age': 30},
+            {'name': 'Charlie', 'email': 'charlie@example.com', 'age': 35}
+        ])
+
+        first = await user_repo.first(_order_by='age')
+
+        assert first.name == 'Alice'
+        assert first.age == 25
+
+    @pytest.mark.asyncio
+    async def test_first_with_filter(self, user_repo):
+        """Should get first matching filter."""
+        await user_repo.create_many([
+            {'name': 'Alice', 'email': 'alice@example.com', 'age': 25},
+            {'name': 'Bob', 'email': 'bob@example.com', 'age': 30}
+        ])
+
+        first = await user_repo.first(age__gte=30)
+
+        assert first.name == 'Bob'
+
+    @pytest.mark.asyncio
+    async def test_first_returns_none(self, user_repo):
+        """Should return None if no matches."""
+        first = await user_repo.first(name='Nonexistent')
+
+        assert first is None
+
+    @pytest.mark.asyncio
+    async def test_exists(self, user_repo):
+        """Should check if record exists."""
+        await user_repo.create({
+            'name': 'John',
+            'email': 'john@example.com'
+        })
+
+        exists = await user_repo.exists(email='john@example.com')
+        not_exists = await user_repo.exists(email='jane@example.com')
+
+        assert exists is True
+        assert not_exists is False
+
+    @pytest.mark.asyncio
+    async def test_count(self, user_repo):
+        """Should count records."""
+        await user_repo.create_many([
+            {'name': f'User {i}', 'email': f'user{i}@example.com', 'age': 20 + i}
+            for i in range(10)
+        ])
+
+        total = await user_repo.count()
+        adults = await user_repo.count(age__gte=25)
+
+        assert total == 10
+        assert adults == 5  # ages 25-29
