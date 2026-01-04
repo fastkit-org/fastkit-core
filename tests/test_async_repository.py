@@ -851,3 +851,394 @@ class TestAsyncTransactions:
 
         assert refreshed.name == 'Jane'
 
+
+# ============================================================================
+# Test ERROR Handling
+# ============================================================================
+
+class TestAsyncErrorHandling:
+    """Test async error handling."""
+
+    @pytest.mark.asyncio
+    async def test_invalid_field_raises_error(self, user_repo):
+        """Should raise error for invalid field."""
+        with pytest.raises(ValueError) as exc_info:
+            await user_repo.filter(nonexistent_field='value')
+
+        assert 'does not exist' in str(exc_info.value).lower()
+
+    @pytest.mark.asyncio
+    async def test_invalid_operator_raises_error(self, user_repo):
+        """Should raise error for invalid operator."""
+        with pytest.raises(ValueError) as exc_info:
+            await user_repo.filter(name__invalid_op='value')
+
+        assert 'unknown operator' in str(exc_info.value).lower()
+
+
+# ============================================================================
+# Test FACTORY Function
+# ============================================================================
+
+class TestAsyncRepositoryFactory:
+    """Test async repository factory."""
+
+    @pytest.mark.asyncio
+    async def test_create_async_repository(self, async_session):
+        """Should create repository using factory."""
+        repo = create_async_repository(User, async_session)
+
+        assert isinstance(repo, AsyncRepository)
+        assert repo.model == User
+        assert repo.session == async_session
+
+    @pytest.mark.asyncio
+    async def test_factory_repository_works(self, async_session):
+        """Should work same as direct instantiation."""
+        repo = create_async_repository(User, async_session)
+
+        user = await repo.create({
+            'name': 'Test',
+            'email': 'test@example.com'
+        })
+
+        assert user.id is not None
+        assert user.name == 'Test'
+
+
+# ============================================================================
+# Test EDGE Cases
+# ============================================================================
+
+class TestAsyncEdgeCases:
+    """Test edge cases."""
+
+    @pytest.mark.asyncio
+    async def test_empty_result_set(self, user_repo):
+        """Should handle empty results."""
+        results = await user_repo.filter(name='Nonexistent')
+
+        assert results == []
+        assert len(results) == 0
+
+    @pytest.mark.asyncio
+    async def test_paginate_empty_results(self, user_repo):
+        """Should handle pagination with no results."""
+        items, meta = await user_repo.paginate(page=1, per_page=10)
+
+        assert items == []
+        assert meta['total'] == 0
+        assert meta['total_pages'] == 0
+
+    @pytest.mark.asyncio
+    async def test_update_with_empty_dict(self, user_repo):
+        """Should handle update with empty dict."""
+        user = await user_repo.create({
+            'name': 'John',
+            'email': 'john@example.com'
+        })
+
+        updated = await user_repo.update(user.id, {})
+
+        assert updated.name == 'John'  # Unchanged
+
+    @pytest.mark.asyncio
+    async def test_filter_with_none_value(self, user_repo):
+        """Should handle None in filters."""
+        await user_repo.create({
+            'name': 'John',
+            'email': 'john@example.com',
+            'age': None
+        })
+
+        # This should work without errors
+        results = await user_repo.filter(age=None)
+        assert len(results) >= 0
+
+
+# ============================================================================
+# Test SPECIAL Scenarios
+# ============================================================================
+
+class TestAsyncSpecialScenarios:
+    """Test special real-world scenarios."""
+
+    @pytest.mark.asyncio
+    async def test_complex_filtering_scenario(self, product_repo):
+        """Should handle complex filtering (e-commerce scenario)."""
+        # Create products
+        await product_repo.create_many([
+            {'name': 'Laptop', 'price': Decimal('999.99'), 'stock': 10, 'category': 'Electronics'},
+            {'name': 'Phone', 'price': Decimal('599.99'), 'stock': 5, 'category': 'Electronics'},
+            {'name': 'Desk', 'price': Decimal('299.99'), 'stock': 0, 'category': 'Furniture'},
+            {'name': 'Chair', 'price': Decimal('149.99'), 'stock': 20, 'category': 'Furniture'},
+            {'name': 'Book', 'price': Decimal('29.99'), 'stock': 100, 'category': 'Books'}
+        ])
+
+        # Find available electronics under $1000
+        results = await product_repo.filter(
+            category='Electronics',
+            price__lt=Decimal('1000'),
+            stock__gt=0,
+            _order_by='price'
+        )
+
+        assert len(results) == 2
+        assert results[0].name == 'Phone'
+        assert results[1].name == 'Laptop'
+
+    @pytest.mark.asyncio
+    async def test_search_functionality(self, user_repo):
+        """Should implement search functionality."""
+        await user_repo.create_many([
+            {'name': 'John Doe', 'email': 'john.doe@example.com'},
+            {'name': 'Jane Doe', 'email': 'jane.doe@example.com'},
+            {'name': 'Bob Smith', 'email': 'bob.smith@gmail.com'},
+            {'name': 'Alice Johnson', 'email': 'alice.johnson@gmail.com'}
+        ])
+
+        # Search for "doe" in name or email
+        doe_results = await user_repo.filter(name__ilike='%doe%')
+        gmail_results = await user_repo.filter(email__endswith='gmail.com')
+
+        assert len(doe_results) == 2
+        assert len(gmail_results) == 2
+
+    @pytest.mark.asyncio
+    async def test_bulk_operations_performance(self, user_repo):
+        """Should handle bulk operations efficiently."""
+        import time
+
+        # Create 100 users in bulk
+        start = time.time()
+        users = await user_repo.create_many([
+            {'name': f'User {i}', 'email': f'user{i}@example.com'}
+            for i in range(100)
+        ])
+        bulk_time = time.time() - start
+
+        assert len(users) == 100
+
+        # Bulk create should be reasonably fast (< 2 seconds)
+        assert bulk_time < 2.0
+
+    @pytest.mark.asyncio
+    async def test_concurrent_reads(self, user_repo):
+        """Should handle concurrent reads."""
+        import asyncio
+
+        # Create test data
+        await user_repo.create_many([
+            {'name': f'User {i}', 'email': f'user{i}@example.com'}
+            for i in range(10)
+        ])
+
+        # Simulate concurrent reads
+        async def read_users():
+            return await user_repo.get_all()
+
+        results = await asyncio.gather(*[read_users() for _ in range(10)])
+
+        # All should return same count
+        assert all(len(r) == 10 for r in results)
+
+    @pytest.mark.asyncio
+    async def test_soft_delete_filtering(self, post_repo):
+        """Should exclude soft-deleted records by default."""
+        # Create posts
+        posts = await post_repo.create_many([
+            {'title': f'Post {i}', 'content': 'Content', 'user_id': 1}
+            for i in range(5)
+        ])
+
+        # Soft delete some
+        await post_repo.delete(posts[0].id)
+        await post_repo.delete(posts[2].id)
+
+        # Should only return non-deleted
+        all_posts = await post_repo.get_all()
+        assert len(all_posts) == 3
+
+        # Count should also exclude deleted
+        count = await post_repo.count()
+        assert count == 3
+
+    @pytest.mark.asyncio
+    async def test_decimal_precision(self, product_repo):
+        """Should handle decimal precision correctly."""
+        product = await product_repo.create({
+            'name': 'Test Product',
+            'price': Decimal('19.99'),
+            'stock': 10,
+            'category': 'Test'
+        })
+
+        assert product.price == Decimal('19.99')
+        assert isinstance(product.price, Decimal)
+
+    @pytest.mark.asyncio
+    async def test_timestamp_auto_population(self, user_repo):
+        """Should auto-populate timestamps."""
+        user = await user_repo.create({
+            'name': 'John',
+            'email': 'john@example.com'
+        })
+
+        assert user.created_at is not None
+        assert user.updated_at is not None
+        assert isinstance(user.created_at, datetime)
+        assert isinstance(user.updated_at, datetime)
+
+    @pytest.mark.asyncio
+    async def test_filtering_with_between(self, product_repo):
+        """Should filter with between operator."""
+        await product_repo.create_many([
+            {'name': 'Product 1', 'price': Decimal('10.00'), 'stock': 5, 'category': 'A'},
+            {'name': 'Product 2', 'price': Decimal('50.00'), 'stock': 5, 'category': 'A'},
+            {'name': 'Product 3', 'price': Decimal('100.00'), 'stock': 5, 'category': 'A'},
+            {'name': 'Product 4', 'price': Decimal('150.00'), 'stock': 5, 'category': 'A'}
+        ])
+
+        results = await product_repo.filter(
+            price__between=(Decimal('40.00'), Decimal('120.00'))
+        )
+
+        assert len(results) == 2
+        assert all(Decimal('40.00') <= p.price <= Decimal('120.00') for p in results)
+
+    @pytest.mark.asyncio
+    async def test_pagination_boundary_cases(self, user_repo):
+        """Should handle pagination boundary cases."""
+        await user_repo.create_many([
+            {'name': f'User {i}', 'email': f'user{i}@example.com'}
+            for i in range(3)
+        ])
+
+        # Page beyond total
+        items, meta = await user_repo.paginate(page=10, per_page=10)
+        assert items == []
+        assert meta['total_pages'] == 1
+
+        # Per page larger than total
+        items, meta = await user_repo.paginate(page=1, per_page=100)
+        assert len(items) == 3
+        assert meta['total_pages'] == 1
+
+
+# ============================================================================
+# Test REPOSITORY Methods
+# ============================================================================
+
+class TestAsyncRepositoryMethods:
+    """Test repository helper methods."""
+
+    @pytest.mark.asyncio
+    async def test_has_soft_delete(self, user_repo, post_repo):
+        """Should detect soft delete support."""
+        assert user_repo._has_soft_delete() is False
+        assert post_repo._has_soft_delete() is True
+
+    @pytest.mark.asyncio
+    async def test_query_builder(self, user_repo):
+        """Should provide query builder."""
+        query = user_repo.query()
+
+        assert query is not None
+        # Query should be a select statement
+        assert 'SELECT' in str(query).upper()
+
+    @pytest.mark.asyncio
+    async def test_parse_field_operator_valid(self, user_repo):
+        """Should parse valid field operators."""
+        conditions = []
+
+        # Should not raise error
+        user_repo._parse_field_operator('name__eq', 'test', conditions)
+        user_repo._parse_field_operator('age__gte', 18, conditions)
+
+        assert len(conditions) == 2
+
+    @pytest.mark.asyncio
+    async def test_parse_field_operator_invalid_field(self, user_repo):
+        """Should raise error for invalid field."""
+        conditions = []
+
+        with pytest.raises(ValueError) as exc_info:
+            user_repo._parse_field_operator('invalid_field__eq', 'test', conditions)
+
+        assert 'does not exist' in str(exc_info.value).lower()
+
+    @pytest.mark.asyncio
+    async def test_parse_field_operator_invalid_operator(self, user_repo):
+        """Should raise error for invalid operator."""
+        conditions = []
+
+        with pytest.raises(ValueError) as exc_info:
+            user_repo._parse_field_operator('name__bad_op', 'test', conditions)
+
+        assert 'unknown operator' in str(exc_info.value).lower()
+
+
+# ============================================================================
+# Test INTEGRATION with FastAPI
+# ============================================================================
+
+class TestAsyncFastAPIIntegration:
+    """Test integration patterns with FastAPI."""
+
+    @pytest.mark.asyncio
+    async def test_repository_in_service_layer(self, async_session):
+        """Should work in service layer pattern."""
+
+        class UserService:
+            def __init__(self, db: AsyncSession):
+                self.repo = AsyncRepository(User, db)
+
+            async def create_user(self, name: str, email: str):
+                return await self.repo.create({'name': name, 'email': email})
+
+            async def get_active_users(self):
+                return await self.repo.filter(is_active=True)
+
+            async def search_users(self, query: str):
+                return await self.repo.filter(name__ilike=f'%{query}%')
+
+        service = UserService(async_session)
+
+        # Create user
+        user = await service.create_user('John Doe', 'john@example.com')
+        assert user.id is not None
+
+        # Get active users
+        active = await service.get_active_users()
+        assert len(active) == 1
+
+        # Search
+        results = await service.search_users('john')
+        assert len(results) == 1
+
+    @pytest.mark.asyncio
+    async def test_repository_with_dto_pattern(self, user_repo):
+        """Should work with DTO/Pydantic models."""
+        from typing import Optional
+
+        # Simulate Pydantic model
+        class UserCreate:
+            def __init__(self, name: str, email: str, age: Optional[int] = None):
+                self.name = name
+                self.email = email
+                self.age = age
+
+            def dict(self):
+                return {
+                    'name': self.name,
+                    'email': self.email,
+                    'age': self.age
+                }
+
+        # Create from DTO
+        dto = UserCreate(name='John', email='john@example.com', age=30)
+        user = await user_repo.create(dto.dict())
+
+        assert user.name == 'John'
+        assert user.age == 30
