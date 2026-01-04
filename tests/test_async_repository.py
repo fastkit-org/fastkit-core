@@ -57,3 +57,54 @@ class Product(Base, IntIdMixin):
     price: Mapped[Decimal] = mapped_column(Numeric(10, 2))
     stock: Mapped[int] = mapped_column(Integer, default=0)
     category: Mapped[str] = mapped_column(String(50))
+
+
+# ============================================================================
+# Fixtures
+# ============================================================================
+
+@pytest.fixture
+async def async_engine():
+    """Create async SQLite engine for testing."""
+    engine = create_async_engine(
+        'sqlite+aiosqlite:///:memory:',
+        echo=False
+    )
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    yield engine
+
+    await engine.dispose()
+
+
+@pytest.fixture
+async def async_session(async_engine):
+    """Create async session."""
+    async_session_maker = async_sessionmaker(
+        async_engine,
+        class_=AsyncSession,
+        expire_on_commit=False
+    )
+
+    async with async_session_maker() as session:
+        yield session
+
+
+@pytest.fixture
+async def user_repo(async_session):
+    """Create user repository."""
+    return AsyncRepository(User, async_session)
+
+
+@pytest.fixture
+async def post_repo(async_session):
+    """Create post repository."""
+    return AsyncRepository(Post, async_session)
+
+
+@pytest.fixture
+async def product_repo(async_session):
+    """Create product repository."""
+    return AsyncRepository(Product, async_session)
