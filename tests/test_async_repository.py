@@ -538,3 +538,73 @@ class TestAsyncFilter:
         assert results[1].name == 'Bob'
         assert results[2].name == 'Alice'
 
+# ============================================================================
+# Test UPDATE Operations
+# ============================================================================
+
+class TestAsyncUpdate:
+    """Test async update operations."""
+
+    @pytest.mark.asyncio
+    async def test_update(self, user_repo):
+        """Should update record."""
+        user = await user_repo.create({
+            'name': 'John',
+            'email': 'john@example.com',
+            'age': 25
+        })
+
+        updated = await user_repo.update(user.id, {
+            'name': 'Jane',
+            'age': 30
+        })
+
+        assert updated.name == 'Jane'
+        assert updated.age == 30
+        assert updated.email == 'john@example.com'  # Unchanged
+
+    @pytest.mark.asyncio
+    async def test_update_nonexistent(self, user_repo):
+        """Should return None for nonexistent record."""
+        updated = await user_repo.update(999, {'name': 'Test'})
+
+        assert updated is None
+
+    @pytest.mark.asyncio
+    async def test_update_without_commit(self, user_repo):
+        """Should update without committing."""
+        user = await user_repo.create({
+            'name': 'John',
+            'email': 'john@example.com'
+        })
+
+        await user_repo.update(user.id, {'name': 'Jane'}, commit=False)
+
+        # Not committed yet, rollback
+        await user_repo.rollback()
+
+        # Refresh and check
+        await user_repo.refresh(user)
+        assert user.name == 'John'  # Not changed
+
+    @pytest.mark.asyncio
+    async def test_update_many(self, user_repo):
+        """Should update multiple records."""
+        await user_repo.create_many([
+            {'name': 'User 1', 'email': 'user1@example.com', 'is_active': True},
+            {'name': 'User 2', 'email': 'user2@example.com', 'is_active': True},
+            {'name': 'User 3', 'email': 'user3@example.com', 'is_active': False}
+        ])
+
+        count = await user_repo.update_many(
+            filters={'is_active': True},
+            data={'age': 25}
+        )
+
+        assert count == 2
+
+        # Verify
+        updated = await user_repo.filter(is_active=True)
+        assert all(u.age == 25 for u in updated)
+
+
