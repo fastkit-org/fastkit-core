@@ -689,3 +689,95 @@ class TestAsyncDelete:
         remaining = await user_repo.count()
         assert remaining == 1
 
+
+# ============================================================================
+# Test PAGINATION
+# ============================================================================
+
+class TestAsyncPagination:
+    """Test async pagination."""
+
+    @pytest.mark.asyncio
+    async def test_paginate_first_page(self, user_repo):
+        """Should paginate first page."""
+        await user_repo.create_many([
+            {'name': f'User {i}', 'email': f'user{i}@example.com'}
+            for i in range(25)
+        ])
+
+        items, meta = await user_repo.paginate(page=1, per_page=10)
+
+        assert len(items) == 10
+        assert meta['page'] == 1
+        assert meta['per_page'] == 10
+        assert meta['total'] == 25
+        assert meta['total_pages'] == 3
+        assert meta['has_next'] is True
+        assert meta['has_prev'] is False
+
+    @pytest.mark.asyncio
+    async def test_paginate_middle_page(self, user_repo):
+        """Should paginate middle page."""
+        await user_repo.create_many([
+            {'name': f'User {i}', 'email': f'user{i}@example.com'}
+            for i in range(25)
+        ])
+
+        items, meta = await user_repo.paginate(page=2, per_page=10)
+
+        assert len(items) == 10
+        assert meta['page'] == 2
+        assert meta['has_next'] is True
+        assert meta['has_prev'] is True
+
+    @pytest.mark.asyncio
+    async def test_paginate_last_page(self, user_repo):
+        """Should paginate last page."""
+        await user_repo.create_many([
+            {'name': f'User {i}', 'email': f'user{i}@example.com'}
+            for i in range(25)
+        ])
+
+        items, meta = await user_repo.paginate(page=3, per_page=10)
+
+        assert len(items) == 5  # Last page has 5 items
+        assert meta['page'] == 3
+        assert meta['has_next'] is False
+        assert meta['has_prev'] is True
+
+    @pytest.mark.asyncio
+    async def test_paginate_with_filters(self, user_repo):
+        """Should paginate with filters."""
+        await user_repo.create_many([
+            {'name': f'User {i}', 'email': f'user{i}@example.com', 'age': 20 + i}
+            for i in range(20)
+        ])
+
+        items, meta = await user_repo.paginate(
+            page=1,
+            per_page=5,
+            age__gte=25
+        )
+
+        assert len(items) == 5
+        assert all(u.age >= 25 for u in items)
+        assert meta['total'] == 15  # Only users with age >= 25
+
+    @pytest.mark.asyncio
+    async def test_paginate_with_ordering(self, user_repo):
+        """Should paginate with ordering."""
+        await user_repo.create_many([
+            {'name': 'Charlie', 'email': 'charlie@example.com', 'age': 35},
+            {'name': 'Alice', 'email': 'alice@example.com', 'age': 25},
+            {'name': 'Bob', 'email': 'bob@example.com', 'age': 30}
+        ])
+
+        items, meta = await user_repo.paginate(
+            page=1,
+            per_page=10,
+            _order_by='age'
+        )
+
+        assert items[0].name == 'Alice'
+        assert items[1].name == 'Bob'
+        assert items[2].name == 'Charlie'
