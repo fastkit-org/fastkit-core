@@ -781,3 +781,73 @@ class TestAsyncPagination:
         assert items[0].name == 'Alice'
         assert items[1].name == 'Bob'
         assert items[2].name == 'Charlie'
+
+
+# ============================================================================
+# Test TRANSACTION Management
+# ============================================================================
+
+class TestAsyncTransactions:
+    """Test async transaction management."""
+
+    @pytest.mark.asyncio
+    async def test_commit(self, user_repo):
+        """Should commit transaction."""
+        user = await user_repo.create(
+            {'name': 'John', 'email': 'john@example.com'},
+            commit=False
+        )
+
+        await user_repo.commit()
+        await user_repo.refresh(user)
+
+        assert user.id is not None
+
+    @pytest.mark.asyncio
+    async def test_rollback(self, user_repo):
+        """Should rollback transaction."""
+        user = await user_repo.create(
+            {'name': 'John', 'email': 'john@example.com'},
+            commit=False
+        )
+
+        await user_repo.rollback()
+
+        # Count should be 0 after rollback
+        count = await user_repo.count()
+        assert count == 0
+
+    @pytest.mark.asyncio
+    async def test_flush(self, user_repo):
+        """Should flush changes."""
+        user = await user_repo.create(
+            {'name': 'John', 'email': 'john@example.com'},
+            commit=False
+        )
+
+        await user_repo.flush()
+
+        # Should have ID after flush
+        assert user.id is not None
+
+        # But can still rollback
+        await user_repo.rollback()
+        count = await user_repo.count()
+        assert count == 0
+
+    @pytest.mark.asyncio
+    async def test_refresh(self, user_repo):
+        """Should refresh instance from database."""
+        user = await user_repo.create({
+            'name': 'John',
+            'email': 'john@example.com'
+        })
+
+        # Manually change in DB (simulation)
+        await user_repo.update(user.id, {'name': 'Jane'})
+
+        # Refresh to get latest
+        refreshed = await user_repo.refresh(user)
+
+        assert refreshed.name == 'Jane'
+
