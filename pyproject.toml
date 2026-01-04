@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fastkit-core"
-version = "0.2.0"
+version = "0.3.0"
 description = "FastKit Core is a lightweight toolkit that adds structure and common patterns to FastAPI."
 readme = "README.md"
 requires-python = ">=3.10"
