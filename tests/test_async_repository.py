@@ -608,3 +608,84 @@ class TestAsyncUpdate:
         assert all(u.age == 25 for u in updated)
 
 
+# ============================================================================
+# Test DELETE Operations
+# ============================================================================
+
+class TestAsyncDelete:
+    """Test async delete operations."""
+
+    @pytest.mark.asyncio
+    async def test_delete(self, user_repo):
+        """Should delete record."""
+        user = await user_repo.create({
+            'name': 'John',
+            'email': 'john@example.com'
+        })
+
+        deleted = await user_repo.delete(user.id)
+
+        assert deleted is True
+
+        # Verify deleted
+        found = await user_repo.get(user.id)
+        assert found is None
+
+    @pytest.mark.asyncio
+    async def test_delete_nonexistent(self, user_repo):
+        """Should return False for nonexistent record."""
+        deleted = await user_repo.delete(999)
+
+        assert deleted is False
+
+    @pytest.mark.asyncio
+    async def test_soft_delete(self, post_repo):
+        """Should soft delete if model supports it."""
+        post = await post_repo.create({
+            'title': 'Test Post',
+            'content': 'Content',
+            'user_id': 1
+        })
+
+        deleted = await post_repo.delete(post.id)
+
+        assert deleted is True
+
+        # Should not be found (soft deleted)
+        found = await post_repo.get(post.id)
+        assert found is None
+
+    @pytest.mark.asyncio
+    async def test_force_delete(self, post_repo):
+        """Should force hard delete even with soft delete support."""
+        post = await post_repo.create({
+            'title': 'Test Post',
+            'content': 'Content',
+            'user_id': 1
+        })
+
+        deleted = await post_repo.delete(post.id, force=True)
+
+        assert deleted is True
+
+        # Verify hard deleted
+        found = await post_repo.get(post.id)
+        assert found is None
+
+    @pytest.mark.asyncio
+    async def test_delete_many(self, user_repo):
+        """Should delete multiple records."""
+        await user_repo.create_many([
+            {'name': 'User 1', 'email': 'user1@example.com', 'is_active': False},
+            {'name': 'User 2', 'email': 'user2@example.com', 'is_active': False},
+            {'name': 'User 3', 'email': 'user3@example.com', 'is_active': True}
+        ])
+
+        count = await user_repo.delete_many({'is_active': False})
+
+        assert count == 2
+
+        # Verify
+        remaining = await user_repo.count()
+        assert remaining == 1
+
