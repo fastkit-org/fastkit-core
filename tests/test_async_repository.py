@@ -326,3 +326,215 @@ class TestAsyncRead:
 
         assert total == 10
         assert adults == 5  # ages 25-29
+
+
+# ============================================================================
+# Test FILTER Operations
+# ============================================================================
+
+class TestAsyncFilter:
+    """Test async filtering."""
+
+    @pytest.mark.asyncio
+    async def test_filter_simple_equality(self, user_repo):
+        """Should filter by equality."""
+        await user_repo.create_many([
+            {'name': 'Alice', 'email': 'alice@example.com', 'age': 25},
+            {'name': 'Bob', 'email': 'bob@example.com', 'age': 30},
+            {'name': 'Charlie', 'email': 'charlie@example.com', 'age': 25}
+        ])
+
+        results = await user_repo.filter(age=25)
+
+        assert len(results) == 2
+        assert all(u.age == 25 for u in results)
+
+    @pytest.mark.asyncio
+    async def test_filter_greater_than(self, user_repo):
+        """Should filter with gt operator."""
+        await user_repo.create_many([
+            {'name': 'User 1', 'email': 'user1@example.com', 'age': 20},
+            {'name': 'User 2', 'email': 'user2@example.com', 'age': 30},
+            {'name': 'User 3', 'email': 'user3@example.com', 'age': 40}
+        ])
+
+        results = await user_repo.filter(age__gt=25)
+
+        assert len(results) == 2
+        assert all(u.age > 25 for u in results)
+
+    @pytest.mark.asyncio
+    async def test_filter_greater_than_or_equal(self, user_repo):
+        """Should filter with gte operator."""
+        await user_repo.create_many([
+            {'name': 'User 1', 'email': 'user1@example.com', 'age': 20},
+            {'name': 'User 2', 'email': 'user2@example.com', 'age': 30},
+            {'name': 'User 3', 'email': 'user3@example.com', 'age': 40}
+        ])
+
+        results = await user_repo.filter(age__gte=30)
+
+        assert len(results) == 2
+        assert all(u.age >= 30 for u in results)
+
+    @pytest.mark.asyncio
+    async def test_filter_less_than(self, user_repo):
+        """Should filter with lt operator."""
+        await user_repo.create_many([
+            {'name': 'User 1', 'email': 'user1@example.com', 'age': 20},
+            {'name': 'User 2', 'email': 'user2@example.com', 'age': 30}
+        ])
+
+        results = await user_repo.filter(age__lt=25)
+
+        assert len(results) == 1
+        assert results[0].age == 20
+
+    @pytest.mark.asyncio
+    async def test_filter_in_operator(self, user_repo):
+        """Should filter with in operator."""
+        await user_repo.create_many([
+            {'name': 'Alice', 'email': 'alice@example.com', 'age': 25},
+            {'name': 'Bob', 'email': 'bob@example.com', 'age': 30},
+            {'name': 'Charlie', 'email': 'charlie@example.com', 'age': 35}
+        ])
+
+        results = await user_repo.filter(age__in=[25, 35])
+
+        assert len(results) == 2
+        assert all(u.age in [25, 35] for u in results)
+
+    @pytest.mark.asyncio
+    async def test_filter_like_operator(self, user_repo):
+        """Should filter with like operator."""
+        await user_repo.create_many([
+            {'name': 'Alice', 'email': 'alice@example.com'},
+            {'name': 'Bob', 'email': 'bob@gmail.com'},
+            {'name': 'Charlie', 'email': 'charlie@gmail.com'}
+        ])
+
+        results = await user_repo.filter(email__like='%gmail.com')
+
+        assert len(results) == 2
+
+    @pytest.mark.asyncio
+    async def test_filter_ilike_operator(self, user_repo):
+        """Should filter with case-insensitive like."""
+        await user_repo.create_many([
+            {'name': 'ALICE', 'email': 'alice@example.com'},
+            {'name': 'alice', 'email': 'alice2@example.com'},
+            {'name': 'Bob', 'email': 'bob@example.com'}
+        ])
+
+        results = await user_repo.filter(name__ilike='alice')
+
+        assert len(results) == 2
+
+    @pytest.mark.asyncio
+    async def test_filter_startswith(self, user_repo):
+        """Should filter with startswith."""
+        await user_repo.create_many([
+            {'name': 'John Doe', 'email': 'john@example.com'},
+            {'name': 'Jane Doe', 'email': 'jane@example.com'},
+            {'name': 'Bob Smith', 'email': 'bob@example.com'}
+        ])
+
+        results = await user_repo.filter(name__startswith='J')
+
+        assert len(results) == 2
+
+    @pytest.mark.asyncio
+    async def test_filter_endswith(self, user_repo):
+        """Should filter with endswith."""
+        await user_repo.create_many([
+            {'name': 'John Doe', 'email': 'john@example.com'},
+            {'name': 'Jane Doe', 'email': 'jane@example.com'},
+            {'name': 'Bob Smith', 'email': 'bob@example.com'}
+        ])
+
+        results = await user_repo.filter(name__endswith='Doe')
+
+        assert len(results) == 2
+
+    @pytest.mark.asyncio
+    async def test_filter_contains(self, user_repo):
+        """Should filter with contains."""
+        await user_repo.create_many([
+            {'name': 'Administrator', 'email': 'admin@example.com'},
+            {'name': 'User Admin', 'email': 'useradmin@example.com'},
+            {'name': 'Guest', 'email': 'guest@example.com'}
+        ])
+
+        results = await user_repo.filter(name__contains='Admin')
+
+        assert len(results) == 2
+
+    @pytest.mark.asyncio
+    async def test_filter_multiple_conditions(self, user_repo):
+        """Should filter with multiple conditions."""
+        await user_repo.create_many([
+            {'name': 'Alice', 'email': 'alice@example.com', 'age': 25, 'is_active': True},
+            {'name': 'Bob', 'email': 'bob@example.com', 'age': 30, 'is_active': True},
+            {'name': 'Charlie', 'email': 'charlie@example.com', 'age': 25, 'is_active': False}
+        ])
+
+        results = await user_repo.filter(age=25, is_active=True)
+
+        assert len(results) == 1
+        assert results[0].name == 'Alice'
+
+    @pytest.mark.asyncio
+    async def test_filter_with_limit(self, user_repo):
+        """Should respect limit in filter."""
+        await user_repo.create_many([
+            {'name': f'User {i}', 'email': f'user{i}@example.com'}
+            for i in range(10)
+        ])
+
+        results = await user_repo.filter(_limit=3)
+
+        assert len(results) == 3
+
+    @pytest.mark.asyncio
+    async def test_filter_with_offset(self, user_repo):
+        """Should respect offset in filter."""
+        await user_repo.create_many([
+            {'name': f'User {i}', 'email': f'user{i}@example.com', 'age': i}
+            for i in range(5)
+        ])
+
+        results = await user_repo.filter(_offset=2, _order_by='age')
+
+        assert len(results) == 3
+        assert results[0].age == 2
+
+    @pytest.mark.asyncio
+    async def test_filter_with_order_by_asc(self, user_repo):
+        """Should order results ascending."""
+        await user_repo.create_many([
+            {'name': 'Charlie', 'email': 'charlie@example.com', 'age': 35},
+            {'name': 'Alice', 'email': 'alice@example.com', 'age': 25},
+            {'name': 'Bob', 'email': 'bob@example.com', 'age': 30}
+        ])
+
+        results = await user_repo.filter(_order_by='age')
+
+        assert results[0].name == 'Alice'
+        assert results[1].name == 'Bob'
+        assert results[2].name == 'Charlie'
+
+    @pytest.mark.asyncio
+    async def test_filter_with_order_by_desc(self, user_repo):
+        """Should order results descending."""
+        await user_repo.create_many([
+            {'name': 'Charlie', 'email': 'charlie@example.com', 'age': 35},
+            {'name': 'Alice', 'email': 'alice@example.com', 'age': 25},
+            {'name': 'Bob', 'email': 'bob@example.com', 'age': 30}
+        ])
+
+        results = await user_repo.filter(_order_by='-age')
+
+        assert results[0].name == 'Charlie'
+        assert results[1].name == 'Bob'
+        assert results[2].name == 'Alice'
+
