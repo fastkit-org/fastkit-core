@@ -810,3 +810,175 @@ class TestAsyncLifecycleHooks:
 
         assert execution_order == ['validate', 'before', 'after']
 
+
+# ============================================================================
+# Test Response Schema Mapping
+# ============================================================================
+
+class TestAsyncResponseSchemaMapping:
+    """Test automatic response schema mapping in async service."""
+
+    @pytest.mark.asyncio
+    async def test_service_with_response_schema_init(self, repository):
+        """Should initialize service with response schema."""
+        service = UserServiceWithResponse(repository)
+
+        assert service.response_schema == UserResponse
+        assert service.repository is repository
+
+    @pytest.mark.asyncio
+    async def test_create_returns_response_schema(self, service_with_response):
+        """Should return UserResponse instead of User model."""
+        user_data = UserCreate(
+            name="John Doe",
+            email="john@example.com",
+            age=30
+        )
+
+        result = await service_with_response.create(user_data)
+
+        assert isinstance(result, UserResponse)
+        assert result.id is not None
+        assert result.name == "John Doe"
+
+    @pytest.mark.asyncio
+    async def test_find_returns_response_schema(self, service_with_response):
+        """Should return UserResponse for find."""
+        user_data = UserCreate(name="Alice", email="alice@example.com")
+        created = await service_with_response.create(user_data)
+
+        found = await service_with_response.find(created.id)
+
+        assert isinstance(found, UserResponse)
+        assert found.id == created.id
+
+    @pytest.mark.asyncio
+    async def test_get_all_returns_response_schema_list(self, service_with_response):
+        """Should return list of UserResponse."""
+        for i in range(3):
+            await service_with_response.create(
+                UserCreate(name=f"User {i}", email=f"user{i}@example.com")
+            )
+
+        users = await service_with_response.get_all()
+
+        assert len(users) == 3
+        assert all(isinstance(u, UserResponse) for u in users)
+
+    @pytest.mark.asyncio
+    async def test_filter_returns_response_schema_list(self, service_with_response):
+        """Should return list of UserResponse for filter."""
+        await service_with_response.create(
+            UserCreate(name="Alice", email="alice@example.com", age=25)
+        )
+        await service_with_response.create(
+            UserCreate(name="Bob", email="bob@example.com", age=30)
+        )
+
+        users = await service_with_response.filter(age__gte=25)
+
+        assert len(users) == 2
+        assert all(isinstance(u, UserResponse) for u in users)
+
+    @pytest.mark.asyncio
+    async def test_paginate_returns_response_schema_list(self, service_with_response):
+        """Should return list of UserResponse for paginate."""
+        for i in range(10):
+            await service_with_response.create(
+                UserCreate(name=f"User {i}", email=f"user{i}@example.com")
+            )
+
+        users, meta = await service_with_response.paginate(page=1, per_page=5)
+
+        assert len(users) == 5
+        assert all(isinstance(u, UserResponse) for u in users)
+        assert meta['total'] == 10
+
+    @pytest.mark.asyncio
+    async def test_update_returns_response_schema(self, service_with_response):
+        """Should return UserResponse for update."""
+        user_data = UserCreate(name="David", email="david@example.com")
+        created = await service_with_response.create(user_data)
+
+        updated = await service_with_response.update(
+            created.id,
+            UserUpdate(name="David Updated")
+        )
+
+        assert isinstance(updated, UserResponse)
+        assert updated.name == "David Updated"
+
+    @pytest.mark.asyncio
+    async def test_create_many_returns_response_schema_list(self, service_with_response):
+        """Should return list of UserResponse for create_many."""
+        users_data = [
+            UserCreate(name=f"User {i}", email=f"user{i}@example.com")
+            for i in range(3)
+        ]
+
+        users = await service_with_response.create_many(users_data)
+
+        assert len(users) == 3
+        assert all(isinstance(u, UserResponse) for u in users)
+
+
+# ============================================================================
+# Test Response Schema with Hooks
+# ============================================================================
+
+class TestAsyncResponseSchemaWithHooks:
+    """Test response schema mapping with async lifecycle hooks."""
+
+    @pytest.mark.asyncio
+    async def test_hooks_work_with_response_mapping(self, repository):
+        """Should execute hooks and return response schema."""
+        hook_log = []
+
+        class HookedService(AsyncBaseCrudService[User, UserCreate, UserUpdate, UserResponse]):
+            def __init__(self, repo):
+                super().__init__(repo, response_schema=UserResponse)
+
+            async def validate_create(self, data: UserCreate) -> None:
+                hook_log.append('validate')
+
+            async def before_create(self, data: dict) -> dict:
+                hook_log.append('before')
+                data['name'] = data['name'].upper()
+                return data
+
+            async def after_create(self, instance: User) -> None:
+                hook_log.append('after')
+
+        service = HookedService(repository)
+
+        result = await service.create(UserCreate(name="john", email="john@example.com"))
+
+        # Hooks executed
+        assert hook_log == ['validate', 'before', 'after']
+
+        # Result is UserResponse
+        assert isinstance(result, UserResponse)
+        assert result.name == "JOHN"
+
+    @pytest.mark.asyncio
+    async def test_validation_error_with_response_mapping(self, repository):
+        """Should validate before mapping to response."""
+
+        class ValidatingService(AsyncBaseCrudService[User, UserCreate, UserUpdate, UserResponse]):
+            def __init__(self, repo):
+                super().__init__(repo, response_schema=UserResponse)
+
+            async def validate_create(self, data: UserCreate) -> None:
+                if await self.exists(email=data.email):
+                    raise ValueError("Email already exists")
+
+        service = ValidatingService(repository)
+
+        # Create first user
+        await service.create(UserCreate(name="Alice", email="alice@example.com"))
+
+        # Try to create duplicate
+        with pytest.raises(ValueError) as exc_info:
+            await service.create(UserCreate(name="Bob", email="alice@example.com"))
+
+        assert "Email already exists" in str(exc_info.value)
