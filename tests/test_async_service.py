@@ -223,3 +223,147 @@ class TestAsyncHelperMethods:
             service._to_dict("invalid_string")
 
         assert "Cannot convert" in str(exc_info.value)
+
+# ============================================================================
+# Test READ Operations
+# ============================================================================
+
+class TestAsyncReadOperations:
+    """Test async service read operations."""
+
+    @pytest.mark.asyncio
+    async def test_find_by_id(self, service, sample_user):
+        """Should find user by ID."""
+        found = await service.find(sample_user.id)
+
+        assert found is not None
+        assert found.id == sample_user.id
+        assert found.name == sample_user.name
+
+    @pytest.mark.asyncio
+    async def test_find_nonexistent(self, service):
+        """Should return None for nonexistent ID."""
+        found = await service.find(9999)
+
+        assert found is None
+
+    @pytest.mark.asyncio
+    async def test_find_or_fail_success(self, service, sample_user):
+        """Should find user or raise exception."""
+        found = await service.find_or_fail(sample_user.id)
+
+        assert found is not None
+        assert found.id == sample_user.id
+
+    @pytest.mark.asyncio
+    async def test_find_or_fail_raises(self, service):
+        """Should raise exception if not found."""
+        with pytest.raises(ValueError) as exc_info:
+            await service.find_or_fail(9999)
+
+        assert "not found" in str(exc_info.value).lower()
+        assert "User" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_get_all(self, service):
+        """Should get all users."""
+        # Create multiple users
+        for i in range(3):
+            await service.create(UserCreate(
+                name=f"User {i}",
+                email=f"user{i}@example.com",
+                age=20 + i
+            ))
+
+        users = await service.get_all()
+
+        assert len(users) == 3
+
+    @pytest.mark.asyncio
+    async def test_get_all_with_limit(self, service):
+        """Should limit results."""
+        # Create multiple users
+        for i in range(5):
+            await service.create(UserCreate(
+                name=f"User {i}",
+                email=f"user{i}@example.com"
+            ))
+
+        users = await service.get_all(limit=3)
+
+        assert len(users) == 3
+
+    @pytest.mark.asyncio
+    async def test_filter_basic(self, service):
+        """Should filter users."""
+        await service.create(UserCreate(name="Alice", email="alice@example.com", age=25))
+        await service.create(UserCreate(name="Bob", email="bob@example.com", age=30))
+        await service.create(UserCreate(name="Charlie", email="charlie@example.com", age=25))
+
+        users = await service.filter(age=25)
+
+        assert len(users) == 2
+        assert all(u.age == 25 for u in users)
+
+    @pytest.mark.asyncio
+    async def test_filter_with_operators(self, service):
+        """Should support Django-style operators."""
+        await service.create(UserCreate(name="Alice", email="alice@example.com", age=25))
+        await service.create(UserCreate(name="Bob", email="bob@example.com", age=30))
+        await service.create(UserCreate(name="Charlie", email="charlie@example.com", age=35))
+
+        users = await service.filter(age__gte=30)
+
+        assert len(users) == 2
+        assert all(u.age >= 30 for u in users)
+
+    @pytest.mark.asyncio
+    async def test_filter_one(self, service):
+        """Should get first matching record."""
+        await service.create(UserCreate(name="Alice", email="alice@example.com"))
+        await service.create(UserCreate(name="Bob", email="bob@example.com"))
+
+        user = await service.filter_one(name="Alice")
+
+        assert user is not None
+        assert user.name == "Alice"
+
+    @pytest.mark.asyncio
+    async def test_filter_one_not_found(self, service):
+        """Should return None if not found."""
+        user = await service.filter_one(name="Nonexistent")
+
+        assert user is None
+
+    @pytest.mark.asyncio
+    async def test_exists(self, service, sample_user):
+        """Should check if record exists."""
+        exists = await service.exists(email=sample_user.email)
+        not_exists = await service.exists(email="nonexistent@example.com")
+
+        assert exists is True
+        assert not_exists is False
+
+    @pytest.mark.asyncio
+    async def test_count(self, service):
+        """Should count records."""
+        for i in range(5):
+            await service.create(UserCreate(
+                name=f"User {i}",
+                email=f"user{i}@example.com"
+            ))
+
+        count = await service.count()
+
+        assert count == 5
+
+    @pytest.mark.asyncio
+    async def test_count_with_filter(self, service):
+        """Should count filtered records."""
+        await service.create(UserCreate(name="Alice", email="alice@example.com", age=25))
+        await service.create(UserCreate(name="Bob", email="bob@example.com", age=30))
+        await service.create(UserCreate(name="Charlie", email="charlie@example.com", age=25))
+
+        count = await service.count(age=25)
+
+        assert count == 2
