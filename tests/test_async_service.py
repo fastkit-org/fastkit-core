@@ -538,3 +538,108 @@ class TestAsyncDeleteOperations:
         # Verify
         remaining = await service.count()
         assert remaining == 0
+
+# ============================================================================
+# Test PAGINATION
+# ============================================================================
+
+class TestAsyncPagination:
+    """Test async pagination."""
+
+    @pytest.mark.asyncio
+    async def test_paginate_basic(self, service):
+        """Should paginate results."""
+        # Create users
+        for i in range(25):
+            await service.create(UserCreate(
+                name=f"User {i}",
+                email=f"user{i}@example.com"
+            ))
+
+        users, meta = await service.paginate(page=1, per_page=10)
+
+        assert len(users) == 10
+        assert meta['page'] == 1
+        assert meta['per_page'] == 10
+        assert meta['total'] == 25
+        assert meta['total_pages'] == 3
+
+    @pytest.mark.asyncio
+    async def test_paginate_with_filters(self, service):
+        """Should paginate with filters."""
+        # Create users
+        for i in range(20):
+            await service.create(UserCreate(
+                name=f"User {i}",
+                email=f"user{i}@example.com",
+                status='active' if i % 2 == 0 else 'inactive'
+            ))
+
+        users, meta = await service.paginate(
+            page=1,
+            per_page=5,
+            status='active'
+        )
+
+        assert len(users) == 5
+        assert all(u.status == 'active' for u in users)
+        assert meta['total'] == 10  # Only active users
+
+    @pytest.mark.asyncio
+    async def test_paginate_empty_results(self, service):
+        """Should handle empty results."""
+        users, meta = await service.paginate(page=1, per_page=10)
+
+        assert len(users) == 0
+        assert meta['total'] == 0
+        assert meta['total_pages'] == 0
+
+
+# ============================================================================
+# Test TRANSACTION Management
+# ============================================================================
+
+class TestAsyncTransactions:
+    """Test async transaction management."""
+
+    @pytest.mark.asyncio
+    async def test_commit(self, service):
+        """Should commit transaction."""
+        user = await service.create(
+            UserCreate(name="Test", email="test@example.com"),
+            commit=False
+        )
+
+        await service.commit()
+
+        # Verify committed
+        found = await service.find(user.id)
+        assert found is not None
+
+    @pytest.mark.asyncio
+    async def test_rollback(self, service):
+        """Should rollback transaction."""
+        user = await service.create(
+            UserCreate(name="Test", email="test@example.com"),
+            commit=False
+        )
+
+        await service.rollback()
+
+        # Verify rolled back
+        count = await service.count()
+        assert count == 0
+
+    @pytest.mark.asyncio
+    async def test_flush(self, service):
+        """Should flush changes."""
+        user = await service.create(
+            UserCreate(name="Test", email="test@example.com"),
+            commit=False
+        )
+
+        await service.flush()
+
+        # Should have ID after flush
+        assert user.id is not None
+
