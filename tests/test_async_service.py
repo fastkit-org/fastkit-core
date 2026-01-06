@@ -982,3 +982,160 @@ class TestAsyncResponseSchemaWithHooks:
             await service.create(UserCreate(name="Bob", email="alice@example.com"))
 
         assert "Email already exists" in str(exc_info.value)
+
+# ============================================================================
+# Test Integration Scenarios
+# ============================================================================
+
+class TestAsyncIntegration:
+    """Test real-world async integration scenarios."""
+
+    @pytest.mark.asyncio
+    async def test_complete_user_lifecycle(self, service):
+        """Should handle complete user lifecycle."""
+        # Create
+        user = await service.create(UserCreate(
+            name="John Doe",
+            email="john@example.com",
+            age=30
+        ))
+        assert user.id is not None
+
+        # Read
+        found = await service.find(user.id)
+        assert found.name == "John Doe"
+
+        # Update
+        updated = await service.update(user.id, UserUpdate(age=31))
+        assert updated.age == 31
+
+        # Delete
+        deleted = await service.delete(user.id)
+        assert deleted is True
+
+        # Verify deletion
+        assert await service.find(user.id) is None
+
+    @pytest.mark.asyncio
+    async def test_bulk_operations(self, service):
+        """Should handle bulk operations."""
+        # Bulk create
+        users_data = [
+            UserCreate(name=f"User {i}", email=f"user{i}@example.com", status='pending')
+            for i in range(10)
+        ]
+        users = await service.create_many(users_data)
+        assert len(users) == 10
+
+        # Bulk update
+        updated_count = await service.update_many(
+            filters={'status': 'pending'},
+            data=UserUpdate(status='active')
+        )
+        assert updated_count == 10
+
+        # Verify
+        active_count = await service.count(status='active')
+        assert active_count == 10
+
+        # Bulk delete
+        deleted_count = await service.delete_many(filters={'status': 'active'})
+        assert deleted_count == 10
+
+    @pytest.mark.asyncio
+    async def test_service_with_all_hooks(self, repository):
+        """Should work with all hooks together."""
+        execution_log = []
+
+        class CompleteService(AsyncBaseCrudService[User, UserCreate, UserUpdate, User]):
+            async def validate_create(self, data: UserCreate) -> None:
+                execution_log.append('validate_create')
+                if await self.exists(email=data.email):
+                    raise ValueError("Duplicate email")
+
+            async def before_create(self, data: dict) -> dict:
+                execution_log.append('before_create')
+                data['name'] = data['name'].upper()
+                return data
+
+            async def after_create(self, instance: User) -> None:
+                execution_log.append('after_create')
+
+            async def validate_update(self, id, data: UserUpdate) -> None:
+                execution_log.append('validate_update')
+
+            async def before_update(self, id, data: dict) -> dict:
+                execution_log.append('before_update')
+                return data
+
+            async def after_update(self, instance: User) -> None:
+                execution_log.append('after_update')
+
+            async def before_delete(self, id) -> None:
+                execution_log.append('before_delete')
+
+            async def after_delete(self, id) -> None:
+                execution_log.append('after_delete')
+
+        service = CompleteService(repository)
+
+        # Create
+        user = await service.create(UserCreate(name="john", email="john@example.com"))
+        assert user.name == "JOHN"
+        assert 'validate_create' in execution_log
+        assert 'before_create' in execution_log
+        assert 'after_create' in execution_log
+
+        execution_log.clear()
+
+        # Update
+        await service.update(user.id, UserUpdate(age=25))
+        assert 'validate_update' in execution_log
+        assert 'before_update' in execution_log
+        assert 'after_update' in execution_log
+
+        execution_log.clear()
+
+        # Delete
+        await service.delete(user.id)
+        assert 'before_delete' in execution_log
+        assert 'after_delete' in execution_log
+
+
+# ============================================================================
+# Test Edge Cases
+# ============================================================================
+
+class TestAsyncEdgeCases:
+    """Test edge cases and error conditions."""
+
+    @pytest.mark.asyncio
+    async def test_update_with_no_changes(self, service, sample_user):
+        """Should handle update with no changes."""
+        updated = await service.update(sample_user.id, UserUpdate())
+
+        assert updated is not None
+
+    @pytest.mark.asyncio
+    async def test_pagination_beyond_last_page(self, service):
+        """Should handle page beyond total pages."""
+        await service.create(UserCreate(name="User", email="user@example.com"))
+
+        users, meta = await service.paginate(page=100, per_page=10)
+
+        assert len(users) == 0
+        assert meta['page'] == 100
+
+    @pytest.mark.asyncio
+    async def test_count_with_no_records(self, service):
+        """Should return 0 for empty table."""
+        count = await service.count()
+
+        assert count == 0
+
+    @pytest.mark.asyncio
+    async def test_filter_with_no_matches(self, service, sample_user):
+        """Should return empty list when no matches."""
+        users = await service.filter(name="Nonexistent")
+
+        assert users == []
