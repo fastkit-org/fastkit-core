@@ -142,3 +142,84 @@ async def sample_user(service):
         age=30
     )
     return await service.create(user_data)
+
+
+# ============================================================================
+# Test Service Initialization
+# ============================================================================
+
+class TestAsyncServiceInit:
+    """Test async service initialization."""
+
+    @pytest.mark.asyncio
+    async def test_init_with_repository(self, repository):
+        """Should initialize with async repository."""
+        service = BasicUserService(repository)
+
+        assert service.repository is repository
+
+    @pytest.mark.asyncio
+    async def test_service_has_repository_access(self, service):
+        """Should have access to repository methods."""
+        assert hasattr(service, 'repository')
+        assert hasattr(service.repository, 'create')
+        assert hasattr(service.repository, 'get')
+
+    @pytest.mark.asyncio
+    async def test_service_with_response_schema(self, repository):
+        """Should initialize with response schema."""
+        service = UserServiceWithResponse(repository)
+
+        assert service.response_schema == UserResponse
+
+
+# ============================================================================
+# Test Helper Methods
+# ============================================================================
+
+class TestAsyncHelperMethods:
+    """Test async service helper methods."""
+
+    @pytest.mark.asyncio
+    async def test_to_dict_with_pydantic_model(self, service):
+        """Should convert Pydantic model to dict."""
+        user_data = UserCreate(
+            name="John Doe",
+            email="john@example.com",
+            age=30
+        )
+
+        result = service._to_dict(user_data)
+
+        assert isinstance(result, dict)
+        assert result['name'] == "John Doe"
+        assert result['email'] == "john@example.com"
+        assert result['age'] == 30
+
+    @pytest.mark.asyncio
+    async def test_to_dict_with_dict(self, service):
+        """Should handle dict input."""
+        data = {'name': 'John', 'email': 'john@example.com'}
+
+        result = service._to_dict(data)
+
+        assert result == data
+        assert isinstance(result, dict)
+
+    @pytest.mark.asyncio
+    async def test_to_dict_exclude_unset(self, service):
+        """Should exclude unset values."""
+        user_data = UserUpdate(name="John")
+
+        result = service._to_dict(user_data)
+
+        assert 'name' in result
+        assert 'email' not in result  # Not set, should be excluded
+
+    @pytest.mark.asyncio
+    async def test_to_dict_invalid_type(self, service):
+        """Should raise error for invalid type."""
+        with pytest.raises(ValueError) as exc_info:
+            service._to_dict("invalid_string")
+
+        assert "Cannot convert" in str(exc_info.value)
