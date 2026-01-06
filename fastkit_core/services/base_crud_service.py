@@ -2,10 +2,10 @@
 Base CRUD Service Layer
 
 Provides business logic layer on top of repository pattern.
-Handles validation, transactions, and lifecycle hooks.
+Handles validation, transactions, lifecycle hooks, and response mapping.
 """
 
-from typing import Any, Generic, TypeVar, Optional
+from typing import Any, Generic, TypeVar, Optional, Type
 from abc import ABC
 
 from fastkit_core.database import Repository
@@ -14,9 +14,13 @@ from fastkit_core.database import Repository
 ModelType = TypeVar("ModelType")
 CreateSchemaType = TypeVar("CreateSchemaType")
 UpdateSchemaType = TypeVar("UpdateSchemaType")
+ResponseSchemaType = TypeVar("ResponseSchemaType")
 
 
-class BaseCrudService(Generic[ModelType, CreateSchemaType, UpdateSchemaType], ABC):
+class BaseCrudService(
+    Generic[ModelType, CreateSchemaType, UpdateSchemaType, ResponseSchemaType],
+    ABC
+):
     """
     Base CRUD service providing business logic layer.
 
@@ -26,39 +30,41 @@ class BaseCrudService(Generic[ModelType, CreateSchemaType, UpdateSchemaType], AB
     - Transaction control
     - Error handling
     - Schema to dict conversion
+    - Automatic response mapping (optional)
 
     Example:
-        class UserService(BaseCrudService[User, UserCreate, UserUpdate]):
+        class UserService(BaseCrudService[
+            User,           # Model
+            UserCreate,     # Create schema
+            UserUpdate,     # Update schema
+            UserResponse    # Response schema
+        ]):
             def __init__(self, repository: Repository):
-                super().__init__(repository)
+                super().__init__(repository, response_schema=UserResponse)
 
             def validate_create(self, data: UserCreate) -> None:
-                # Custom validation
                 if self.exists(email=data.email):
                     raise ValueError("Email already exists")
 
-            def before_create(self, data: dict) -> dict:
-                # Hash password before saving
-                data['password'] = hash_password(data['password'])
-                return data
-
-            def after_create(self, instance: User) -> None:
-                # Send welcome email
-                send_welcome_email(instance.email)
-
-        # Usage
-        user_service = UserService(user_repository)
-        user = user_service.create(user_data)
+        # Usage - automatic response mapping
+        user_response: UserResponse = user_service.create(user_data)
+        # Returns UserResponse, not User model!
     """
 
-    def __init__(self, repository: Repository):
+    def __init__(
+        self,
+        repository: Repository,
+        response_schema: Type[ResponseSchemaType] | None = None
+    ):
         """
         Initialize service with repository.
 
         Args:
             repository: Repository instance for database operations
+            response_schema: Optional Pydantic schema for response mapping
         """
         self.repository = repository
+        self.response_schema = response_schema
 
     # ========================================================================
     # Helper Methods
@@ -86,6 +92,39 @@ class BaseCrudService(Generic[ModelType, CreateSchemaType, UpdateSchemaType], AB
         if hasattr(data, 'dict'):  # Pydantic v1
             return data.dict(exclude_unset=True)
         raise ValueError(f"Cannot convert {type(data)} to dict")
+
+    def _to_response(
+        self,
+        instance: ModelType | None
+    ) -> ResponseSchemaType | ModelType | None:
+        """Convert model instance to response schema."""
+        if instance is None:
+            return None
+
+        if self.response_schema is None:
+            return instance
+
+        return self._map_to_response(instance)
+
+    def _to_response_list(
+        self,
+        instances: list[ModelType]
+    ) -> list[ResponseSchemaType] | list[ModelType]:
+        """Convert list of model instances to response schemas."""
+        if self.response_schema is None:
+            return instances
+
+        return [self._map_to_response(instance) for instance in instances]
+
+    def _map_to_response(self, instance: ModelType) -> ResponseSchemaType:
+        """Map model instance to response schema."""
+        if hasattr(self.response_schema, 'model_validate'):
+            return self.response_schema.model_validate(instance)
+
+        if hasattr(self.response_schema, 'from_orm'):
+            return self.response_schema.from_orm(instance)
+
+        return self.response_schema(**instance.__dict__)
 
     # ========================================================================
     # Validation Hooks (Override in subclasses)
@@ -197,48 +236,23 @@ class BaseCrudService(Generic[ModelType, CreateSchemaType, UpdateSchemaType], AB
     # READ Operations
     # ========================================================================
 
-    def find(self, id: Any) -> Optional[ModelType]:
-        """
-        Find record by ID.
+    def find(self, id: Any) -> Optional[ResponseSchemaType] | Optional[ModelType]:
+        """Find record by ID."""
+        instance = self.repository.get(id)
+        return self._to_response(instance)
 
-        Args:
-            id: Primary key value
-
-        Returns:
-            Model instance or None if not found
-        """
-        return self.repository.get(id)
-
-    def find_or_fail(self, id: Any) -> ModelType:
-        """
-        Find record by ID or raise exception.
-
-        Args:
-            id: Primary key value
-
-        Returns:
-            Model instance
-
-        Raises:
-            ValueError: If record not found
-        """
+    def find_or_fail(self, id: Any) -> ResponseSchemaType | ModelType:
+        """Find record by ID or raise exception."""
         instance = self.repository.get(id)
         if instance is None:
             model_name = self.repository.model.__name__
             raise ValueError(f"{model_name} with id={id} not found")
-        return instance
+        return self._to_response(instance)
 
-    def get_all(self, limit: int | None = None) -> list[ModelType]:
-        """
-        Get all records.
-
-        Args:
-            limit: Maximum number of records
-
-        Returns:
-            List of model instances
-        """
-        return self.repository.get_all(limit=limit)
+    def get_all(self, limit: int | None = None) -> list[ResponseSchemaType] | list[ModelType]:
+        """Get all records."""
+        instances = self.repository.get_all(limit=limit)
+        return self._to_response_list(instances)
 
     def filter(
         self,
@@ -246,61 +260,30 @@ class BaseCrudService(Generic[ModelType, CreateSchemaType, UpdateSchemaType], AB
         _offset: int | None = None,
         _order_by: str | None = None,
         **filters
-    ) -> list[ModelType]:
-        """
-        Filter records with operator support.
-
-        Supports Django-style operators (field__gte, field__in, etc.).
-
-        Args:
-            _limit: Limit number of results
-            _offset: Offset for pagination
-            _order_by: Order by field (prefix with - for DESC)
-            **filters: Filter conditions with operators
-
-        Returns:
-            List of matching instances
-
-        Example:
-            service.filter(age__gte=18, status='active', _order_by='-created_at')
-        """
-        return self.repository.filter(
+    ) -> list[ResponseSchemaType] | list[ModelType]:
+        """Filter records with operator support."""
+        instances = self.repository.filter(
             _limit=_limit,
             _offset=_offset,
             _order_by=_order_by,
             **filters
         )
+        return self._to_response_list(instances)
 
-    def filter_one(self, **filters) -> Optional[ModelType]:
-        """
-        Get first record matching filters.
-
-        Args:
-            **filters: Filter conditions with operators
-
-        Returns:
-            First matching instance or None
-        """
-        return self.repository.filter_one(**filters)
+    def filter_one(self, **filters) -> Optional[ResponseSchemaType] | Optional[ModelType]:
+        """Get first record matching filters."""
+        instance = self.repository.filter_one(**filters)
+        return self._to_response(instance)
 
     def paginate(
         self,
         page: int = 1,
         per_page: int = 20,
         **filters
-    ) -> tuple[list[ModelType], dict[str, Any]]:
-        """
-        Paginate records with operator support.
-
-        Args:
-            page: Page number (1-indexed)
-            per_page: Items per page
-            **filters: Filter conditions with operators
-
-        Returns:
-            Tuple of (items, metadata)
-        """
-        return self.repository.paginate(page=page, per_page=per_page, **filters)
+    ) -> tuple[list[ResponseSchemaType] | list[ModelType], dict[str, Any]]:
+        """Paginate records with operator support."""
+        instances, metadata = self.repository.paginate(page=page, per_page=per_page, **filters)
+        return self._to_response_list(instances), metadata
 
     def exists(self, **filters) -> bool:
         """
@@ -334,20 +317,8 @@ class BaseCrudService(Generic[ModelType, CreateSchemaType, UpdateSchemaType], AB
         self,
         data: CreateSchemaType,
         commit: bool = True
-    ) -> ModelType:
-        """
-        Create a new record with validation and hooks.
-
-        Args:
-            data: Data to create (Pydantic model or dict)
-            commit: Whether to commit transaction
-
-        Returns:
-            Created model instance
-
-        Raises:
-            ValueError: If validation fails
-        """
+    ) -> ResponseSchemaType | ModelType:
+        """Create a new record with validation and hooks."""
         # Validation hook
         self.validate_create(data)
 
@@ -364,23 +335,14 @@ class BaseCrudService(Generic[ModelType, CreateSchemaType, UpdateSchemaType], AB
         if commit:
             self.after_create(instance)
 
-        return instance
+        return self._to_response(instance)
 
     def create_many(
         self,
         data_list: list[CreateSchemaType],
         commit: bool = True
-    ) -> list[ModelType]:
-        """
-        Create multiple records.
-
-        Args:
-            data_list: List of data to create
-            commit: Whether to commit transaction
-
-        Returns:
-            List of created instances
-        """
+    ) -> list[ResponseSchemaType] | list[ModelType]:
+        """Create multiple records."""
         # Convert all to dicts
         dict_list = [self._to_dict(data) for data in data_list]
 
@@ -402,7 +364,7 @@ class BaseCrudService(Generic[ModelType, CreateSchemaType, UpdateSchemaType], AB
             for instance in instances:
                 self.after_create(instance)
 
-        return instances
+        return self._to_response_list(instances)
 
     # ========================================================================
     # UPDATE Operations
@@ -413,21 +375,8 @@ class BaseCrudService(Generic[ModelType, CreateSchemaType, UpdateSchemaType], AB
         id: Any,
         data: UpdateSchemaType,
         commit: bool = True
-    ) -> ModelType | None:
-        """
-        Update record by ID with validation and hooks.
-
-        Args:
-            id: Primary key value
-            data: Data to update
-            commit: Whether to commit transaction
-
-        Returns:
-            Updated instance or None if not found
-
-        Raises:
-            ValueError: If validation fails
-        """
+    ) -> Optional[ResponseSchemaType] | Optional[ModelType]:
+        """Update record by ID with validation and hooks."""
         # Validation hook
         self.validate_update(id, data)
 
@@ -444,7 +393,7 @@ class BaseCrudService(Generic[ModelType, CreateSchemaType, UpdateSchemaType], AB
         if instance and commit:
             self.after_update(instance)
 
-        return instance
+        return self._to_response(instance)
 
     def update_many(
         self,
