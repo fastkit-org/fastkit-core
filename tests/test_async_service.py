@@ -432,3 +432,65 @@ class TestAsyncCreateOperations:
         user = await service.create(user_data)
 
         assert user.status == 'active'  # Default value
+
+# ============================================================================
+# Test UPDATE Operations
+# ============================================================================
+
+class TestAsyncUpdateOperations:
+    """Test async update operations."""
+
+    @pytest.mark.asyncio
+    async def test_update_basic(self, service, sample_user):
+        """Should update a record."""
+        updated = await service.update(
+            sample_user.id,
+            UserUpdate(name="Jane Doe")
+        )
+
+        assert updated is not None
+        assert updated.name == "Jane Doe"
+        assert updated.id == sample_user.id
+
+    @pytest.mark.asyncio
+    async def test_update_nonexistent(self, service):
+        """Should return None for nonexistent record."""
+        updated = await service.update(9999, UserUpdate(name="Test"))
+
+        assert updated is None
+
+    @pytest.mark.asyncio
+    async def test_update_many(self, service):
+        """Should update multiple records."""
+        # Create users
+        for i in range(3):
+            await service.create(UserCreate(
+                name=f"User {i}",
+                email=f"user{i}@example.com",
+                status='pending'
+            ))
+
+        # Update all pending
+        count = await service.update_many(
+            filters={'status': 'pending'},
+            data=UserUpdate(status='active')
+        )
+
+        assert count == 3
+
+        # Verify
+        active_count = await service.count(status='active')
+        assert active_count == 3
+
+    @pytest.mark.asyncio
+    async def test_update_partial(self, service, sample_user):
+        """Should update only provided fields."""
+        updated = await service.update(
+            sample_user.id,
+            UserUpdate(age=31)  # Only age
+        )
+
+        assert updated.age == 31
+        assert updated.name == sample_user.name  # Unchanged
+        assert updated.email == sample_user.email  # Unchanged
+
