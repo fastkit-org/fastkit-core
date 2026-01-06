@@ -83,3 +83,62 @@ class UserServiceWithResponse(AsyncBaseCrudService[User, UserCreate, UserUpdate,
 
     def __init__(self, repository):
         super().__init__(repository, response_schema=UserResponse)
+
+
+# ============================================================================
+# Fixtures
+# ============================================================================
+
+@pytest_asyncio.fixture
+async def async_engine():
+    """Create in-memory async SQLite engine."""
+    engine = create_async_engine('sqlite+aiosqlite:///:memory:', echo=False)
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    yield engine
+
+    await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def async_session(async_engine):
+    """Create async database session."""
+    async_session_maker = async_sessionmaker(
+        async_engine,
+        class_=AsyncSession,
+        expire_on_commit=False
+    )
+
+    async with async_session_maker() as session:
+        yield session
+
+
+@pytest_asyncio.fixture
+async def repository(async_session):
+    """Create async user repository."""
+    return AsyncRepository(User, async_session)
+
+
+@pytest_asyncio.fixture
+async def service(repository):
+    """Create basic async user service."""
+    return BasicUserService(repository)
+
+
+@pytest_asyncio.fixture
+async def service_with_response(repository):
+    """Create async user service with response mapping."""
+    return UserServiceWithResponse(repository)
+
+
+@pytest_asyncio.fixture
+async def sample_user(service):
+    """Create a sample user."""
+    user_data = UserCreate(
+        name="John Doe",
+        email="john@example.com",
+        age=30
+    )
+    return await service.create(user_data)
