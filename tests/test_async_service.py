@@ -367,3 +367,68 @@ class TestAsyncReadOperations:
         count = await service.count(age=25)
 
         assert count == 2
+
+# ============================================================================
+# Test CREATE Operations
+# ============================================================================
+
+class TestAsyncCreateOperations:
+    """Test async create operations."""
+
+    @pytest.mark.asyncio
+    async def test_create_basic(self, service):
+        """Should create a new record."""
+        user_data = UserCreate(
+            name="John Doe",
+            email="john@example.com",
+            age=30
+        )
+
+        user = await service.create(user_data)
+
+        assert user.id is not None
+        assert user.name == "John Doe"
+        assert user.email == "john@example.com"
+        assert user.age == 30
+
+    @pytest.mark.asyncio
+    async def test_create_without_commit(self, service):
+        """Should create without committing."""
+        user_data = UserCreate(
+            name="Jane",
+            email="jane@example.com"
+        )
+
+        user = await service.create(user_data, commit=False)
+
+        # Commit manually
+        await service.commit()
+
+        # Verify
+        found = await service.find(user.id)
+        assert found is not None
+
+    @pytest.mark.asyncio
+    async def test_create_many(self, service):
+        """Should create multiple records."""
+        users_data = [
+            UserCreate(name=f"User {i}", email=f"user{i}@example.com")
+            for i in range(3)
+        ]
+
+        users = await service.create_many(users_data)
+
+        assert len(users) == 3
+        assert all(u.id is not None for u in users)
+
+    @pytest.mark.asyncio
+    async def test_create_with_defaults(self, service):
+        """Should use default values."""
+        user_data = UserCreate(
+            name="Test User",
+            email="test@example.com"
+        )
+
+        user = await service.create(user_data)
+
+        assert user.status == 'active'  # Default value
