@@ -643,3 +643,170 @@ class TestAsyncTransactions:
         # Should have ID after flush
         assert user.id is not None
 
+
+# ============================================================================
+# Test VALIDATION Hooks
+# ============================================================================
+
+class TestAsyncValidationHooks:
+    """Test async validation hooks."""
+
+    @pytest.mark.asyncio
+    async def test_validate_create_hook(self, repository):
+        """Should call validate_create hook."""
+
+        class ValidatingService(AsyncBaseCrudService[User, UserCreate, UserUpdate, User]):
+            async def validate_create(self, data: UserCreate) -> None:
+                if await self.exists(email=data.email):
+                    raise ValueError("Email already exists")
+
+        service = ValidatingService(repository)
+
+        # Create first user
+        await service.create(UserCreate(name="Alice", email="alice@example.com"))
+
+        # Try to create duplicate
+        with pytest.raises(ValueError) as exc_info:
+            await service.create(UserCreate(name="Bob", email="alice@example.com"))
+
+        assert "Email already exists" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_validate_update_hook(self, repository, sample_user):
+        """Should call validate_update hook."""
+
+        class ValidatingService(AsyncBaseCrudService[User, UserCreate, UserUpdate, User]):
+            async def validate_update(self, id, data: UserUpdate) -> None:
+                if data.age and data.age < 18:
+                    raise ValueError("Age must be 18 or older")
+
+        service = ValidatingService(repository)
+
+        with pytest.raises(ValueError) as exc_info:
+            await service.update(sample_user.id, UserUpdate(age=16))
+
+        assert "Age must be 18 or older" in str(exc_info.value)
+
+
+# ============================================================================
+# Test LIFECYCLE Hooks
+# ============================================================================
+
+class TestAsyncLifecycleHooks:
+    """Test async lifecycle hooks."""
+
+    @pytest.mark.asyncio
+    async def test_before_create_hook(self, repository):
+        """Should call before_create hook."""
+
+        class HookService(AsyncBaseCrudService[User, UserCreate, UserUpdate, User]):
+            async def before_create(self, data: dict) -> dict:
+                data['name'] = data['name'].upper()
+                return data
+
+        service = HookService(repository)
+
+        user = await service.create(UserCreate(name="john", email="john@example.com"))
+
+        assert user.name == "JOHN"
+
+    @pytest.mark.asyncio
+    async def test_after_create_hook(self, repository):
+        """Should call after_create hook."""
+        hook_called = []
+
+        class HookService(AsyncBaseCrudService[User, UserCreate, UserUpdate, User]):
+            async def after_create(self, instance: User) -> None:
+                hook_called.append(instance.id)
+
+        service = HookService(repository)
+
+        await service.create(UserCreate(name="John", email="john@example.com"))
+
+        assert len(hook_called) == 1
+
+    @pytest.mark.asyncio
+    async def test_before_update_hook(self, repository, sample_user):
+        """Should call before_update hook."""
+
+        class HookService(AsyncBaseCrudService[User, UserCreate, UserUpdate, User]):
+            async def before_update(self, id, data: dict) -> dict:
+                if 'name' in data:
+                    data['name'] = data['name'].upper()
+                return data
+
+        service = HookService(repository)
+
+        updated = await service.update(sample_user.id, UserUpdate(name="jane"))
+
+        assert updated.name == "JANE"
+
+    @pytest.mark.asyncio
+    async def test_after_update_hook(self, repository, sample_user):
+        """Should call after_update hook."""
+        hook_called = []
+
+        class HookService(AsyncBaseCrudService[User, UserCreate, UserUpdate, User]):
+            async def after_update(self, instance: User) -> None:
+                hook_called.append(instance.id)
+
+        service = HookService(repository)
+
+        await service.update(sample_user.id, UserUpdate(name="Jane"))
+
+        assert len(hook_called) == 1
+
+    @pytest.mark.asyncio
+    async def test_before_delete_hook(self, repository, sample_user):
+        """Should call before_delete hook."""
+
+        class HookService(AsyncBaseCrudService[User, UserCreate, UserUpdate, User]):
+            async def before_delete(self, id) -> None:
+                user = await self.find(id)
+                if user and user.status == 'active':
+                    raise ValueError("Cannot delete active user")
+
+        service = HookService(repository)
+
+        with pytest.raises(ValueError) as exc_info:
+            await service.delete(sample_user.id)
+
+        assert "Cannot delete active user" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_after_delete_hook(self, repository, sample_user):
+        """Should call after_delete hook."""
+        hook_called = []
+
+        class HookService(AsyncBaseCrudService[User, UserCreate, UserUpdate, User]):
+            async def after_delete(self, id) -> None:
+                hook_called.append(id)
+
+        service = HookService(repository)
+
+        await service.delete(sample_user.id)
+
+        assert len(hook_called) == 1
+
+    @pytest.mark.asyncio
+    async def test_hook_execution_order(self, repository):
+        """Should execute hooks in correct order."""
+        execution_order = []
+
+        class HookService(AsyncBaseCrudService[User, UserCreate, UserUpdate, User]):
+            async def validate_create(self, data: UserCreate) -> None:
+                execution_order.append('validate')
+
+            async def before_create(self, data: dict) -> dict:
+                execution_order.append('before')
+                return data
+
+            async def after_create(self, instance: User) -> None:
+                execution_order.append('after')
+
+        service = HookService(repository)
+
+        await service.create(UserCreate(name="John", email="john@example.com"))
+
+        assert execution_order == ['validate', 'before', 'after']
+
