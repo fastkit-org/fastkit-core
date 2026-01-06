@@ -494,3 +494,47 @@ class TestAsyncUpdateOperations:
         assert updated.name == sample_user.name  # Unchanged
         assert updated.email == sample_user.email  # Unchanged
 
+# ============================================================================
+# Test DELETE Operations
+# ============================================================================
+
+class TestAsyncDeleteOperations:
+    """Test async delete operations."""
+
+    @pytest.mark.asyncio
+    async def test_delete_basic(self, service, sample_user):
+        """Should delete a record."""
+        deleted = await service.delete(sample_user.id)
+
+        assert deleted is True
+
+        # Verify deleted
+        found = await service.find(sample_user.id)
+        assert found is None
+
+    @pytest.mark.asyncio
+    async def test_delete_nonexistent(self, service):
+        """Should return False for nonexistent record."""
+        deleted = await service.delete(9999)
+
+        assert deleted is False
+
+    @pytest.mark.asyncio
+    async def test_delete_many(self, service):
+        """Should delete multiple records."""
+        # Create users
+        for i in range(3):
+            await service.create(UserCreate(
+                name=f"User {i}",
+                email=f"user{i}@example.com",
+                status='inactive'
+            ))
+
+        # Delete all inactive
+        count = await service.delete_many(filters={'status': 'inactive'})
+
+        assert count == 3
+
+        # Verify
+        remaining = await service.count()
+        assert remaining == 0
