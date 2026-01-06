@@ -58,9 +58,29 @@ class UserUpdate(BaseModel):
     status: Optional[str] = None
 
 
-class BasicUserService(BaseCrudService[User, UserCreate, UserUpdate]):
-    """Basic service without custom logic."""
+class UserResponse(BaseModel):
+    """User response schema - excludes sensitive data."""
+    id: int
+    name: str
+    email: str
+    age: Optional[int] = None
+    status: str
+
+    # Pydantic v2 config
+    model_config = {'from_attributes': True}
+
+
+
+class BasicUserService(BaseCrudService[User, UserCreate, UserUpdate, User]):
+    """Basic service without custom logic and no response mapping."""
     pass
+
+
+class UserServiceWithResponse(BaseCrudService[User, UserCreate, UserUpdate, UserResponse]):
+    """Service with automatic response mapping."""
+
+    def __init__(self, repository):
+        super().__init__(repository, response_schema=UserResponse)
 
 # ============================================================================
 # Fixtures
@@ -93,6 +113,12 @@ def repository(session):
 def service(repository):
     """Create basic user service."""
     return BasicUserService(repository)
+
+
+@pytest.fixture
+def service_with_response(repository):
+    """Create user service with response mapping."""
+    return UserServiceWithResponse(repository)
 
 
 @pytest.fixture
@@ -646,7 +672,7 @@ class TestValidationHooks:
     def test_validate_create_hook(self, repository):
         """Should call validate_create hook."""
 
-        class ValidatingService(BaseCrudService[User, UserCreate, UserUpdate]):
+        class ValidatingService(BaseCrudService[User, UserCreate, UserUpdate, UserResponse]):
             def validate_create(self, data: UserCreate) -> None:
                 if self.exists(email=data.email):
                     raise ValueError("Email already exists")
@@ -671,7 +697,7 @@ class TestValidationHooks:
     def test_validate_update_hook(self, repository, sample_user):
         """Should call validate_update hook."""
 
-        class ValidatingService(BaseCrudService[User, UserCreate, UserUpdate]):
+        class ValidatingService(BaseCrudService[User, UserCreate, UserUpdate, UserResponse]):
             def validate_update(self, id, data: UserUpdate) -> None:
                 if data.age and data.age < 18:
                     raise ValueError("Age must be 18 or older")
@@ -696,7 +722,7 @@ class TestLifecycleHooks:
     def test_before_create_hook(self, repository):
         """Should call before_create hook."""
 
-        class HookService(BaseCrudService[User, UserCreate, UserUpdate]):
+        class HookService(BaseCrudService[User, UserCreate, UserUpdate, UserResponse]):
             def before_create(self, data: dict) -> dict:
                 # Add prefix to name
                 data['name'] = f"Mr. {data['name']}"
@@ -715,7 +741,7 @@ class TestLifecycleHooks:
         """Should call after_create hook."""
         hook_called = []
 
-        class HookService(BaseCrudService[User, UserCreate, UserUpdate]):
+        class HookService(BaseCrudService[User, UserCreate, UserUpdate, UserResponse]):
             def after_create(self, instance: User) -> None:
                 hook_called.append(instance.id)
 
@@ -733,7 +759,7 @@ class TestLifecycleHooks:
         """Should not call after_create when commit=False."""
         hook_called = []
 
-        class HookService(BaseCrudService[User, UserCreate, UserUpdate]):
+        class HookService(BaseCrudService[User, UserCreate, UserUpdate, UserResponse]):
             def after_create(self, instance: User) -> None:
                 hook_called.append(instance.id)
 
@@ -749,7 +775,7 @@ class TestLifecycleHooks:
     def test_before_update_hook(self, repository, sample_user):
         """Should call before_update hook."""
 
-        class HookService(BaseCrudService[User, UserCreate, UserUpdate]):
+        class HookService(BaseCrudService[User, UserCreate, UserUpdate, UserResponse]):
             def before_update(self, id, data: dict) -> dict:
                 # Convert name to uppercase
                 if 'name' in data:
@@ -766,7 +792,7 @@ class TestLifecycleHooks:
         """Should call after_update hook."""
         hook_called = []
 
-        class HookService(BaseCrudService[User, UserCreate, UserUpdate]):
+        class HookService(BaseCrudService[User, UserCreate, UserUpdate, UserResponse]):
             def after_update(self, instance: User) -> None:
                 hook_called.append(instance.id)
 
@@ -780,7 +806,7 @@ class TestLifecycleHooks:
     def test_before_delete_hook(self, repository, sample_user):
         """Should call before_delete hook."""
 
-        class HookService(BaseCrudService[User, UserCreate, UserUpdate]):
+        class HookService(BaseCrudService[User, UserCreate, UserUpdate, UserResponse]):
             def before_delete(self, id) -> None:
                 user = self.find(id)
                 if user and user.status == 'active':
@@ -798,7 +824,7 @@ class TestLifecycleHooks:
         """Should call after_delete hook."""
         hook_called = []
 
-        class HookService(BaseCrudService[User, UserCreate, UserUpdate]):
+        class HookService(BaseCrudService[User, UserCreate, UserUpdate, UserResponse]):
             def after_delete(self, id) -> None:
                 hook_called.append(id)
 
@@ -813,7 +839,7 @@ class TestLifecycleHooks:
         """Should execute hooks in correct order."""
         execution_order = []
 
-        class HookService(BaseCrudService[User, UserCreate, UserUpdate]):
+        class HookService(BaseCrudService[User, UserCreate, UserUpdate, UserResponse]):
             def validate_create(self, data: UserCreate) -> None:
                 execution_order.append('validate')
 
@@ -914,7 +940,7 @@ class TestIntegration:
         """Should work with all hooks together."""
         execution_log = []
 
-        class CompleteService(BaseCrudService[User, UserCreate, UserUpdate]):
+        class CompleteService(BaseCrudService[User, UserCreate, UserUpdate, UserResponse]):
             def validate_create(self, data: UserCreate) -> None:
                 execution_log.append('validate_create')
                 if self.exists(email=data.email):
@@ -1015,3 +1041,268 @@ class TestEdgeCases:
         users = service.filter(name="Nonexistent")
 
         assert users == []
+
+
+# ============================================================================
+# Test Response Schema Mapping
+# ============================================================================
+
+class TestResponseSchemaMapping:
+    """Test automatic response schema mapping."""
+
+    def test_service_with_response_schema_init(self, repository):
+        """Should initialize service with response schema."""
+        service = UserServiceWithResponse(repository)
+
+        assert service.response_schema == UserResponse
+        assert service.repository is repository
+
+    def test_create_returns_response_schema(self, service_with_response):
+        """Should return UserResponse instead of User model."""
+        user_data = UserCreate(
+            name="John Doe",
+            email="john@example.com",
+            age=30
+        )
+
+        result = service_with_response.create(user_data)
+
+        # Should be UserResponse instance
+        assert isinstance(result, UserResponse)
+        assert result.id is not None
+        assert result.name == "John Doe"
+        assert result.email == "john@example.com"
+        assert result.age == 30
+
+    def test_find_returns_response_schema(self, service_with_response):
+        """Should return UserResponse for find."""
+        # Create user
+        user_data = UserCreate(name="Alice", email="alice@example.com")
+        created = service_with_response.create(user_data)
+
+        # Find should return UserResponse
+        found = service_with_response.find(created.id)
+
+        assert isinstance(found, UserResponse)
+        assert found.id == created.id
+        assert found.name == "Alice"
+
+    def test_find_nonexistent_returns_none(self, service_with_response):
+        """Should return None for nonexistent record."""
+        found = service_with_response.find(9999)
+
+        assert found is None
+
+    def test_find_or_fail_returns_response_schema(self, service_with_response):
+        """Should return UserResponse for find_or_fail."""
+        user_data = UserCreate(name="Bob", email="bob@example.com")
+        created = service_with_response.create(user_data)
+
+        found = service_with_response.find_or_fail(created.id)
+
+        assert isinstance(found, UserResponse)
+        assert found.id == created.id
+
+    def test_get_all_returns_response_schema_list(self, service_with_response):
+        """Should return list of UserResponse."""
+        # Create multiple users
+        for i in range(3):
+            service_with_response.create(
+                UserCreate(name=f"User {i}", email=f"user{i}@example.com")
+            )
+
+        users = service_with_response.get_all()
+
+        assert len(users) == 3
+        assert all(isinstance(u, UserResponse) for u in users)
+
+    def test_filter_returns_response_schema_list(self, service_with_response):
+        """Should return list of UserResponse for filter."""
+        service_with_response.create(
+            UserCreate(name="Alice", email="alice@example.com", age=25)
+        )
+        service_with_response.create(
+            UserCreate(name="Bob", email="bob@example.com", age=30)
+        )
+
+        users = service_with_response.filter(age__gte=25)
+
+        assert len(users) == 2
+        assert all(isinstance(u, UserResponse) for u in users)
+
+    def test_filter_one_returns_response_schema(self, service_with_response):
+        """Should return UserResponse for filter_one."""
+        service_with_response.create(
+            UserCreate(name="Charlie", email="charlie@example.com")
+        )
+
+        user = service_with_response.filter_one(name="Charlie")
+
+        assert isinstance(user, UserResponse)
+        assert user.name == "Charlie"
+
+    def test_paginate_returns_response_schema_list(self, service_with_response):
+        """Should return list of UserResponse for paginate."""
+        # Create multiple users
+        for i in range(10):
+            service_with_response.create(
+                UserCreate(name=f"User {i}", email=f"user{i}@example.com")
+            )
+
+        users, meta = service_with_response.paginate(page=1, per_page=5)
+
+        assert len(users) == 5
+        assert all(isinstance(u, UserResponse) for u in users)
+        assert meta['total'] == 10
+        assert meta['total_pages'] == 2
+
+    def test_update_returns_response_schema(self, service_with_response):
+        """Should return UserResponse for update."""
+        user_data = UserCreate(name="David", email="david@example.com")
+        created = service_with_response.create(user_data)
+
+        updated = service_with_response.update(
+            created.id,
+            UserUpdate(name="David Updated")
+        )
+
+        assert isinstance(updated, UserResponse)
+        assert updated.name == "David Updated"
+
+    def test_create_many_returns_response_schema_list(self, service_with_response):
+        """Should return list of UserResponse for create_many."""
+        users_data = [
+            UserCreate(name=f"User {i}", email=f"user{i}@example.com")
+            for i in range(3)
+        ]
+
+        users = service_with_response.create_many(users_data)
+
+        assert len(users) == 3
+        assert all(isinstance(u, UserResponse) for u in users)
+
+    def test_response_schema_without_mapping(self, service):
+        """Should return User model when no response schema."""
+        user_data = UserCreate(
+            name="Emma",
+            email="emma@example.com"
+        )
+
+        result = service.create(user_data)
+
+        # Should be User model, not UserResponse
+        assert isinstance(result, User)
+        assert not isinstance(result, UserResponse)
+
+    def test_to_response_with_none(self, service_with_response):
+        """Should handle None values properly."""
+        result = service_with_response._to_response(None)
+
+        assert result is None
+
+    def test_to_response_list_empty(self, service_with_response):
+        """Should handle empty list."""
+        result = service_with_response._to_response_list([])
+
+        assert result == []
+        assert isinstance(result, list)
+
+
+# ============================================================================
+# Test Response Schema with Hooks
+# ============================================================================
+
+class TestResponseSchemaWithHooks:
+    """Test response schema mapping with lifecycle hooks."""
+
+    def test_hooks_work_with_response_mapping(self, repository):
+        """Should execute hooks and return response schema."""
+        hook_log = []
+
+        class HookedService(BaseCrudService[User, UserCreate, UserUpdate, UserResponse]):
+            def __init__(self, repo):
+                super().__init__(repo, response_schema=UserResponse)
+
+            def validate_create(self, data: UserCreate) -> None:
+                hook_log.append('validate')
+
+            def before_create(self, data: dict) -> dict:
+                hook_log.append('before')
+                data['name'] = data['name'].upper()
+                return data
+
+            def after_create(self, instance: User) -> None:
+                hook_log.append('after')
+
+        service = HookedService(repository)
+
+        result = service.create(UserCreate(name="john", email="john@example.com"))
+
+        # Hooks executed
+        assert hook_log == ['validate', 'before', 'after']
+
+        # Result is UserResponse
+        assert isinstance(result, UserResponse)
+        assert result.name == "JOHN"  # Modified by hook
+
+    def test_validation_error_with_response_mapping(self, repository):
+        """Should validate before mapping to response."""
+        class ValidatingService(BaseCrudService[User, UserCreate, UserUpdate, UserResponse]):
+            def __init__(self, repo):
+                super().__init__(repo, response_schema=UserResponse)
+
+            def validate_create(self, data: UserCreate) -> None:
+                if self.exists(email=data.email):
+                    raise ValueError("Email already exists")
+
+        service = ValidatingService(repository)
+
+        # Create first user
+        service.create(UserCreate(name="Alice", email="alice@example.com"))
+
+        # Try to create duplicate
+        with pytest.raises(ValueError) as exc_info:
+            service.create(UserCreate(name="Bob", email="alice@example.com"))
+
+        assert "Email already exists" in str(exc_info.value)
+
+
+# ============================================================================
+# Test Response Schema Type Safety
+# ============================================================================
+
+class TestResponseSchemaTypeSafety:
+    """Test type safety with response schemas."""
+
+    def test_response_has_correct_fields(self, service_with_response):
+        """Should have only fields defined in response schema."""
+        user_data = UserCreate(
+            name="Test User",
+            email="test@example.com",
+            age=25
+        )
+
+        result = service_with_response.create(user_data)
+
+        # Should have UserResponse fields
+        assert hasattr(result, 'id')
+        assert hasattr(result, 'name')
+        assert hasattr(result, 'email')
+        assert hasattr(result, 'age')
+        assert hasattr(result, 'status')
+
+    def test_response_is_pydantic_model(self, service_with_response):
+        """Should return actual Pydantic model."""
+        user_data = UserCreate(name="Test", email="test@example.com")
+        result = service_with_response.create(user_data)
+
+        # Should be BaseModel subclass
+        assert isinstance(result, BaseModel)
+
+        # Should have Pydantic methods
+        if hasattr(result, 'model_dump'):  # Pydantic v2
+            data = result.model_dump()
+            assert isinstance(data, dict)
+        elif hasattr(result, 'dict'):  # Pydantic v1
+            data = result.dict()
+            assert isinstance(data, dict)
