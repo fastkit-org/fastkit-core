@@ -113,7 +113,7 @@ class SlugServiceMixin:
                 slug_field='url_slug'
             )
         """
-        if not hasattr(self, 'repository'):
+        if not hasattr(self, 'repository') or self.repository is None:
             raise AttributeError("Service must have 'repository' attribute")
 
         # Generate base slug
@@ -183,7 +183,7 @@ class SlugServiceMixin:
                 data['slug'] = self.generate_slug(data['title'])
                 return data
         """
-        if not hasattr(self, 'repository'):
+        if not hasattr(self, 'repository') or self.repository is None:
             raise AttributeError("Service must have 'repository' attribute")
 
         # Generate base slug
