@@ -382,3 +382,60 @@ class TestSyncGenerateSlug:
         slug = service.generate_slug("Hello World", slug_field='url_slug')
 
         mock_sync_repository.exists.assert_called_once_with(url_slug="hello-world")
+
+
+# ============================================================================
+# Test Integration with Real Database (Async)
+# ============================================================================
+
+class TestAsyncIntegration:
+    """Test async service integration with real database."""
+
+    @pytest.mark.asyncio
+    async def test_create_article_with_slug(self, async_service):
+        """Should create article with auto-generated slug."""
+        # Mock create to avoid full implementation
+        async_service.repository.create = AsyncMock(
+            return_value=Article(id=1, title="Hello World", slug="hello-world")
+        )
+        async_service.repository.exists = AsyncMock(return_value=False)
+
+        data = {"title": "Hello World"}
+        result_data = await async_service.before_create(data)
+
+        assert 'slug' in result_data
+        assert result_data['slug'] == "hello-world"
+
+    @pytest.mark.asyncio
+    async def test_create_duplicate_title(self, async_service):
+        """Should generate unique slug for duplicate titles."""
+        # First slug exists
+        async_service.repository.exists = AsyncMock(side_effect=[True, False])
+
+        data = {"title": "Hello World"}
+        result_data = await async_service.before_create(data)
+
+        assert result_data['slug'] == "hello-world-2"
+
+    @pytest.mark.asyncio
+    async def test_update_article_regenerates_slug(self, async_service):
+        """Should regenerate slug on update."""
+        async_service.repository.exists = AsyncMock(return_value=False)
+
+        data = {"title": "New Title"}
+        result_data = await async_service.before_update(5, data)
+
+        assert result_data['slug'] == "new-title"
+        async_service.repository.exists.assert_called_once_with(
+            slug="new-title",
+            id__ne=5
+        )
+
+    @pytest.mark.asyncio
+    async def test_manual_slug_override(self, async_service):
+        """Should allow manual slug override."""
+        data = {"title": "Hello World", "slug": "custom-slug"}
+        result_data = await async_service.before_create(data)
+
+        # Should keep manual slug
+        assert result_data['slug'] == "custom-slug"
