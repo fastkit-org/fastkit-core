@@ -336,3 +336,49 @@ class TestAsyncGenerateSlug:
         assert slug.startswith("hello-")
         assert len(slug.split('-')) == 2  # "hello-{uuid}"
         assert len(slug.split('-')[1]) == 8  # UUID is 8 chars
+
+
+# ============================================================================
+# Test Sync Generate Slug
+# ============================================================================
+
+class TestSyncGenerateSlug:
+    """Test sync slug generation."""
+
+    def test_generate_basic_slug(self, mock_sync_repository):
+        """Should generate basic slug."""
+        service = ArticleSyncService(mock_sync_repository)
+
+        slug = service.generate_slug("Hello World")
+
+        assert slug == "hello-world"
+        mock_sync_repository.exists.assert_called_once_with(slug="hello-world")
+
+    def test_generate_unique_slug_with_increment(self, mock_sync_repository):
+        """Should append number for duplicate slugs."""
+        mock_sync_repository.exists = MagicMock(side_effect=[True, False])
+
+        service = ArticleSyncService(mock_sync_repository)
+        slug = service.generate_slug("Hello World")
+
+        assert slug == "hello-world-2"
+        assert mock_sync_repository.exists.call_count == 2
+
+    def test_generate_slug_with_exclude_id(self, mock_sync_repository):
+        """Should exclude current record."""
+        service = ArticleSyncService(mock_sync_repository)
+
+        slug = service.generate_slug("Hello World", exclude_id=5)
+
+        mock_sync_repository.exists.assert_called_once_with(
+            slug="hello-world",
+            id__ne=5
+        )
+
+    def test_generate_slug_custom_field(self, mock_sync_repository):
+        """Should use custom slug field."""
+        service = ArticleSyncService(mock_sync_repository)
+
+        slug = service.generate_slug("Hello World", slug_field='url_slug')
+
+        mock_sync_repository.exists.assert_called_once_with(url_slug="hello-world")
