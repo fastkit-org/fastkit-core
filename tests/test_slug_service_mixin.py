@@ -37,3 +37,46 @@ class Article(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     title: Mapped[str] = mapped_column(String(200))
     slug: Mapped[str] = mapped_column(String(255), unique=True)
+
+
+# ============================================================================
+# Test Services
+# ============================================================================
+
+class ArticleAsyncService(SlugServiceMixin, AsyncBaseCrudService):
+    """Async service with slug generation."""
+
+    async def before_create(self, data: dict) -> dict:
+        """Generate slug before creating."""
+        if 'title' in data and not data.get('slug'):
+            data['slug'] = await self.async_generate_slug(data['title'])
+        return data
+
+    async def before_update(self, id: int, data: dict) -> dict:
+        """Regenerate slug if title changed."""
+        if 'title' in data:
+            data['slug'] = await self.async_generate_slug(
+                data['title'],
+                exclude_id=id
+            )
+        return data
+
+
+class ArticleSyncService(SlugServiceMixin, BaseCrudService):
+    """Sync service with slug generation."""
+
+    def before_create(self, data: dict) -> dict:
+        """Generate slug before creating."""
+        if 'title' in data and not data.get('slug'):
+            data['slug'] = self.generate_slug(data['title'])
+        return data
+
+    def before_update(self, id: int, data: dict) -> dict:
+        """Regenerate slug if title changed."""
+        if 'title' in data:
+            data['slug'] = self.generate_slug(
+                data['title'],
+                exclude_id=id
+            )
+        return data
+
