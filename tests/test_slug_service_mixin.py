@@ -439,3 +439,65 @@ class TestAsyncIntegration:
 
         # Should keep manual slug
         assert result_data['slug'] == "custom-slug"
+
+
+# ============================================================================
+# Test Edge Cases
+# ============================================================================
+
+class TestEdgeCases:
+    """Test edge cases and error conditions."""
+
+    @pytest.mark.asyncio
+    async def test_slug_with_only_numbers(self, mock_async_repository):
+        """Should handle text with only numbers."""
+        service = ArticleAsyncService(mock_async_repository)
+
+        slug = await service.async_generate_slug("12345")
+
+        assert slug == "12345"
+
+    @pytest.mark.asyncio
+    async def test_slug_with_mixed_case(self, mock_async_repository):
+        """Should convert to lowercase."""
+        service = ArticleAsyncService(mock_async_repository)
+
+        slug = await service.async_generate_slug("Hello WORLD Test")
+
+        assert slug == "hello-world-test"
+
+    @pytest.mark.asyncio
+    async def test_slug_with_emojis(self, mock_async_repository):
+        """Should remove emojis."""
+        service = ArticleAsyncService(mock_async_repository)
+
+        slug = await service.async_generate_slug("Hello 😀 World 🎉")
+
+        assert slug == "hello-world"
+
+    @pytest.mark.asyncio
+    async def test_very_long_slug(self, mock_async_repository):
+        """Should handle very long text."""
+        service = ArticleAsyncService(mock_async_repository)
+
+        long_text = "word " * 100  # 500 chars
+        slug = await service.async_generate_slug(long_text, max_length=100)
+
+        assert len(slug) <= 100
+
+    @pytest.mark.asyncio
+    async def test_slug_with_multiple_separators(self, mock_async_repository):
+        """Should collapse multiple separators."""
+        service = ArticleAsyncService(mock_async_repository)
+
+        slug = await service.async_generate_slug("Hello---World___Test")
+
+        assert slug == "hello-world-test"
+
+    def test_sync_slug_special_characters(self, mock_sync_repository):
+        """Should handle special characters in sync version."""
+        service = ArticleSyncService(mock_sync_repository)
+
+        slug = service.generate_slug("C++ Programming & Design")
+
+        assert slug == "c-programming-design"
