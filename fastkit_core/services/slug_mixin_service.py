@@ -2,25 +2,29 @@ import re
 import unicodedata
 from typing import Optional, Any
 
+
 class SlugServiceMixin:
     """
     Mixin that adds slug generation to services.
 
     Usage:
+        # Async service
         class ArticleService(SlugServiceMixin, AsyncBaseCrudService):
             async def before_create(self, data: dict) -> dict:
-                data['slug'] = self.generate_slug(
-                    data['title'],
-                    slug_field='slug'
-                )
+                data['slug'] = await self.async_generate_slug(data['title'])
+                return data
+
+        # Sync service
+        class ArticleService(SlugServiceMixin, BaseCrudService):
+            def before_create(self, data: dict) -> dict:
+                data['slug'] = self.generate_slug(data['title'])
                 return data
 
     Features:
-    - Auto-detects sync/async from repository
     - Ensures uniqueness
     - Appends numbers if needed: "hello-world-2"
     - Handles unicode
-    - Single clean method
+    - Simple API
     """
 
     @staticmethod
@@ -31,11 +35,14 @@ class SlugServiceMixin:
         Args:
             text: Text to convert
             separator: Separator character (default: '-')
-            max_length: Maximum slug length (default: 245, reserves 10 for counter)
+            max_length: Maximum slug length
 
         Returns:
             URL-safe slug
 
+        Example:
+            slugify("Hello World!")
+            # "hello-world"
         """
         if not text:
             return ''
@@ -54,9 +61,10 @@ class SlugServiceMixin:
         # Remove leading/trailing separators
         text = text.strip(separator)
 
-        # Limit length
-        if len(text) > max_length:
-            text = text[:max_length].rsplit(separator, 1)[0]
+        # Limit length (reserve 10 chars for counter suffix)
+        max_base_length = max_length - 10
+        if len(text) > max_base_length:
+            text = text[:max_base_length].rsplit(separator, 1)[0]
 
         return text
 
@@ -65,7 +73,8 @@ class SlugServiceMixin:
             text: str,
             slug_field: str = 'slug',
             exclude_id: Optional[Any] = None,
-            separator: str = '-'
+            separator: str = '-',
+            max_length: int = 255
     ) -> str:
         """
         Generate unique slug (async version).
@@ -78,6 +87,7 @@ class SlugServiceMixin:
             slug_field: Name of slug field in model (default: 'slug')
             exclude_id: ID to exclude from uniqueness check (for updates)
             separator: Separator character (default: '-')
+            max_length: Maximum slug length (default: 255)
 
         Returns:
             Unique slug
@@ -85,20 +95,20 @@ class SlugServiceMixin:
         Example:
             # In before_create hook
             async def before_create(self, data: dict) -> dict:
-                data['slug'] = await self.generate_slug(data['title'])
+                data['slug'] = await self.async_generate_slug(data['title'])
                 return data
 
             # In before_update hook
             async def before_update(self, id: int, data: dict) -> dict:
                 if 'title' in data:
-                    data['slug'] = await self.generate_slug(
+                    data['slug'] = await self.async_generate_slug(
                         data['title'],
-                        exclude_id=id  # Don't count current record
+                        exclude_id=id
                     )
                 return data
 
             # Custom slug field
-            data['url_slug'] = await self.generate_slug(
+            data['url_slug'] = await self.async_generate_slug(
                 data['name'],
                 slug_field='url_slug'
             )
@@ -107,7 +117,7 @@ class SlugServiceMixin:
             raise AttributeError("Service must have 'repository' attribute")
 
         # Generate base slug
-        base_slug = self.slugify(text, separator=separator)
+        base_slug = self.slugify(text, separator=separator, max_length=max_length)
 
         if not base_slug:
             raise ValueError(f"Cannot generate slug from empty text: '{text}'")
@@ -148,7 +158,8 @@ class SlugServiceMixin:
             text: str,
             slug_field: str = 'slug',
             exclude_id: Optional[Any] = None,
-            separator: str = '-'
+            separator: str = '-',
+            max_length: int = 255
     ) -> str:
         """
         Generate unique slug (sync version).
@@ -161,6 +172,7 @@ class SlugServiceMixin:
             slug_field: Name of slug field in model (default: 'slug')
             exclude_id: ID to exclude from uniqueness check (for updates)
             separator: Separator character (default: '-')
+            max_length: Maximum slug length (default: 255)
 
         Returns:
             Unique slug
@@ -168,14 +180,14 @@ class SlugServiceMixin:
         Example:
             # In sync service
             def before_create(self, data: dict) -> dict:
-                data['slug'] = self.generate_slug_sync(data['title'])
+                data['slug'] = self.generate_slug(data['title'])
                 return data
         """
         if not hasattr(self, 'repository'):
             raise AttributeError("Service must have 'repository' attribute")
 
         # Generate base slug
-        base_slug = self.slugify(text, separator=separator)
+        base_slug = self.slugify(text, separator=separator, max_length=max_length)
 
         if not base_slug:
             raise ValueError(f"Cannot generate slug from empty text: '{text}'")
@@ -210,4 +222,3 @@ class SlugServiceMixin:
                 break
 
         return slug
-
