@@ -501,3 +501,57 @@ class TestEdgeCases:
         slug = service.generate_slug("C++ Programming & Design")
 
         assert slug == "c-programming-design"
+
+
+# ============================================================================
+# Test Real-World Scenarios
+# ============================================================================
+
+class TestRealWorldScenarios:
+    """Test real-world usage scenarios."""
+
+    @pytest.mark.asyncio
+    async def test_blog_post_slug(self, mock_async_repository):
+        """Should generate slug for blog post title."""
+        service = ArticleAsyncService(mock_async_repository)
+
+        slug = await service.async_generate_slug(
+            "10 Tips for Better Python Code in 2024"
+        )
+
+        assert slug == "10-tips-for-better-python-code-in-2024"
+
+    @pytest.mark.asyncio
+    async def test_product_slug_with_category(self, mock_async_repository):
+        """Should generate slug with category prefix."""
+        service = ArticleAsyncService(mock_async_repository)
+
+        slug = await service.async_generate_slug("Electronics Laptop Pro 15 inch")
+
+        assert slug == "electronics-laptop-pro-15-inch"
+
+    @pytest.mark.asyncio
+    async def test_article_series_slugs(self, mock_async_repository):
+        """Should generate unique slugs for article series."""
+        # Simulate existing articles in series
+        mock_async_repository.exists = AsyncMock(
+            side_effect=[
+                True,  # Part 1 exists
+                True,  # Part 2 exists
+                False  # Part 3 is unique
+            ]
+        )
+
+        service = ArticleAsyncService(mock_async_repository)
+        slug = await service.async_generate_slug("Python Tutorial Part 1")
+
+        assert slug == "python-tutorial-part-1-3"
+
+    @pytest.mark.asyncio
+    async def test_multilingual_slug(self, mock_async_repository):
+        """Should handle multilingual content."""
+        service = ArticleAsyncService(mock_async_repository)
+
+        slug = await service.async_generate_slug("Učenje Python programiranja")
+
+        assert slug == "ucenje-python-programiranja"
