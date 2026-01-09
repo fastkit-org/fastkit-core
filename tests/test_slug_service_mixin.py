@@ -139,3 +139,71 @@ def mock_sync_repository():
     return mock_repo
 
 
+# ============================================================================
+# Test Static Slugify Method
+# ============================================================================
+
+class TestSlugify:
+    """Test static slugify method."""
+
+    def test_basic_slugify(self):
+        """Should convert basic text to slug."""
+        slug = SlugServiceMixin.slugify("Hello World")
+
+        assert slug == "hello-world"
+
+    def test_slugify_with_special_chars(self):
+        """Should remove special characters."""
+        slug = SlugServiceMixin.slugify("Hello, World!")
+
+        assert slug == "hello-world"
+
+    def test_slugify_multiple_spaces(self):
+        """Should replace multiple spaces with single separator."""
+        slug = SlugServiceMixin.slugify("Hello    World")
+
+        assert slug == "hello-world"
+
+    def test_slugify_underscores(self):
+        """Should replace underscores with separator."""
+        slug = SlugServiceMixin.slugify("hello_world_test")
+
+        assert slug == "hello-world-test"
+
+    def test_slugify_custom_separator(self):
+        """Should use custom separator."""
+        slug = SlugServiceMixin.slugify("Hello World", separator='_')
+
+        assert slug == "hello_world"
+
+    def test_slugify_max_length(self):
+        """Should limit slug length."""
+        long_text = "a" * 300
+        slug = SlugServiceMixin.slugify(long_text, max_length=50)
+
+        assert len(slug) <= 50
+
+    def test_slugify_empty_string(self):
+        """Should handle empty string."""
+        slug = SlugServiceMixin.slugify("")
+
+        assert slug == ""
+
+    def test_slugify_only_special_chars(self):
+        """Should handle text with only special characters."""
+        slug = SlugServiceMixin.slugify("!@#$%^&*()")
+
+        assert slug == ""
+
+    def test_slugify_leading_trailing_spaces(self):
+        """Should remove leading and trailing spaces."""
+        slug = SlugServiceMixin.slugify("  Hello World  ")
+
+        assert slug == "hello-world"
+
+    def test_slugify_numbers(self):
+        """Should preserve numbers."""
+        slug = SlugServiceMixin.slugify("Article 123")
+
+        assert slug == "article-123"
+
