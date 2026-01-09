@@ -80,3 +80,62 @@ class ArticleSyncService(SlugServiceMixin, BaseCrudService):
             )
         return data
 
+
+# ============================================================================
+# Fixtures
+# ============================================================================
+
+@pytest_asyncio.fixture
+async def async_engine():
+    """Create in-memory async SQLite engine."""
+    engine = create_async_engine('sqlite+aiosqlite:///:memory:', echo=False)
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    yield engine
+
+    await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def async_session(async_engine):
+    """Create async database session."""
+    async_session_maker = async_sessionmaker(
+        async_engine,
+        class_=AsyncSession,
+        expire_on_commit=False
+    )
+
+    async with async_session_maker() as session:
+        yield session
+
+
+@pytest_asyncio.fixture
+async def async_repository(async_session):
+    """Create async repository."""
+    return AsyncRepository(Article, async_session)
+
+
+@pytest_asyncio.fixture
+async def async_service(async_repository):
+    """Create async service with slug mixin."""
+    return ArticleAsyncService(async_repository)
+
+
+@pytest.fixture
+def mock_async_repository():
+    """Create mock async repository."""
+    mock_repo = AsyncMock()
+    mock_repo.exists = AsyncMock(return_value=False)
+    return mock_repo
+
+
+@pytest.fixture
+def mock_sync_repository():
+    """Create mock sync repository."""
+    mock_repo = MagicMock()
+    mock_repo.exists = MagicMock(return_value=False)
+    return mock_repo
+
+
