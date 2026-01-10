@@ -153,16 +153,16 @@ class TodoResponse(BaseSchema):
 # services.py
 from fastkit_core.services import BaseCrudService
 from fastkit_core.database import Repository
-from models import Todo, TodoCreate, TodoUpdate
+from models import Todo, TodoCreate, TodoUpdate, TodoResponse
 from sqlalchemy.orm import Session
 
 
-class TodoService(BaseCrudService[Todo, TodoCreate, TodoUpdate]):
+class TodoService(BaseCrudService[Todo, TodoCreate, TodoUpdate, TodoResponse]):
     """Service for Todo business logic."""
     
     def __init__(self, session: Session):
         repository = Repository(Todo, session)
-        super().__init__(repository)
+        super().__init__(repository,  response_schema=TodoResponse)
     
     def mark_completed(self, todo_id: int) -> Todo:
         """Mark a todo as completed."""
@@ -220,7 +220,7 @@ def create_todo(
     """Create a new todo."""
     created = service.create(todo.model_dump())
     return success_response(
-        data=TodoResponse.model_validate(created).model_dump(),
+        data=created.model_dump(),
         message="Todo created successfully"
     )
 
@@ -243,7 +243,7 @@ def list_todos(
         **filters
     )
     return paginated_response(
-        items=[TodoResponse.from_orm(t).model_dump() for t in todos],
+        items=[t.model_dump() for t in todos],
         pagination=meta
     )
 
@@ -256,7 +256,7 @@ def get_todo(
     """Get a specific todo."""
     todo = service.find_or_fail(todo_id)
     return success_response(
-        data=TodoResponse.model_validate(todo).model_dump()
+        data=todo.model_dump()
     )
 
 
@@ -269,7 +269,7 @@ def update_todo(
     """Update a todo."""
     updated = service.update(todo_id, todo.model_dump(exclude_unset=True))
     return success_response(
-        data=TodoResponse.model_validate(updated).model_dump(),
+        data=updated.model_dump(),
         message="Todo updated successfully"
     )
 
@@ -282,7 +282,7 @@ def complete_todo(
     """Mark todo as completed."""
     todo = service.mark_completed(todo_id)
     return success_response(
-        data=TodoResponse.model_validate(todo).model_dump(),
+        data=todo.model_dump(),
         message="Todo marked as completed"
     )
 
