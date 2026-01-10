@@ -22,7 +22,6 @@ from fastkit_core.database import (
     TimestampMixin,
     SoftDeleteMixin,
     UUIDMixin,
-    SlugMixin,
     PublishableMixin,
     IntIdMixin,
 )
@@ -46,11 +45,6 @@ class UUIDUser(Base, UUIDMixin):
     """User with UUID primary key."""
     __tablename__ = 'uuid_users'
     name: Mapped[str] = mapped_column(String(100))
-
-
-class SluggedArticle(Base, IntIdMixin, SlugMixin):
-    """Article with slug."""
-    title: Mapped[str] = mapped_column(String(200))
 
 
 class PublishablePost(Base, IntIdMixin, PublishableMixin):
@@ -293,100 +287,6 @@ class TestUUIDMixin:
 
         assert found is not None
         assert found.name == "John"
-
-
-# ============================================================================
-# Test SlugMixin
-# ============================================================================
-
-class TestSlugMixin:
-    """Test SlugMixin functionality."""
-
-    def test_generate_slug_basic(self, session):
-        """Should generate slug from title."""
-        article = SluggedArticle(title="Hello World")
-        article.generate_slug()
-
-        assert article.slug == "hello-world"
-
-    def test_generate_slug_special_chars(self, session):
-        """Should handle special characters."""
-        article = SluggedArticle(title="Hello, World!")
-        article.generate_slug()
-
-        assert article.slug == "hello-world"
-
-    def test_generate_slug_multiple_spaces(self, session):
-        """Should handle multiple spaces."""
-        article = SluggedArticle(title="Hello    World")
-        article.generate_slug()
-
-        assert article.slug == "hello-world"
-
-    def test_generate_slug_trim_hyphens(self, session):
-        """Should trim leading/trailing hyphens."""
-        article = SluggedArticle(title="  Hello World  ")
-        article.generate_slug()
-
-        assert article.slug == "hello-world"
-        assert not article.slug.startswith('-')
-        assert not article.slug.endswith('-')
-
-    def test_generate_slug_max_length(self, session):
-        """Should respect max length."""
-        article = SluggedArticle(title="A" * 300)
-        article.generate_slug(max_length=50)
-
-        assert len(article.slug) <= 50
-
-    def test_generate_slug_uniqueness(self, session):
-        """Should ensure uniqueness with counter."""
-        article1 = SluggedArticle(title="Hello World")
-        article1.generate_slug(session=session)
-        session.add(article1)
-        session.commit()
-
-        article2 = SluggedArticle(title="Hello World")
-        article2.generate_slug(session=session)
-
-        assert article2.slug == "hello-world-1"
-
-    def test_generate_slug_uniqueness_multiple(self, session):
-        """Should increment counter for multiple duplicates."""
-        for i in range(3):
-            article = SluggedArticle(title="Test")
-            article.generate_slug(session=session)
-            session.add(article)
-            session.commit()
-
-        article4 = SluggedArticle(title="Test")
-        article4.generate_slug(session=session)
-
-        assert article4.slug == "test-3"
-
-    def test_generate_slug_custom_source(self, session):
-        """Should generate from custom field."""
-
-        class CustomArticle(Base, IntIdMixin, SlugMixin):
-            name: Mapped[str] = mapped_column(String(200))
-            title: Mapped[str] = mapped_column(String(200))
-
-        Base.metadata.create_all(session.bind)
-
-        article = CustomArticle(name="My Name", title="My Title")
-        article.generate_slug(source_field='name')
-
-        assert article.slug == "my-name"
-
-    def test_generate_slug_empty_source(self, session):
-        """Should raise error for empty source."""
-        article = SluggedArticle(title="")
-
-        with pytest.raises(ValueError) as exc_info:
-            article.generate_slug()
-
-        assert "empty" in str(exc_info.value).lower()
-
 
 # ============================================================================
 # Test PublishableMixin

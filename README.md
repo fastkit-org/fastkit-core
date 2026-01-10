@@ -170,7 +170,7 @@ def list_users(db: Session = Depends(get_db)):
 - Consistent response formatting
 - Timestamps automatically managed
 
-**[See full documentation →](https://fastkit.codevelo.io)**
+**[See full documentation →](/docs/README.md)**
 
 ---
 
@@ -195,7 +195,7 @@ debug_mode = config('app.DEBUG', False)
 - Dot notation access
 - Type casting (strings to bool, int, float)
 
-**[Configuration Documentation →](https://fastkit.codevelo.io/modules/config)**
+**[Configuration Documentation →](docs/configuration.md)**
 
 ---
 
@@ -240,7 +240,7 @@ print(article.to_dict(locale='es'))
 - UUIDMixin, SlugMixin, PublishableMixin
 - Multi-connection support with read replicas
 
-**[Database Documentation →](https://fastkit.codevelo.io/modules/database)**
+**[Database Documentation →](/docs/database.md)**
 
 ---
 
@@ -279,7 +279,7 @@ user = service.create(user_data)  # All hooks run automatically
 - Pagination support
 - Seamless repository integration
 
-**[Services Documentation →](https://fastkit.codevelo.io/modules/services)**
+**[Services Documentation →](/docs/services.md)**
 
 ---
 
@@ -312,7 +312,7 @@ print(_('messages.welcome', name='Juan'))  # "¡Bienvenido, Juan!"
 - Fallback support
 - Middleware integration
 
-**[i18n Documentation →](https://fastkit.codevelo.io/modules/i18n)**
+**[i18n Documentation →](/docs/translations.md)**
 
 ---
 
@@ -349,7 +349,7 @@ except ValidationError as e:
 - Field validation rules
 - Pydantic v2 compatible
 
-**[Validation Documentation →](https://fastkit.codevelo.io/modules/validation)**
+**[Validation Documentation →](/docs/validation.md)**
 
 ---
 
@@ -393,7 +393,7 @@ def list_users(page: int = 1):
 - Pagination helpers
 - CORS configuration
 
-**[HTTP Documentation →](https://fastkit.codevelo.io/modules/http)**
+**[HTTP Documentation →](/docs/http_utilities.md)**
 
 ---
 
@@ -433,18 +433,6 @@ enterprise-grade architecture and 10x better developer experience.
 
 **Perfect balance of performance and productivity!** ✨
 
-## Documentation
-
-Complete guides, tutorials, and API reference:  
-**[fastkit.codevelo.io](https://fastkit.codevelo.io)**
-
----
-
-## Contributing
-
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md).
-
----
 
 ## License
 
