@@ -228,7 +228,7 @@ class AsyncRepository(Generic[T]):
             query = query.limit(limit)
 
         result = await self.session.execute(query)
-        return list(result.scalars().all())
+        return result.scalars().all()
 
     async def filter(
             self,
@@ -310,7 +310,7 @@ class AsyncRepository(Generic[T]):
             query = query.limit(_limit)
 
         result = await self.session.execute(query)
-        return list(result.scalars().all())
+        return result.scalars().all()
 
     async def first(self, _order_by: str | None = None, **filters) -> T | None:
         """

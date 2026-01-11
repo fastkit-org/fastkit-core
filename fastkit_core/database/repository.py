@@ -218,7 +218,7 @@ class Repository(Generic[T]):
             query = query.limit(limit)
 
         result = self.session.execute(query)
-        return list(result.scalars().all())
+        return result.scalars().all()
 
     def filter(
             self,
@@ -297,7 +297,7 @@ class Repository(Generic[T]):
 
         # Execute
         result = self.session.execute(query)
-        return list(result.scalars().all())
+        return result.scalars().all()
 
     def filter_one(self, **filters) -> T | None:
         """
@@ -368,7 +368,7 @@ class Repository(Generic[T]):
         # (same as filter())
 
         result = self.session.execute(query)
-        return list(result.scalars().all())
+        return result.scalars().all()
 
     def count(self, **filters) -> int:
         """
