@@ -11,6 +11,7 @@ from typing import Any, Generic, Type, TypeVar
 
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from fastkit_core.database.base import Base
 
@@ -155,7 +156,7 @@ class AsyncRepository(Generic[T]):
     # READ
     # ========================================================================
 
-    async def get(self, id: Any) -> T | None:
+    async def get(self, id: Any, load_relations: list[str] | None = None) -> T | None:
         """
         Get record by primary key asynchronously.
 
@@ -163,6 +164,8 @@ class AsyncRepository(Generic[T]):
 
         Args:
             id: Primary key value
+            load_relations: List of relationship names to eager load (prevents N+1)
+
 
         Returns:
             Model instance or None if not found or soft-deleted
@@ -174,18 +177,28 @@ class AsyncRepository(Generic[T]):
         """
         query = select(self.model).where(self.model.id == id)
 
+        if load_relations:
+            for relation_name in load_relations:
+                if not hasattr(self.model, relation_name):
+                    raise ValueError(
+                        f"Relationship '{relation_name}' does not exist on {self.model.__name__}"
+                    )
+                relation = getattr(self.model, relation_name)
+                query = query.options(selectinload(relation))
+
         if self._has_soft_delete():
             query = query.where(self.model.deleted_at.is_(None))
 
         result = await self.session.execute(query)
         return result.scalar_one_or_none()
 
-    async def get_or_404(self, id: Any) -> T:
+    async def get_or_404(self, id: Any, load_relations: list[str] | None = None  ) -> T:
         """
         Get record by ID or raise exception asynchronously.
 
         Args:
             id: Primary key value
+            load_relations: List of relationship names to eager load
 
         Returns:
             Model instance
@@ -198,17 +211,18 @@ class AsyncRepository(Generic[T]):
             user = await repo.get_or_404(1)
         ```
         """
-        instance = await self.get(id)
+        instance = await self.get(id, load_relations=load_relations)
         if instance is None:
             raise ValueError(f"{self.model.__name__} with id={id} not found")
         return instance
 
-    async def get_all(self, limit: int | None = None) -> list[T]:
+    async def get_all(self, limit: int | None = None, load_relations: list[str] | None = None) -> list[T]:
         """
         Get all records asynchronously.
 
         Args:
             limit: Maximum number of records to return
+            load_relations: List of relationship names to eager load
 
         Returns:
             List of model instances
@@ -220,6 +234,15 @@ class AsyncRepository(Generic[T]):
         ```
         """
         query = select(self.model)
+
+        if load_relations:
+            for relation_name in load_relations:
+                if not hasattr(self.model, relation_name):
+                    raise ValueError(
+                        f"Relationship '{relation_name}' does not exist on {self.model.__name__}"
+                    )
+                relation = getattr(self.model, relation_name)
+                query = query.options(selectinload(relation))
 
         if self._has_soft_delete():
             query = query.where(self.model.deleted_at.is_(None))
@@ -235,6 +258,7 @@ class AsyncRepository(Generic[T]):
             _limit: int | None = None,
             _offset: int | None = None,
             _order_by: str | None = None,
+            _load_relations: list[str] | None = None,
             **filters
     ) -> list[T]:
         """
@@ -288,6 +312,15 @@ class AsyncRepository(Generic[T]):
         # Apply all conditions
         if conditions:
             query = query.where(and_(*conditions))
+
+        if _load_relations:
+            for relation_name in _load_relations:
+                if not hasattr(self.model, relation_name):
+                    raise ValueError(
+                        f"Relationship '{relation_name}' does not exist on {self.model.__name__}"
+                    )
+                relation = getattr(self.model, relation_name)
+                query = query.options(selectinload(relation))
 
         # Apply ordering
         if _order_by:
@@ -547,6 +580,7 @@ class AsyncRepository(Generic[T]):
             page: int = 1,
             per_page: int = 20,
             _order_by: str | None = None,
+            _load_relations: list[str] | None = None,
             **filters
     ) -> tuple[list[T], dict[str, Any]]:
         """
@@ -558,6 +592,7 @@ class AsyncRepository(Generic[T]):
             page: Page number (1-indexed)
             per_page: Items per page
             _order_by: Order by field (prefix with - for DESC)
+            _load_relations: Relationships to eager load (prevents N+1)
             **filters: Filter conditions with operators
 
         Returns:
@@ -595,6 +630,7 @@ class AsyncRepository(Generic[T]):
             _limit=per_page,
             _offset=offset,
             _order_by=_order_by,
+            _load_relations=_load_relations,
             **filters
         )
 
