@@ -54,6 +54,31 @@ This will install FastKit Core and its core dependencies:
 We strongly recommend using a virtual environment to isolate your project 
 dependencies:
 
+### Using uv (Recommended)
+
+[uv](https://github.com/astral-sh/uv) is a fast Python package installer and resolver written in Rust.
+
+```bash
+# Install uv (if not already installed)
+# Windows (PowerShell)
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# macOS/Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Create virtual environment
+uv venv
+
+# Activate virtual environment
+# Linux/macOS:
+source .venv/bin/activate
+# Windows:
+.venv\Scripts\activate
+
+# Install FastKit Core
+uv add fastkit-core
+```
+
 ### Using venv (Built-in)
 ```bash
 # Create virtual environment
