@@ -328,14 +328,15 @@ class AsyncBaseCrudService(
 
     async def find(
         self,
-        id: Any
+        id: Any,
+        load_relations: list[str] | None = None,
     ) -> Optional[ResponseSchemaType] | Optional[ModelType]:
         """
         Find record by ID (async).
 
         Args:
             id: Primary key value
-
+            load_relations: List of relationship names to eager load
         Returns:
             Response schema or model instance, or None if not found
 
@@ -346,19 +347,20 @@ class AsyncBaseCrudService(
             # Without response_schema
             user: User = await service.find(1)
         """
-        instance = await self.repository.get(id)
+        instance = await self.repository.get(id, load_relations=load_relations)
         return self._to_response(instance)
 
     async def find_or_fail(
         self,
-        id: Any
+        id: Any,
+        load_relations: list[str] | None = None,
     ) -> ResponseSchemaType | ModelType:
         """
         Find record by ID or raise exception (async).
 
         Args:
             id: Primary key value
-
+            load_relations: List of relationship names to eager load
         Returns:
             Response schema or model instance
 
@@ -368,7 +370,7 @@ class AsyncBaseCrudService(
         Example:
             user: UserResponse = await service.find_or_fail(1)
         """
-        instance = await self.repository.get(id)
+        instance = await self.repository.get(id, load_relations=load_relations)
         if instance is None:
             model_name = self.repository.model.__name__
             raise ValueError(f"{model_name} with id={id} not found")
@@ -436,12 +438,14 @@ class AsyncBaseCrudService(
 
     async def filter_one(
         self,
+        load_relations: list[str] | None = None,
         **filters
     ) -> Optional[ResponseSchemaType] | Optional[ModelType]:
         """
         Get first record matching filters (async).
 
         Args:
+            load_relations: List of relationship names to eager load
             **filters: Filter conditions with operators
 
         Returns:
@@ -450,7 +454,7 @@ class AsyncBaseCrudService(
         Example:
             user: UserResponse | None = await service.filter_one(email='john@example.com')
         """
-        results = await self.repository.filter(_limit=1, **filters)
+        results = await self.repository.filter(_limit=1, _load_relations=load_relations, **filters)
         instance = results[0] if results else None
         return self._to_response(instance)
 

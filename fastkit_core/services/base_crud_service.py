@@ -236,14 +236,14 @@ class BaseCrudService(
     # READ Operations
     # ========================================================================
 
-    def find(self, id: Any) -> Optional[ResponseSchemaType] | Optional[ModelType]:
+    def find(self, id: Any,  load_relations: list[str] | None = None) -> Optional[ResponseSchemaType] | Optional[ModelType]:
         """Find record by ID."""
-        instance = self.repository.get(id)
+        instance = self.repository.get(id, load_relations=load_relations)
         return self._to_response(instance)
 
-    def find_or_fail(self, id: Any) -> ResponseSchemaType | ModelType:
+    def find_or_fail(self, id: Any, load_relations: list[str] | None = None,) -> ResponseSchemaType | ModelType:
         """Find record by ID or raise exception."""
-        instance = self.repository.get(id)
+        instance = self.repository.get(id, load_relations=load_relations)
         if instance is None:
             model_name = self.repository.model.__name__
             raise ValueError(f"{model_name} with id={id} not found")
@@ -275,9 +275,9 @@ class BaseCrudService(
         )
         return self._to_response_list(instances)
 
-    def filter_one(self, **filters) -> Optional[ResponseSchemaType] | Optional[ModelType]:
+    def filter_one(self, _load_relations: list[str] | None = None, **filters) -> Optional[ResponseSchemaType] | Optional[ModelType]:
         """Get first record matching filters."""
-        instance = self.repository.first(**filters)
+        instance = self.repository.first(_load_relations=_load_relations, **filters)
         return self._to_response(instance)
 
     def paginate(

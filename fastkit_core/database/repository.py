@@ -333,11 +333,12 @@ class Repository(Generic[T]):
         result = self.session.execute(query)
         return result.scalars().all()
 
-    def first(self, **filters) -> T | None:
+    def first(self, _load_relations: list[str] | None = None, **filters) -> T | None:
         """
         Get first record matching filters.
 
         Args:
+            _load_relations: List of relationship names to eager load
             **filters: Keyword arguments for filtering
 
         Returns:
@@ -348,7 +349,7 @@ class Repository(Generic[T]):
             user = repo.first(email='john@test.com')
 ```
         """
-        results = self.filter(_limit=1, **filters)
+        results = self.filter(_limit=1, _load_relations=_load_relations, **filters)
         return results[0] if results else None
 
     def exists(self, **filters) -> bool:

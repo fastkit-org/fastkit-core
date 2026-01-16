@@ -350,12 +350,16 @@ class AsyncRepository(Generic[T]):
         result = await self.session.execute(query)
         return result.scalars().all()
 
-    async def first(self, _order_by: str | None = None, **filters) -> T | None:
+    async def first(self,
+                    _order_by: str | None = None,
+                    _load_relations: list[str] | None = None,
+                    **filters) -> T | None:
         """
         Get first record matching filters asynchronously.
 
         Args:
             _order_by: Order by field
+            _load_relations: List of relationship names to eager load
             **filters: Filter conditions
 
         Returns:
@@ -367,7 +371,7 @@ class AsyncRepository(Generic[T]):
             newest = await repo.first(_order_by='-created_at')
         ```
         """
-        results = await self.filter(_limit=1, _order_by=_order_by, **filters)
+        results = await self.filter(_limit=1, _order_by=_order_by, _load_relations=_load_relations, **filters)
         return results[0] if results else None
 
     async def exists(self, **filters) -> bool:
