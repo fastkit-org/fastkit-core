@@ -375,13 +375,15 @@ class AsyncBaseCrudService(
         return self._to_response(instance)
 
     async def get_all(
-        self,
-        limit: int | None = None
+            self,
+            limit: int | None = None,
+            load_relations: list[str] | None = None
     ) -> list[ResponseSchemaType] | list[ModelType]:
         """
         Get all records (async).
 
         Args:
+            load_relations:  List of relations
             limit: Maximum number of records
 
         Returns:
@@ -390,7 +392,7 @@ class AsyncBaseCrudService(
         Example:
             users: list[UserResponse] = await service.get_all(limit=100)
         """
-        instances = await self.repository.get_all(limit=limit)
+        instances = await self.repository.get_all(limit=limit, load_relations=load_relations)
         return self._to_response_list(instances)
 
     async def filter(
@@ -398,6 +400,7 @@ class AsyncBaseCrudService(
         _limit: int | None = None,
         _offset: int | None = None,
         _order_by: str | None = None,
+        _load_relations: list[str] | None = None,
         **filters
     ) -> list[ResponseSchemaType] | list[ModelType]:
         """
@@ -406,6 +409,7 @@ class AsyncBaseCrudService(
         Supports Django-style operators (field__gte, field__in, etc.).
 
         Args:
+            _load_relations: List of relations
             _limit: Limit number of results
             _offset: Offset for pagination
             _order_by: Order by field (prefix with - for DESC)
@@ -425,6 +429,7 @@ class AsyncBaseCrudService(
             _limit=_limit,
             _offset=_offset,
             _order_by=_order_by,
+            _load_relations=_load_relations,
             **filters
         )
         return self._to_response_list(instances)
@@ -454,6 +459,7 @@ class AsyncBaseCrudService(
         page: int = 1,
         per_page: int = 20,
         _order_by: str | None = None,
+        _load_relations: list[str] | None = None,
         **filters
     ) -> tuple[
         list[ResponseSchemaType] | list[ModelType],
@@ -463,6 +469,7 @@ class AsyncBaseCrudService(
         Paginate records with operator support (async).
 
         Args:
+            _load_relations: List of relations
             page: Page number (1-indexed)
             per_page: Items per page
             _order_by: Order by field (prefix with - for DESC)
@@ -485,6 +492,7 @@ class AsyncBaseCrudService(
             page=page,
             per_page=per_page,
             _order_by=_order_by,
+            _load_relations=_load_relations,
             **filters
         )
         return self._to_response_list(instances), metadata
