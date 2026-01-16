@@ -6,10 +6,10 @@ Provides common CRUD operations and query helpers.
 
 from __future__ import annotations
 
-from typing import Any, Generic, Type, TypeVar
+from typing import Any, Generic, Type, TypeVar, Optional, List
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload, joinedload
 from sqlalchemy import and_, or_
 
 from fastkit_core.database.base import Base
@@ -84,6 +84,29 @@ class Repository(Generic[T]):
         """Check if model has soft delete support."""
         return hasattr(self.model, 'deleted_at')
 
+    def _apply_eager_loading(
+            self,
+            stmt,
+            load: Optional[List[str]] = None,
+            load_strategy: str = 'selectin'
+    ):
+        """Apply eager loading to statement."""
+        if not load:
+            return stmt
+
+        loader = selectinload if load_strategy == 'selectin' else joinedload
+
+        for relationship_path in load:
+            parts = relationship_path.split('.')
+            current_loader = loader(getattr(self.model, parts[0]))
+
+            for part in parts[1:]:
+                current_loader = current_loader.selectinload(part)
+
+            stmt = stmt.options(current_loader)
+
+        return stmt
+
     def query(self):
         """Get query builder for complex queries."""
         return select(self.model)
@@ -154,19 +177,23 @@ class Repository(Generic[T]):
     # READ
     # ========================================================================
 
-    def get(self, id: Any) -> T | None:
+    def get(self, id: Any, load_relations: list[str] | None = None) -> T | None:
         """
         Get record by primary key.
 
         Excludes soft-deleted records by default.
 
         Args:
+            load_relations: List of relations
             id: Primary key value
 
         Returns:
             Model instance or None if not found or soft-deleted
         """
         query = select(self.model).where(self.model.id == id)
+
+        if load_relations:
+            query = self._apply_eager_loading(query, load_relations)
 
         # Exclude soft-deleted records
         if self._has_soft_delete():
@@ -175,31 +202,31 @@ class Repository(Generic[T]):
         result = self.session.execute(query)
         return result.scalar_one_or_none()
 
-    def get_or_404(self, id: Any) -> T:
+    def get_or_404(self, id: Any, load_relations: list[str] | None = None ) -> T:
         """
         Get record by ID or raise exception.
 
         Args:
             id: Primary key value
-
+            load_relations: List of relationship names to eager load
         Returns:
             Model instance
 
         Raises:
             ValueError: If record not found
         """
-        instance = self.get(id)
+        instance = self.get(id, load_relations=load_relations)
         if instance is None:
             raise ValueError(f"{self.model.__name__} with id={id} not found")
         return instance
 
-    def get_all(self, limit: int | None = None) -> list[T]:
+    def get_all(self, limit: int | None = None, load_relations: list[str] | None = None) -> list[T]:
         """
         Get all records.
 
         Args:
             limit: Maximum number of records to return
-
+            load_relations: List of relationship names to eager load
         Returns:
             List of model instances
 
@@ -210,6 +237,9 @@ class Repository(Generic[T]):
 ```
         """
         query = select(self.model)
+
+        if load_relations:
+            query = self._apply_eager_loading(query, load_relations)
 
         if self._has_soft_delete():
             query = query.where(self.model.deleted_at.is_(None))
@@ -225,6 +255,7 @@ class Repository(Generic[T]):
             _limit: int | None = None,
             _offset: int | None = None,
             _order_by: str | None = None,
+            _load_relations: list[str] | None = None,
             **filters
     ) -> list[T]:
         """
@@ -277,6 +308,9 @@ class Repository(Generic[T]):
         if conditions:
             query = query.where(and_(*conditions))
 
+        if _load_relations:
+            query = self._apply_eager_loading(query, _load_relations)
+
         # Apply ordering
         if _order_by:
             if _order_by.startswith('-'):
@@ -299,7 +333,7 @@ class Repository(Generic[T]):
         result = self.session.execute(query)
         return result.scalars().all()
 
-    def filter_one(self, **filters) -> T | None:
+    def first(self, **filters) -> T | None:
         """
         Get first record matching filters.
 
@@ -311,7 +345,7 @@ class Repository(Generic[T]):
 
         Example:
 ```python
-            user = repo.filter_one(email='john@test.com')
+            user = repo.first(email='john@test.com')
 ```
         """
         results = self.filter(_limit=1, **filters)
@@ -560,6 +594,7 @@ class Repository(Generic[T]):
             page: int = 1,
             per_page: int = 20,
             _order_by: str | None = None,
+            _load_relations: list[str] | None = None,
             **filters
     ) -> tuple[list[T], dict[str, Any]]:
         """
@@ -571,6 +606,7 @@ class Repository(Generic[T]):
             page: Page number (1-indexed)
             per_page: Items per page
             _order_by: Order by field (prefix with - for DESC)
+             _load_relations: Relationships to eager load (prevents N+1)
             **filters: Filter conditions with operators
 
         Returns:
@@ -597,6 +633,7 @@ class Repository(Generic[T]):
             _limit=per_page,
             _offset=offset,
             _order_by=_order_by,
+            _load_relations=_load_relations,
             **filters
         )
 
