@@ -31,8 +31,8 @@ from fastkit_core.database import (
 # Test Models
 # ============================================================================
 
-class User(Base, IntIdMixin, TimestampMixin):
-    """User model for testing."""
+class SyncUser(Base, IntIdMixin, TimestampMixin):
+    """User model for sync repository testing."""
     __tablename__ = 'users_rep_test'
 
     name: Mapped[str] = mapped_column(String(100))
@@ -41,11 +41,15 @@ class User(Base, IntIdMixin, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     # Relationships
-    posts: Mapped[list["Post"]] = relationship("Post", back_populates="user")
+    posts: Mapped[list["SyncPost"]] = relationship(
+        "SyncPost",
+        foreign_keys="SyncPost.user_id",
+        viewonly=True
+    )
 
 
-class Post(Base, IntIdMixin, SoftDeleteMixin):
-    """Post model with soft delete."""
+class SyncPost(Base, IntIdMixin, SoftDeleteMixin):
+    """Post model with soft delete for sync repository testing."""
     __tablename__ = 'posts_rep_test'
 
     title: Mapped[str] = mapped_column(String(200))
@@ -53,11 +57,15 @@ class Post(Base, IntIdMixin, SoftDeleteMixin):
     user_id: Mapped[int] = mapped_column(ForeignKey('users_rep_test.id'))
     views: Mapped[int] = mapped_column(Integer, default=0)
 
-    user: Mapped[User] = relationship(User, backref='posts_rep_test')
+    user: Mapped["SyncUser"] = relationship(
+        "SyncUser",
+        foreign_keys=[user_id],
+        viewonly=True
+    )
 
 
-class Product(Base, IntIdMixin):
-    """Product model for filtering tests."""
+class SyncProduct(Base, IntIdMixin):
+    """Product model for sync repository filtering tests."""
     __tablename__ = 'products_rep_test'
 
     name: Mapped[str] = mapped_column(String(100))
@@ -90,19 +98,19 @@ def session(engine):
 @pytest.fixture
 def user_repo(session):
     """Create user repository."""
-    return Repository(User, session)
+    return Repository(SyncUser, session)
 
 
 @pytest.fixture
 def post_repo(session):
     """Create post repository."""
-    return Repository(Post, session)
+    return Repository(SyncPost, session)
 
 
 @pytest.fixture
 def product_repo(session):
     """Create product repository."""
-    return Repository(Product, session)
+    return Repository(SyncProduct, session)
 
 
 @pytest.fixture
@@ -127,17 +135,17 @@ class TestRepositoryInit:
 
     def test_init_with_model_and_session(self, session):
         """Should initialize with model and session."""
-        repo = Repository(User, session)
+        repo = Repository(SyncUser, session)
 
-        assert repo.model == User
+        assert repo.model == SyncUser
         assert repo.session == session
 
     def test_create_repository_function(self, session):
         """Should create repository with helper function."""
-        repo = create_repository(User, session)
+        repo = create_repository(SyncUser, session)
 
         assert isinstance(repo, Repository)
-        assert repo.model == User
+        assert repo.model == SyncUser
 
     def test_repository_repr(self, user_repo):
         """Should have meaningful repr."""
@@ -174,7 +182,7 @@ class TestCreateOperations:
 
         # Should be committed
         session.expire_all()
-        found = session.query(User).filter_by(id=user.id).first()
+        found = session.query(SyncUser).filter_by(id=user.id).first()
         assert found is not None
 
     def test_create_with_commit_false(self, user_repo, session):
@@ -188,7 +196,7 @@ class TestCreateOperations:
         session.rollback()
 
         # Should not exist
-        found = session.query(User).filter_by(id=user.id).first()
+        found = session.query(SyncUser).filter_by(id=user.id).first()
         assert found is None
 
     def test_create_many(self, user_repo):
@@ -216,7 +224,7 @@ class TestCreateOperations:
         session.rollback()
 
         # Should not exist
-        count = session.query(User).count()
+        count = session.query(SyncUser).count()
         assert count == 0
 
     def test_create_with_defaults(self, user_repo):
@@ -702,7 +710,7 @@ class TestSoftDelete:
         assert found is None
 
         # But should exist in database with deleted_at set
-        all_posts = post_repo.session.query(Post).filter_by(id=post.id).first()
+        all_posts = post_repo.session.query(SyncPost).filter_by(id=post.id).first()
         assert all_posts is not None
         assert all_posts.deleted_at is not None
 
@@ -720,7 +728,7 @@ class TestSoftDelete:
         assert deleted is True
 
         # Should be completely gone from database
-        all_posts = post_repo.session.query(Post).filter_by(id=post.id).first()
+        all_posts = post_repo.session.query(SyncPost).filter_by(id=post.id).first()
         assert all_posts is None
 
     def test_filter_excludes_soft_deleted(self, post_repo, sample_users):
