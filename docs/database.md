@@ -664,6 +664,138 @@ print(meta)
 # }
 ```
 
+### Eager Loading (Relationship Loading)
+
+Load related entities in a single query to prevent N+1 query problems.
+
+**Basic Usage:**
+```python
+# Without eager loading (N+1 problem)
+users = repo.get_all()  # 1 query
+for user in users:
+    print(user.posts)  # N additional queries! 😱
+
+# With eager loading (2 queries total)
+users = repo.get_all(load_relations=['posts'])  # 2 queries total
+for user in users:
+    print(user.posts)  # Already loaded! ✅
+```
+
+**Single Relationship:**
+```python
+# Load user with posts
+user = repo.get(1, load_relations=['posts'])
+print(user.posts)  # No additional query
+
+# Load all users with posts
+users = repo.get_all(load_relations=['posts'])
+```
+
+**Multiple Relationships:**
+```python
+# Load multiple relationships
+invoice = repo.get(
+    invoice_id,
+    load_relations=['client', 'items', 'payments']
+)
+
+# Access all without additional queries
+print(invoice.client.name)
+print(len(invoice.items))
+print(invoice.payments)
+```
+
+**Nested Relationships:**
+```python
+# Load nested relationships (use dot notation)
+invoices = repo.get_all(load_relations=[
+    'client',              # Load client
+    'items.product',       # Load items and their products
+    'items.product.category'  # Load products and their categories
+])
+
+# Access nested data without N+1
+for invoice in invoices:
+    for item in invoice.items:
+        print(f"{item.product.name} - {item.product.category.name}")
+```
+
+**With Filtering:**
+```python
+# Combine filtering and eager loading
+invoices = repo.filter(
+    status='paid',
+    _load_relations=['client', 'items']
+)
+
+# All loaded
+for invoice in invoices:
+    print(f"{invoice.client.name}: {len(invoice.items)} items")
+```
+
+**With Pagination:**
+```python
+# Pagination with eager loading
+invoices, meta = repo.paginate(
+    page=1,
+    per_page=20,
+    _load_relations=['client', 'items.product']
+)
+
+# No N+1 in paginated results
+for invoice in invoices:
+    print(invoice.client.name)
+    for item in invoice.items:
+        print(f"  - {item.product.name}")
+```
+
+**Performance Comparison:**
+```python
+# ❌ Without eager loading (N+1 problem)
+invoices = repo.get_all()  # 1 query
+for invoice in invoices:
+    print(invoice.client.name)  # 100 queries if 100 invoices!
+# Total: 101 queries, ~5000ms
+
+# ✅ With eager loading
+invoices = repo.get_all(load_relations=['client'])  # 2 queries total
+for invoice in invoices:
+    print(invoice.client.name)  # No additional query!
+# Total: 2 queries, ~100ms (50x faster!)
+```
+
+**Loading Strategy:**
+
+By default, `selectinload` strategy is used (recommended for most cases):
+```python
+# Uses selectinload (default - efficient for one-to-many)
+users = repo.get_all(load_relations=['posts'])
+
+# SQL executed:
+# SELECT * FROM users;
+# SELECT * FROM posts WHERE user_id IN (1, 2, 3, ...);
+```
+
+**Edge Cases:**
+```python
+# Handle None gracefully
+user = repo.get(1, load_relations=None)  # Works
+
+# Handle empty list
+user = repo.get(1, load_relations=[])  # Works
+
+# Invalid relationship raises AttributeError
+user = repo.get(1, load_relations=['nonexistent'])  # AttributeError
+```
+
+**All Methods Support Eager Loading:**
+- `get(id, load_relations=None)`
+- `get_or_404(id, load_relations=None)`
+- `get_all(limit=None, load_relations=None)`
+- `filter(..., _load_relations=None, **filters)`
+- `paginate(..., _load_relations=None, **filters)`
+- `first(_load_relations=None, **filters)`
+
 ### Transaction Management
 
 ```python
@@ -770,6 +902,72 @@ deleted = await repo.delete(1)
 count = await repo.delete_many({'status': 'inactive'})
 
 ```
+
+### Async Eager Loading
+
+Async repository has full eager loading support (same API as sync):
+
+**Basic Usage:**
+```python
+# Load user with posts
+user = await repo.get(1, load_relations=['posts'])
+
+# Load all users with posts (prevent N+1)
+users = await repo.get_all(load_relations=['posts'])
+for user in users:
+    print(user.posts)  # Already loaded, no additional queries
+```
+
+**Multiple & Nested Relationships:**
+```python
+# Multiple relationships
+invoice = await repo.get(
+    invoice_id,
+    load_relations=['client', 'items', 'payments']
+)
+
+# Nested relationships
+invoices = await repo.get_all(load_relations=[
+    'client',
+    'items.product',
+    'items.product.category'
+])
+```
+
+**With Filtering & Pagination:**
+```python
+# With filtering
+invoices = await repo.filter(
+    status='paid',
+    _load_relations=['client', 'items']
+)
+
+# With pagination
+invoices, meta = await repo.paginate(
+    page=1,
+    per_page=20,
+    _load_relations=['client', 'items.product']
+)
+```
+
+**Performance:**
+```python
+# ❌ N+1 problem (async context doesn't support lazy loading!)
+invoices = await repo.get_all()
+for invoice in invoices:
+    # This will FAIL in async! Lazy loading not supported
+    print(invoice.client.name)  # Error!
+
+# ✅ Eager loading required in async
+invoices = await repo.get_all(load_relations=['client'])
+for invoice in invoices:
+    print(invoice.client.name)  # Works! Already loaded
+```
+
+**Important for Async:**
+- Lazy loading does NOT work in async SQLAlchemy
+- Always use `load_relations` for related data in async code
+- Prevents both errors AND N+1 problems
 
 **FastAPI with async repository:**
 ```python
@@ -1428,12 +1626,27 @@ class Repository(Generic[T]):
     def create_many(data_list: list[dict], commit: bool = True) -> list[T]
     
     # Read
-    def get(id: Any) -> T | None
-    def get_or_404(id: Any) -> T
-    def get_all(limit: int | None = None) -> list[T]
-    def first(**filters) -> T | None
-    def filter(_limit=None, _offset=None, _order_by=None, **filters) -> list[T]
-    def paginate(page: int = 1, per_page: int = 20, **filters) -> tuple[list[T], dict]
+    def get(id: Any, load_relations: list[str] | None = None) -> T | None
+    def get_or_404(id: Any, load_relations: list[str] | None = None) -> T
+    def get_all(
+        limit: int | None = None,
+        load_relations: list[str] | None = None
+    ) -> list[T]
+    def first(_load_relations: list[str] | None = None, **filters) -> T | None
+    def filter(
+        _limit=None,
+        _offset=None,
+        _order_by=None,
+        _load_relations: list[str] | None = None,
+        **filters
+    ) -> list[T]
+    def paginate(
+        page: int = 1,
+        per_page: int = 20,
+        _order_by: str | None = None,
+        _load_relations: list[str] | None = None,
+        **filters
+    ) -> tuple[list[T], dict]
     def exists(**filters) -> bool
     def count(**filters) -> int
 
@@ -1462,12 +1675,27 @@ class AsyncRepository(Generic[T]):
     async def create(data: dict, commit: bool = True) -> T
     async def create_many(data_list: list[dict], commit: bool = True) -> list[T]
     
-    async def get(id: Any) -> T | None
-    async def get_or_404(id: Any) -> T
-    async def get_all(limit: int | None = None) -> list[T]
-    async def first(**filters) -> T | None
-    async def filter(**filters) -> list[T]
-    async def paginate(page: int, per_page: int, **filters) -> tuple[list[T], dict]
+    async def get(id: Any, load_relations: list[str] | None = None) -> T | None
+    async def get_or_404(id: Any, load_relations: list[str] | None = None) -> T
+    async def get_all(
+        limit: int | None = None,
+        load_relations: list[str] | None = None
+    ) -> list[T]
+    async def first(_load_relations: list[str] | None = None, **filters) -> T | None
+    async def filter(
+        _limit=None,
+        _offset=None,
+        _order_by=None,
+        _load_relations: list[str] | None = None,
+        **filters
+    ) -> list[T]
+    async def paginate(
+        page: int,
+        per_page: int,
+        _order_by: str | None = None,
+        _load_relations: list[str] | None = None,
+        **filters
+    ) -> tuple[list[T], dict]
     async def exists(**filters) -> bool
     async def count(**filters) -> int
     
