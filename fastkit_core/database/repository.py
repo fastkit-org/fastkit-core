@@ -367,7 +367,7 @@ class Repository(Generic[T]):
             exists = repo.exists(email='john@test.com')
 ```
         """
-        return self.filter_one(**filters) is not None
+        return self.first(**filters) is not None
 
     def filter_or(self, *filter_groups, **and_filters) -> list[T]:
         """

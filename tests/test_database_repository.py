@@ -40,6 +40,9 @@ class User(Base, IntIdMixin, TimestampMixin):
     age: Mapped[int] = mapped_column(Integer)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
+    # Relationships
+    posts: Mapped[list["Post"]] = relationship("Post", back_populates="user")
+
 
 class Post(Base, IntIdMixin, SoftDeleteMixin):
     """Post model with soft delete."""
@@ -274,14 +277,14 @@ class TestReadOperations:
 
     def test_first(self, user_repo, sample_users):
         """Should get first record."""
-        user = user_repo.filter_one()
+        user = user_repo.first()
 
         assert user is not None
         assert user.id == sample_users[0].id
 
     def test_first_empty_table(self, user_repo):
         """Should return None for empty table."""
-        user = user_repo.filter_one()
+        user = user_repo.first()
 
         assert user is None
 
@@ -440,16 +443,16 @@ class TestFilterOperations:
         ages = [u.age for u in users]
         assert ages == sorted(ages, reverse=True)
 
-    def test_filter_one(self, user_repo, sample_users):
+    def test_first(self, user_repo, sample_users):
         """Should get first matching record."""
-        user = user_repo.filter_one(name='Alice')
+        user = user_repo.first(name='Alice')
 
         assert user is not None
         assert user.name == 'Alice'
 
-    def test_filter_one_not_found(self, user_repo, sample_users):
+    def test_first_not_found(self, user_repo, sample_users):
         """Should return None when not found."""
-        user = user_repo.filter_one(name='Nonexistent')
+        user = user_repo.first(name='Nonexistent')
 
         assert user is None
 
@@ -945,3 +948,258 @@ class TestIntegration:
 
         # Verify
         assert user_repo.count(age=21) == 100
+
+
+# ============================================================================
+# Test Eager Loading (Relationship Loading) - Sync
+# ============================================================================
+
+class TestSyncEagerLoading:
+    """Test eager loading functionality to prevent N+1 queries (sync version)."""
+
+    def test_get_with_load_relations_single(self, user_repo, post_repo):
+        """Should load single relationship with get()."""
+        # Create user with posts
+        user = user_repo.create({
+            'name': 'John Doe',
+            'email': 'john@example.com',
+            'age': 30
+        })
+
+        post_repo.create({
+            'title': 'First Post',
+            'content': 'Content here',
+            'user_id': user.id
+        })
+        post_repo.create({
+            'title': 'Second Post',
+            'content': 'More content',
+            'user_id': user.id
+        })
+
+        # Get user with posts loaded
+        loaded_user = user_repo.get(user.id, load_relations=['posts'])
+
+        assert loaded_user is not None
+        assert len(loaded_user.posts) == 2
+        assert loaded_user.posts[0].title in ['First Post', 'Second Post']
+        assert loaded_user.posts[1].title in ['First Post', 'Second Post']
+
+    def test_get_without_load_relations(self, user_repo, post_repo):
+        """Should work without load_relations parameter."""
+        user = user_repo.create({
+            'name': 'Jane',
+            'email': 'jane@example.com',
+            'age': 25
+        })
+
+        post_repo.create({
+            'title': 'Post',
+            'content': 'Content',
+            'user_id': user.id
+        })
+
+        # Get without eager loading
+        loaded_user = user_repo.get(user.id)
+
+        assert loaded_user is not None
+        assert loaded_user.name == 'Jane'
+
+    def test_get_all_with_load_relations(self, user_repo, post_repo):
+        """Should load relationships for all records with get_all()."""
+        # Create multiple users with posts
+        user1 = user_repo.create({'name': 'User1', 'email': 'u1@test.com', 'age': 20})
+        user2 = user_repo.create({'name': 'User2', 'email': 'u2@test.com', 'age': 30})
+        user3 = user_repo.create({'name': 'User3', 'email': 'u3@test.com', 'age': 40})
+
+        post_repo.create({'title': 'Post1', 'content': 'C1', 'user_id': user1.id})
+        post_repo.create({'title': 'Post2', 'content': 'C2', 'user_id': user1.id})
+        post_repo.create({'title': 'Post3', 'content': 'C3', 'user_id': user2.id})
+
+        # Get all users with posts
+        users = user_repo.get_all(load_relations=['posts'])
+
+        assert len(users) == 3
+
+        # Check that posts are loaded
+        user_with_2_posts = next(u for u in users if u.id == user1.id)
+        assert len(user_with_2_posts.posts) == 2
+
+        user_with_1_post = next(u for u in users if u.id == user2.id)
+        assert len(user_with_1_post.posts) == 1
+
+        user_with_0_posts = next(u for u in users if u.id == user3.id)
+        assert len(user_with_0_posts.posts) == 0
+
+    def test_filter_with_load_relations(self, user_repo, post_repo):
+        """Should load relationships when filtering."""
+        # Create users
+        active_user = user_repo.create({
+            'name': 'Active',
+            'email': 'active@test.com',
+            'age': 25,
+            'is_active': True
+        })
+        inactive_user = user_repo.create({
+            'name': 'Inactive',
+            'email': 'inactive@test.com',
+            'age': 30,
+            'is_active': False
+        })
+
+        post_repo.create({'title': 'Active Post', 'content': 'C', 'user_id': active_user.id})
+        post_repo.create({'title': 'Inactive Post', 'content': 'C', 'user_id': inactive_user.id})
+
+        # Filter active users with posts
+        active_users = user_repo.filter(
+            is_active=True,
+            _load_relations=['posts']
+        )
+
+        assert len(active_users) == 1
+        assert active_users[0].name == 'Active'
+        assert len(active_users[0].posts) == 1
+        assert active_users[0].posts[0].title == 'Active Post'
+
+    def test_paginate_with_load_relations(self, user_repo, post_repo):
+        """Should load relationships when paginating."""
+        # Create 5 users with posts
+        for i in range(5):
+            user = user_repo.create({
+                'name': f'User{i}',
+                'email': f'user{i}@test.com',
+                'age': 20 + i
+            })
+            post_repo.create({
+                'title': f'Post{i}',
+                'content': f'Content{i}',
+                'user_id': user.id
+            })
+
+        # Paginate with eager loading
+        users, meta = user_repo.paginate(
+            page=1,
+            per_page=3,
+            _load_relations=['posts']
+        )
+
+        assert len(users) == 3
+        assert meta['total'] == 5
+        assert meta['total_pages'] == 2
+
+        # All users should have posts loaded
+        for user in users:
+            assert len(user.posts) == 1
+
+    def test_get_or_404_with_load_relations(self, user_repo, post_repo):
+        """Should load relationships with get_or_404()."""
+        user = user_repo.create({'name': 'Test', 'email': 'test@test.com', 'age': 25})
+        post_repo.create({'title': 'Post', 'content': 'C', 'user_id': user.id})
+
+        # Get with eager loading
+        loaded_user = user_repo.get_or_404(
+            user.id,
+            load_relations=['posts']
+        )
+
+        assert loaded_user.name == 'Test'
+        assert len(loaded_user.posts) == 1
+        assert loaded_user.posts[0].title == 'Post'
+
+    def test_load_relations_none_works(self, user_repo):
+        """Should handle load_relations=None gracefully."""
+        user = user_repo.create({'name': 'Test', 'email': 't@test.com', 'age': 25})
+
+        # Should work without error
+        loaded = user_repo.get(user.id, load_relations=None)
+        assert loaded is not None
+        assert loaded.name == 'Test'
+
+    def test_load_relations_empty_list_works(self, user_repo):
+        """Should handle load_relations=[] gracefully."""
+        user = user_repo.create({'name': 'Test', 'email': 't@test.com', 'age': 25})
+
+        loaded = user_repo.get(user.id, load_relations=[])
+        assert loaded is not None
+        assert loaded.name == 'Test'
+
+    def test_invalid_relation_name_raises_error(self, user_repo):
+        """Should raise AttributeError for invalid relationship name."""
+        user = user_repo.create({'name': 'Test', 'email': 't@test.com', 'age': 25})
+
+        with pytest.raises(AttributeError):
+            user_repo.get(
+                user.id,
+                load_relations=['nonexistent_relation']
+            )
+
+    def test_reverse_relationship_loading(self, user_repo, post_repo):
+        """Should load reverse relationships (post.user)."""
+        user = user_repo.create({'name': 'Author', 'email': 'author@test.com', 'age': 30})
+        post = post_repo.create({
+            'title': 'My Post',
+            'content': 'Content',
+            'user_id': user.id
+        })
+
+        # Load post with user
+        loaded_post = post_repo.get(post.id, load_relations=['user'])
+
+        assert loaded_post is not None
+        assert loaded_post.user.name == 'Author'
+        assert loaded_post.user.email == 'author@test.com'
+
+    def test_filter_with_relations_and_operators(self, user_repo, post_repo):
+        """Should combine filters, operators, and eager loading."""
+        # Create users with different ages and posts
+        young_user = user_repo.create({'name': 'Young', 'email': 'young@test.com', 'age': 20})
+        old_user = user_repo.create({'name': 'Old', 'email': 'old@test.com', 'age': 50})
+
+        post_repo.create({'title': 'Young Post', 'content': 'C', 'user_id': young_user.id})
+        post_repo.create({'title': 'Old Post', 'content': 'C', 'user_id': old_user.id})
+
+        # Filter users age >= 30 with posts loaded
+        users = user_repo.filter(
+            age__gte=30,
+            _load_relations=['posts']
+        )
+
+        assert len(users) == 1
+        assert users[0].name == 'Old'
+        assert users[0].age == 50
+        assert len(users[0].posts) == 1
+        assert users[0].posts[0].title == 'Old Post'
+
+    def test_paginate_with_filters_and_relations(self, user_repo, post_repo):
+        """Should combine pagination, filters, and eager loading."""
+        # Create active and inactive users
+        for i in range(3):
+            user = user_repo.create({
+                'name': f'Active{i}',
+                'email': f'active{i}@test.com',
+                'age': 25,
+                'is_active': True
+            })
+            post_repo.create({'title': f'Post{i}', 'content': 'C', 'user_id': user.id})
+
+        for i in range(2):
+            user = user_repo.create({
+                'name': f'Inactive{i}',
+                'email': f'inactive{i}@test.com',
+                'age': 30,
+                'is_active': False
+            })
+            post_repo.create({'title': f'Inactive Post{i}', 'content': 'C', 'user_id': user.id})
+
+        # Paginate active users with posts
+        users, meta = user_repo.paginate(
+            page=1,
+            per_page=2,
+            is_active=True,
+            _load_relations=['posts']
+        )
+
+        assert len(users) == 2
+        assert meta['total'] == 3
+        assert all(u.is_active for u in users)
+        assert all(len(u.posts) == 1 for u in users)
