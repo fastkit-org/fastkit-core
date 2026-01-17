@@ -772,7 +772,7 @@ user_response = service.find(1, load_relations=['posts'])
 - Service layer simply delegates `load_relations` to repository
 - All N+1 prevention happens at repository level
 - No performance overhead from service layer
-- See [Database Documentation](database.md#eager-loading) for detailed performance info
+- See [Database Documentation](database.md) for detailed performance info
 
 ### Create Operations
 
