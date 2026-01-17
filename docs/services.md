@@ -647,6 +647,133 @@ products, meta = await service.paginate(
 )
 ```
 
+### Eager Loading (Load Relationships)
+
+Services support eager loading to prevent N+1 query problems. The service layer passes `load_relations` parameters to the underlying repository.
+
+**Basic Usage:**
+```python
+# Sync - load user with posts
+user = service.find(1, load_relations=['posts'])
+
+# Async - load user with posts
+user = await service.find(1, load_relations=['posts'])
+
+# Access relationships without additional queries
+print(user.posts)  # Already loaded!
+```
+
+**Multiple Relationships:**
+```python
+# Sync
+invoice = service.find(
+    invoice_id,
+    load_relations=['client', 'items', 'payments']
+)
+
+# Async
+invoice = await service.find(
+    invoice_id,
+    load_relations=['client', 'items', 'payments']
+)
+
+# All relationships loaded
+print(invoice.client.name)
+print(len(invoice.items))
+print(invoice.payments)
+```
+
+**Nested Relationships:**
+```python
+# Sync - load nested data
+invoices = service.get_all(load_relations=[
+    'client',
+    'items.product',
+    'items.product.category'
+])
+
+# Async
+invoices = await service.get_all(load_relations=[
+    'client',
+    'items.product',
+    'items.product.category'
+])
+
+# Access nested data without N+1
+for invoice in invoices:
+    for item in invoice.items:
+        print(f"{item.product.name} - {item.product.category.name}")
+```
+
+**With Filtering:**
+```python
+# Sync
+invoices = service.filter(
+    status='paid',
+    _load_relations=['client', 'items']
+)
+
+# Async
+invoices = await service.filter(
+    status='paid',
+    _load_relations=['client', 'items']
+)
+```
+
+**With Pagination:**
+```python
+# Sync
+invoices, meta = service.paginate(
+    page=1,
+    per_page=20,
+    _load_relations=['client', 'items.product']
+)
+
+# Async
+invoices, meta = await service.paginate(
+    page=1,
+    per_page=20,
+    _load_relations=['client', 'items.product']
+)
+```
+
+**All Service Methods Support Eager Loading:**
+```python
+# Sync
+user = service.find(id, load_relations=['posts'])
+user = service.find_or_fail(id, load_relations=['posts'])
+users = service.get_all(load_relations=['posts'])
+users = service.filter(status='active', _load_relations=['posts'])
+users, meta = service.paginate(page=1, per_page=20, _load_relations=['posts'])
+user = service.filter_one(email='john@test.com', _load_relations=['posts'])
+
+# Async (same API with await)
+user = await service.find(id, load_relations=['posts'])
+user = await service.find_or_fail(id, load_relations=['posts'])
+users = await service.get_all(load_relations=['posts'])
+users = await service.filter(status='active', _load_relations=['posts'])
+users, meta = await service.paginate(page=1, per_page=20, _load_relations=['posts'])
+user = await service.filter_one(email='john@test.com', _load_relations=['posts'])
+```
+
+**With Response Schema Mapping:**
+```python
+# Service with response schema
+class UserService(BaseCrudService[User, UserCreate, UserUpdate, UserResponse]):
+    def __init__(self, repository: Repository):
+        super().__init__(repository, response_schema=UserResponse)
+
+# Eager loading works with response mapping
+user_response = service.find(1, load_relations=['posts'])
+# Returns UserResponse, relationships loaded before mapping
+```
+
+**Performance Note:**
+- Service layer simply delegates `load_relations` to repository
+- All N+1 prevention happens at repository level
+- No performance overhead from service layer
+- See [Database Documentation](database.md) for detailed performance info
+
 ### Create Operations
 
 ```python
@@ -1242,24 +1369,84 @@ async def after_delete(id: Any) -> None
 
 **Sync:**
 ```python
-def find(id: Any) -> ResponseSchemaType | ModelType | None
-def find_or_fail(id: Any) -> ResponseSchemaType | ModelType
-def get_all(limit: int | None = None) -> list[ResponseSchemaType | ModelType]
-def filter(_limit=None, _offset=None, _order_by=None, **filters) -> list[ResponseSchemaType | ModelType]
-def filter_one(**filters) -> ResponseSchemaType | ModelType | None
-def paginate(page=1, per_page=20, **filters) -> tuple[list[ResponseSchemaType | ModelType], dict]
+def find(
+    id: Any,
+    load_relations: list[str] | None = None
+) -> ResponseSchemaType | ModelType | None
+
+def find_or_fail(
+    id: Any,
+    load_relations: list[str] | None = None
+) -> ResponseSchemaType | ModelType
+
+def get_all(
+    limit: int | None = None,
+    load_relations: list[str] | None = None
+) -> list[ResponseSchemaType | ModelType]
+
+def filter(
+    _limit=None,
+    _offset=None,
+    _order_by=None,
+    _load_relations: list[str] | None = None,
+    **filters
+) -> list[ResponseSchemaType | ModelType]
+
+def filter_one(
+    _load_relations: list[str] | None = None,
+    **filters
+) -> ResponseSchemaType | ModelType | None
+
+def paginate(
+    page=1,
+    per_page=20,
+    _order_by: str | None = None,
+    _load_relations: list[str] | None = None,
+    **filters
+) -> tuple[list[ResponseSchemaType | ModelType], dict]
+
 def exists(**filters) -> bool
 def count(**filters) -> int
 ```
 
 **Async:**
 ```python
-async def find(id: Any) -> ResponseSchemaType | ModelType | None
-async def find_or_fail(id: Any) -> ResponseSchemaType | ModelType
-async def get_all(limit: int | None = None) -> list[ResponseSchemaType | ModelType]
-async def filter(_limit=None, _offset=None, _order_by=None, **filters) -> list[ResponseSchemaType | ModelType]
-async def filter_one(**filters) -> ResponseSchemaType | ModelType | None
-async def paginate(page=1, per_page=20, **filters) -> tuple[list[ResponseSchemaType | ModelType], dict]
+async def find(
+    id: Any,
+    load_relations: list[str] | None = None
+) -> ResponseSchemaType | ModelType | None
+
+async def find_or_fail(
+    id: Any,
+    load_relations: list[str] | None = None
+) -> ResponseSchemaType | ModelType
+
+async def get_all(
+    limit: int | None = None,
+    load_relations: list[str] | None = None
+) -> list[ResponseSchemaType | ModelType]
+
+async def filter(
+    _limit=None,
+    _offset=None,
+    _order_by=None,
+    _load_relations: list[str] | None = None,
+    **filters
+) -> list[ResponseSchemaType | ModelType]
+
+async def filter_one(
+    _load_relations: list[str] | None = None,
+    **filters
+) -> ResponseSchemaType | ModelType | None
+
+async def paginate(
+    page=1,
+    per_page=20,
+    _order_by: str | None = None,
+    _load_relations: list[str] | None = None,
+    **filters
+) -> tuple[list[ResponseSchemaType | ModelType], dict]
+
 async def exists(**filters) -> bool
 async def count(**filters) -> int
 ```

@@ -328,14 +328,15 @@ class AsyncBaseCrudService(
 
     async def find(
         self,
-        id: Any
+        id: Any,
+        load_relations: list[str] | None = None,
     ) -> Optional[ResponseSchemaType] | Optional[ModelType]:
         """
         Find record by ID (async).
 
         Args:
             id: Primary key value
-
+            load_relations: List of relationship names to eager load
         Returns:
             Response schema or model instance, or None if not found
 
@@ -346,19 +347,20 @@ class AsyncBaseCrudService(
             # Without response_schema
             user: User = await service.find(1)
         """
-        instance = await self.repository.get(id)
+        instance = await self.repository.get(id, load_relations=load_relations)
         return self._to_response(instance)
 
     async def find_or_fail(
         self,
-        id: Any
+        id: Any,
+        load_relations: list[str] | None = None,
     ) -> ResponseSchemaType | ModelType:
         """
         Find record by ID or raise exception (async).
 
         Args:
             id: Primary key value
-
+            load_relations: List of relationship names to eager load
         Returns:
             Response schema or model instance
 
@@ -368,20 +370,22 @@ class AsyncBaseCrudService(
         Example:
             user: UserResponse = await service.find_or_fail(1)
         """
-        instance = await self.repository.get(id)
+        instance = await self.repository.get(id, load_relations=load_relations)
         if instance is None:
             model_name = self.repository.model.__name__
             raise ValueError(f"{model_name} with id={id} not found")
         return self._to_response(instance)
 
     async def get_all(
-        self,
-        limit: int | None = None
+            self,
+            limit: int | None = None,
+            load_relations: list[str] | None = None
     ) -> list[ResponseSchemaType] | list[ModelType]:
         """
         Get all records (async).
 
         Args:
+            load_relations:  List of relations
             limit: Maximum number of records
 
         Returns:
@@ -390,7 +394,7 @@ class AsyncBaseCrudService(
         Example:
             users: list[UserResponse] = await service.get_all(limit=100)
         """
-        instances = await self.repository.get_all(limit=limit)
+        instances = await self.repository.get_all(limit=limit, load_relations=load_relations)
         return self._to_response_list(instances)
 
     async def filter(
@@ -398,6 +402,7 @@ class AsyncBaseCrudService(
         _limit: int | None = None,
         _offset: int | None = None,
         _order_by: str | None = None,
+        _load_relations: list[str] | None = None,
         **filters
     ) -> list[ResponseSchemaType] | list[ModelType]:
         """
@@ -406,6 +411,7 @@ class AsyncBaseCrudService(
         Supports Django-style operators (field__gte, field__in, etc.).
 
         Args:
+            _load_relations: List of relations
             _limit: Limit number of results
             _offset: Offset for pagination
             _order_by: Order by field (prefix with - for DESC)
@@ -425,18 +431,21 @@ class AsyncBaseCrudService(
             _limit=_limit,
             _offset=_offset,
             _order_by=_order_by,
+            _load_relations=_load_relations,
             **filters
         )
         return self._to_response_list(instances)
 
     async def filter_one(
         self,
+        load_relations: list[str] | None = None,
         **filters
     ) -> Optional[ResponseSchemaType] | Optional[ModelType]:
         """
         Get first record matching filters (async).
 
         Args:
+            load_relations: List of relationship names to eager load
             **filters: Filter conditions with operators
 
         Returns:
@@ -445,7 +454,7 @@ class AsyncBaseCrudService(
         Example:
             user: UserResponse | None = await service.filter_one(email='john@example.com')
         """
-        results = await self.repository.filter(_limit=1, **filters)
+        results = await self.repository.filter(_limit=1, _load_relations=load_relations, **filters)
         instance = results[0] if results else None
         return self._to_response(instance)
 
@@ -454,6 +463,7 @@ class AsyncBaseCrudService(
         page: int = 1,
         per_page: int = 20,
         _order_by: str | None = None,
+        _load_relations: list[str] | None = None,
         **filters
     ) -> tuple[
         list[ResponseSchemaType] | list[ModelType],
@@ -463,6 +473,7 @@ class AsyncBaseCrudService(
         Paginate records with operator support (async).
 
         Args:
+            _load_relations: List of relations
             page: Page number (1-indexed)
             per_page: Items per page
             _order_by: Order by field (prefix with - for DESC)
@@ -485,6 +496,7 @@ class AsyncBaseCrudService(
             page=page,
             per_page=per_page,
             _order_by=_order_by,
+            _load_relations=_load_relations,
             **filters
         )
         return self._to_response_list(instances), metadata

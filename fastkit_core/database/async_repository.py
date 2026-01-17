@@ -7,11 +7,11 @@ Full feature parity with sync Repository.
 
 from __future__ import annotations
 
-from typing import Any, Generic, Type, TypeVar
+from typing import Any, Generic, Type, TypeVar, Optional, List
 
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, joinedload
 
 from fastkit_core.database.base import Base
 
@@ -85,6 +85,29 @@ class AsyncRepository(Generic[T]):
     def _has_soft_delete(self) -> bool:
         """Check if model has soft delete support."""
         return hasattr(self.model, 'deleted_at')
+
+    def _apply_eager_loading(
+            self,
+            stmt,
+            load: Optional[List[str]] = None,
+            load_strategy: str = 'selectin'
+    ):
+        """Apply eager loading to statement."""
+        if not load:
+            return stmt
+
+        loader = selectinload if load_strategy == 'selectin' else joinedload
+
+        for relationship_path in load:
+            parts = relationship_path.split('.')
+            current_loader = loader(getattr(self.model, parts[0]))
+
+            for part in parts[1:]:
+                current_loader = current_loader.selectinload(part)
+
+            stmt = stmt.options(current_loader)
+
+        return stmt
 
     def query(self):
         """Get query builder for complex queries."""
@@ -178,13 +201,7 @@ class AsyncRepository(Generic[T]):
         query = select(self.model).where(self.model.id == id)
 
         if load_relations:
-            for relation_name in load_relations:
-                if not hasattr(self.model, relation_name):
-                    raise ValueError(
-                        f"Relationship '{relation_name}' does not exist on {self.model.__name__}"
-                    )
-                relation = getattr(self.model, relation_name)
-                query = query.options(selectinload(relation))
+            query = self._apply_eager_loading(query, load_relations)
 
         if self._has_soft_delete():
             query = query.where(self.model.deleted_at.is_(None))
@@ -236,13 +253,7 @@ class AsyncRepository(Generic[T]):
         query = select(self.model)
 
         if load_relations:
-            for relation_name in load_relations:
-                if not hasattr(self.model, relation_name):
-                    raise ValueError(
-                        f"Relationship '{relation_name}' does not exist on {self.model.__name__}"
-                    )
-                relation = getattr(self.model, relation_name)
-                query = query.options(selectinload(relation))
+            query = self._apply_eager_loading(query, load_relations)
 
         if self._has_soft_delete():
             query = query.where(self.model.deleted_at.is_(None))
@@ -314,13 +325,7 @@ class AsyncRepository(Generic[T]):
             query = query.where(and_(*conditions))
 
         if _load_relations:
-            for relation_name in _load_relations:
-                if not hasattr(self.model, relation_name):
-                    raise ValueError(
-                        f"Relationship '{relation_name}' does not exist on {self.model.__name__}"
-                    )
-                relation = getattr(self.model, relation_name)
-                query = query.options(selectinload(relation))
+            query = self._apply_eager_loading(query, _load_relations)
 
         # Apply ordering
         if _order_by:
@@ -345,12 +350,16 @@ class AsyncRepository(Generic[T]):
         result = await self.session.execute(query)
         return result.scalars().all()
 
-    async def first(self, _order_by: str | None = None, **filters) -> T | None:
+    async def first(self,
+                    _order_by: str | None = None,
+                    _load_relations: list[str] | None = None,
+                    **filters) -> T | None:
         """
         Get first record matching filters asynchronously.
 
         Args:
             _order_by: Order by field
+            _load_relations: List of relationship names to eager load
             **filters: Filter conditions
 
         Returns:
@@ -362,7 +371,7 @@ class AsyncRepository(Generic[T]):
             newest = await repo.first(_order_by='-created_at')
         ```
         """
-        results = await self.filter(_limit=1, _order_by=_order_by, **filters)
+        results = await self.filter(_limit=1, _order_by=_order_by, _load_relations=_load_relations, **filters)
         return results[0] if results else None
 
     async def exists(self, **filters) -> bool:

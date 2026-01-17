@@ -17,8 +17,8 @@ import pytest
 import pytest_asyncio
 from datetime import datetime
 from decimal import Decimal
-from sqlalchemy import String, Integer, Numeric, DateTime, select
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import String, Integer, Numeric, ForeignKey
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 
 from fastkit_core.database import Base, IntIdMixin, TimestampMixin, SoftDeleteMixin
@@ -29,8 +29,8 @@ from fastkit_core.database.async_repository import AsyncRepository, create_async
 # Test Models
 # ============================================================================
 
-class User(Base, IntIdMixin, TimestampMixin):
-    """Test user model."""
+class AsyncUser(Base, IntIdMixin, TimestampMixin):
+    """Test user model for async repository tests."""
     __tablename__ = 'async_repo_users'
 
     name: Mapped[str] = mapped_column(String(100))
@@ -38,19 +38,33 @@ class User(Base, IntIdMixin, TimestampMixin):
     age: Mapped[int] = mapped_column(Integer, nullable=True)
     is_active: Mapped[bool] = mapped_column(default=True)
 
+    # Relationships
+    posts: Mapped[list["AsyncPost"]] = relationship(
+        "AsyncPost",
+        foreign_keys="AsyncPost.user_id",
+        viewonly=True
+    )
 
-class Post(Base, IntIdMixin, TimestampMixin, SoftDeleteMixin):
-    """Test post model with soft delete."""
+
+class AsyncPost(Base, IntIdMixin, TimestampMixin, SoftDeleteMixin):
+    """Test post model with soft delete for async repository tests."""
     __tablename__ = 'async_repo_posts'
 
     title: Mapped[str] = mapped_column(String(200))
     content: Mapped[str] = mapped_column(String(1000))
     views: Mapped[int] = mapped_column(Integer, default=0)
-    user_id: Mapped[int] = mapped_column(Integer)
+    user_id: Mapped[int] = mapped_column(ForeignKey('async_repo_users.id'))
+
+    # Relationships
+    user: Mapped["AsyncUser"] = relationship(
+        "AsyncUser",
+        foreign_keys=[user_id],
+        viewonly=True
+    )
 
 
-class Product(Base, IntIdMixin):
-    """Test product model."""
+class AsyncProduct(Base, IntIdMixin):
+    """Test product model for async repository tests."""
     __tablename__ = 'async_repo_products'
 
     name: Mapped[str] = mapped_column(String(100))
@@ -96,19 +110,19 @@ async def async_session(async_engine):
 @pytest_asyncio.fixture(scope='function')
 async def user_repo(async_session):
     """Create user repository."""
-    return AsyncRepository(User, async_session)
+    return AsyncRepository(AsyncUser, async_session)
 
 
 @pytest_asyncio.fixture(scope='function')
 async def post_repo(async_session):
     """Create post repository."""
-    return AsyncRepository(Post, async_session)
+    return AsyncRepository(AsyncPost, async_session)
 
 
 @pytest_asyncio.fixture(scope='function')
 async def product_repo(async_session):
     """Create product repository."""
-    return AsyncRepository(Product, async_session)
+    return AsyncRepository(AsyncProduct, async_session)
 
 
 # ============================================================================
@@ -152,24 +166,24 @@ class TestAsyncCreate:
     async def test_create_many(self, user_repo):
         """Should create multiple records."""
         users = await user_repo.create_many([
-            {'name': 'User 1', 'email': 'user1@example.com'},
-            {'name': 'User 2', 'email': 'user2@example.com'},
-            {'name': 'User 3', 'email': 'user3@example.com'}
+            {'name': 'AsyncUser 1', 'email': 'user1@example.com'},
+            {'name': 'AsyncUser 2', 'email': 'user2@example.com'},
+            {'name': 'AsyncUser 3', 'email': 'user3@example.com'}
         ])
 
         assert len(users) == 3
         assert all(u.id is not None for u in users)
-        assert users[0].name == 'User 1'
-        assert users[1].name == 'User 2'
-        assert users[2].name == 'User 3'
+        assert users[0].name == 'AsyncUser 1'
+        assert users[1].name == 'AsyncUser 2'
+        assert users[2].name == 'AsyncUser 3'
 
     @pytest.mark.asyncio
     async def test_create_many_without_commit(self, user_repo):
         """Should create many without committing."""
         users = await user_repo.create_many(
             [
-                {'name': 'User A', 'email': 'a@example.com'},
-                {'name': 'User B', 'email': 'b@example.com'}
+                {'name': 'AsyncUser A', 'email': 'a@example.com'},
+                {'name': 'AsyncUser B', 'email': 'b@example.com'}
             ],
             commit=False
         )
@@ -186,7 +200,7 @@ class TestAsyncCreate:
     async def test_create_with_defaults(self, user_repo):
         """Should use default values."""
         user = await user_repo.create({
-            'name': 'Test User',
+            'name': 'Test AsyncUser',
             'email': 'test@example.com'
         })
 
@@ -246,7 +260,7 @@ class TestAsyncRead:
     async def test_get_all(self, user_repo):
         """Should get all records."""
         await user_repo.create_many([
-            {'name': f'User {i}', 'email': f'user{i}@example.com'}
+            {'name': f'AsyncUser {i}', 'email': f'user{i}@example.com'}
             for i in range(5)
         ])
 
@@ -258,7 +272,7 @@ class TestAsyncRead:
     async def test_get_all_with_limit(self, user_repo):
         """Should respect limit."""
         await user_repo.create_many([
-            {'name': f'User {i}', 'email': f'user{i}@example.com'}
+            {'name': f'AsyncUser {i}', 'email': f'user{i}@example.com'}
             for i in range(10)
         ])
 
@@ -317,7 +331,7 @@ class TestAsyncRead:
     async def test_count(self, user_repo):
         """Should count records."""
         await user_repo.create_many([
-            {'name': f'User {i}', 'email': f'user{i}@example.com', 'age': 20 + i}
+            {'name': f'AsyncUser {i}', 'email': f'user{i}@example.com', 'age': 20 + i}
             for i in range(10)
         ])
 
@@ -353,9 +367,9 @@ class TestAsyncFilter:
     async def test_filter_greater_than(self, user_repo):
         """Should filter with gt operator."""
         await user_repo.create_many([
-            {'name': 'User 1', 'email': 'user1@example.com', 'age': 20},
-            {'name': 'User 2', 'email': 'user2@example.com', 'age': 30},
-            {'name': 'User 3', 'email': 'user3@example.com', 'age': 40}
+            {'name': 'AsyncUser 1', 'email': 'user1@example.com', 'age': 20},
+            {'name': 'AsyncUser 2', 'email': 'user2@example.com', 'age': 30},
+            {'name': 'AsyncUser 3', 'email': 'user3@example.com', 'age': 40}
         ])
 
         results = await user_repo.filter(age__gt=25)
@@ -367,9 +381,9 @@ class TestAsyncFilter:
     async def test_filter_greater_than_or_equal(self, user_repo):
         """Should filter with gte operator."""
         await user_repo.create_many([
-            {'name': 'User 1', 'email': 'user1@example.com', 'age': 20},
-            {'name': 'User 2', 'email': 'user2@example.com', 'age': 30},
-            {'name': 'User 3', 'email': 'user3@example.com', 'age': 40}
+            {'name': 'AsyncUser 1', 'email': 'user1@example.com', 'age': 20},
+            {'name': 'AsyncUser 2', 'email': 'user2@example.com', 'age': 30},
+            {'name': 'AsyncUser 3', 'email': 'user3@example.com', 'age': 40}
         ])
 
         results = await user_repo.filter(age__gte=30)
@@ -381,8 +395,8 @@ class TestAsyncFilter:
     async def test_filter_less_than(self, user_repo):
         """Should filter with lt operator."""
         await user_repo.create_many([
-            {'name': 'User 1', 'email': 'user1@example.com', 'age': 20},
-            {'name': 'User 2', 'email': 'user2@example.com', 'age': 30}
+            {'name': 'AsyncUser 1', 'email': 'user1@example.com', 'age': 20},
+            {'name': 'AsyncUser 2', 'email': 'user2@example.com', 'age': 30}
         ])
 
         results = await user_repo.filter(age__lt=25)
@@ -461,7 +475,7 @@ class TestAsyncFilter:
         """Should filter with contains."""
         await user_repo.create_many([
             {'name': 'Administrator', 'email': 'admin@example.com'},
-            {'name': 'User Admin', 'email': 'useradmin@example.com'},
+            {'name': 'AsyncUser Admin', 'email': 'useradmin@example.com'},
             {'name': 'Guest', 'email': 'guest@example.com'}
         ])
 
@@ -487,7 +501,7 @@ class TestAsyncFilter:
     async def test_filter_with_limit(self, user_repo):
         """Should respect limit in filter."""
         await user_repo.create_many([
-            {'name': f'User {i}', 'email': f'user{i}@example.com'}
+            {'name': f'AsyncUser {i}', 'email': f'user{i}@example.com'}
             for i in range(10)
         ])
 
@@ -499,7 +513,7 @@ class TestAsyncFilter:
     async def test_filter_with_offset(self, user_repo):
         """Should respect offset in filter."""
         await user_repo.create_many([
-            {'name': f'User {i}', 'email': f'user{i}@example.com', 'age': i}
+            {'name': f'AsyncUser {i}', 'email': f'user{i}@example.com', 'age': i}
             for i in range(5)
         ])
 
@@ -591,9 +605,9 @@ class TestAsyncUpdate:
     async def test_update_many(self, user_repo):
         """Should update multiple records."""
         await user_repo.create_many([
-            {'name': 'User 1', 'email': 'user1@example.com', 'is_active': True},
-            {'name': 'User 2', 'email': 'user2@example.com', 'is_active': True},
-            {'name': 'User 3', 'email': 'user3@example.com', 'is_active': False}
+            {'name': 'AsyncUser 1', 'email': 'user1@example.com', 'is_active': True},
+            {'name': 'AsyncUser 2', 'email': 'user2@example.com', 'is_active': True},
+            {'name': 'AsyncUser 3', 'email': 'user3@example.com', 'is_active': False}
         ])
 
         count = await user_repo.update_many(
@@ -642,7 +656,7 @@ class TestAsyncDelete:
     async def test_soft_delete(self, post_repo):
         """Should soft delete if model supports it."""
         post = await post_repo.create({
-            'title': 'Test Post',
+            'title': 'Test AsyncPost',
             'content': 'Content',
             'user_id': 1
         })
@@ -659,7 +673,7 @@ class TestAsyncDelete:
     async def test_force_delete(self, post_repo):
         """Should force hard delete even with soft delete support."""
         post = await post_repo.create({
-            'title': 'Test Post',
+            'title': 'Test AsyncPost',
             'content': 'Content',
             'user_id': 1
         })
@@ -676,9 +690,9 @@ class TestAsyncDelete:
     async def test_delete_many(self, user_repo):
         """Should delete multiple records."""
         await user_repo.create_many([
-            {'name': 'User 1', 'email': 'user1@example.com', 'is_active': False},
-            {'name': 'User 2', 'email': 'user2@example.com', 'is_active': False},
-            {'name': 'User 3', 'email': 'user3@example.com', 'is_active': True}
+            {'name': 'AsyncUser 1', 'email': 'user1@example.com', 'is_active': False},
+            {'name': 'AsyncUser 2', 'email': 'user2@example.com', 'is_active': False},
+            {'name': 'AsyncUser 3', 'email': 'user3@example.com', 'is_active': True}
         ])
 
         count = await user_repo.delete_many({'is_active': False})
@@ -701,7 +715,7 @@ class TestAsyncPagination:
     async def test_paginate_first_page(self, user_repo):
         """Should paginate first page."""
         await user_repo.create_many([
-            {'name': f'User {i}', 'email': f'user{i}@example.com'}
+            {'name': f'AsyncUser {i}', 'email': f'user{i}@example.com'}
             for i in range(25)
         ])
 
@@ -719,7 +733,7 @@ class TestAsyncPagination:
     async def test_paginate_middle_page(self, user_repo):
         """Should paginate middle page."""
         await user_repo.create_many([
-            {'name': f'User {i}', 'email': f'user{i}@example.com'}
+            {'name': f'AsyncUser {i}', 'email': f'user{i}@example.com'}
             for i in range(25)
         ])
 
@@ -734,7 +748,7 @@ class TestAsyncPagination:
     async def test_paginate_last_page(self, user_repo):
         """Should paginate last page."""
         await user_repo.create_many([
-            {'name': f'User {i}', 'email': f'user{i}@example.com'}
+            {'name': f'AsyncUser {i}', 'email': f'user{i}@example.com'}
             for i in range(25)
         ])
 
@@ -749,7 +763,7 @@ class TestAsyncPagination:
     async def test_paginate_with_filters(self, user_repo):
         """Should paginate with filters."""
         await user_repo.create_many([
-            {'name': f'User {i}', 'email': f'user{i}@example.com', 'age': 20 + i}
+            {'name': f'AsyncUser {i}', 'email': f'user{i}@example.com', 'age': 20 + i}
             for i in range(20)
         ])
 
@@ -886,16 +900,16 @@ class TestAsyncRepositoryFactory:
     @pytest.mark.asyncio
     async def test_create_async_repository(self, async_session):
         """Should create repository using factory."""
-        repo = create_async_repository(User, async_session)
+        repo = create_async_repository(AsyncUser, async_session)
 
         assert isinstance(repo, AsyncRepository)
-        assert repo.model == User
+        assert repo.model == AsyncUser
         assert repo.session == async_session
 
     @pytest.mark.asyncio
     async def test_factory_repository_works(self, async_session):
         """Should work same as direct instantiation."""
-        repo = create_async_repository(User, async_session)
+        repo = create_async_repository(AsyncUser, async_session)
 
         user = await repo.create({
             'name': 'Test',
@@ -1012,7 +1026,7 @@ class TestAsyncSpecialScenarios:
         # Create 100 users in bulk
         start = time.time()
         users = await user_repo.create_many([
-            {'name': f'User {i}', 'email': f'user{i}@example.com'}
+            {'name': f'AsyncUser {i}', 'email': f'user{i}@example.com'}
             for i in range(100)
         ])
         bulk_time = time.time() - start
@@ -1029,7 +1043,7 @@ class TestAsyncSpecialScenarios:
 
         # Create test data
         await user_repo.create_many([
-            {'name': f'User {i}', 'email': f'user{i}@example.com'}
+            {'name': f'AsyncUser {i}', 'email': f'user{i}@example.com'}
             for i in range(10)
         ])
 
@@ -1047,7 +1061,7 @@ class TestAsyncSpecialScenarios:
         """Should exclude soft-deleted records by default."""
         # Create posts
         posts = await post_repo.create_many([
-            {'title': f'Post {i}', 'content': 'Content', 'user_id': 1}
+            {'title': f'AsyncPost {i}', 'content': 'Content', 'user_id': 1}
             for i in range(5)
         ])
 
@@ -1067,7 +1081,7 @@ class TestAsyncSpecialScenarios:
     async def test_decimal_precision(self, product_repo):
         """Should handle decimal precision correctly."""
         product = await product_repo.create({
-            'name': 'Test Product',
+            'name': 'Test AsyncProduct',
             'price': Decimal('19.99'),
             'stock': 10,
             'category': 'Test'
@@ -1093,10 +1107,10 @@ class TestAsyncSpecialScenarios:
     async def test_filtering_with_between(self, product_repo):
         """Should filter with between operator."""
         await product_repo.create_many([
-            {'name': 'Product 1', 'price': Decimal('10.00'), 'stock': 5, 'category': 'A'},
-            {'name': 'Product 2', 'price': Decimal('50.00'), 'stock': 5, 'category': 'A'},
-            {'name': 'Product 3', 'price': Decimal('100.00'), 'stock': 5, 'category': 'A'},
-            {'name': 'Product 4', 'price': Decimal('150.00'), 'stock': 5, 'category': 'A'}
+            {'name': 'AsyncProduct 1', 'price': Decimal('10.00'), 'stock': 5, 'category': 'A'},
+            {'name': 'AsyncProduct 2', 'price': Decimal('50.00'), 'stock': 5, 'category': 'A'},
+            {'name': 'AsyncProduct 3', 'price': Decimal('100.00'), 'stock': 5, 'category': 'A'},
+            {'name': 'AsyncProduct 4', 'price': Decimal('150.00'), 'stock': 5, 'category': 'A'}
         ])
 
         results = await product_repo.filter(
@@ -1110,7 +1124,7 @@ class TestAsyncSpecialScenarios:
     async def test_pagination_boundary_cases(self, user_repo):
         """Should handle pagination boundary cases."""
         await user_repo.create_many([
-            {'name': f'User {i}', 'email': f'user{i}@example.com'}
+            {'name': f'AsyncUser {i}', 'email': f'user{i}@example.com'}
             for i in range(3)
         ])
 
@@ -1192,7 +1206,7 @@ class TestAsyncFastAPIIntegration:
 
         class UserService:
             def __init__(self, db: AsyncSession):
-                self.repo = AsyncRepository(User, db)
+                self.repo = AsyncRepository(AsyncUser, db)
 
             async def create_user(self, name: str, email: str):
                 return await self.repo.create({'name': name, 'email': email})
@@ -1242,3 +1256,282 @@ class TestAsyncFastAPIIntegration:
 
         assert user.name == 'John'
         assert user.age == 30
+
+
+# ============================================================================
+# Test Eager Loading (Relationship Loading)
+# ============================================================================
+
+class TestAsyncEagerLoading:
+    """Test eager loading functionality to prevent N+1 queries."""
+
+    @pytest.mark.asyncio
+    async def test_get_with_load_relations_single(self, user_repo, post_repo):
+        """Should load single relationship with get()."""
+        # Create user with posts
+        user = await user_repo.create({
+            'name': 'John Doe',
+            'email': 'john@example.com'
+        })
+
+        await post_repo.create({
+            'title': 'First AsyncPost',
+            'content': 'Content here',
+            'user_id': user.id
+        })
+        await post_repo.create({
+            'title': 'Second AsyncPost',
+            'content': 'More content',
+            'user_id': user.id
+        })
+
+        # Get user with posts loaded
+        loaded_user = await user_repo.get(user.id, load_relations=['posts'])
+
+        assert loaded_user is not None
+        assert len(loaded_user.posts) == 2
+        assert loaded_user.posts[0].title in ['First AsyncPost', 'Second AsyncPost']
+        assert loaded_user.posts[1].title in ['First AsyncPost', 'Second AsyncPost']
+
+    @pytest.mark.asyncio
+    async def test_get_without_load_relations(self, user_repo, post_repo):
+        """Should work without load_relations parameter."""
+        user = await user_repo.create({
+            'name': 'Jane',
+            'email': 'jane@example.com'
+        })
+
+        await post_repo.create({
+            'title': 'AsyncPost',
+            'content': 'Content',
+            'user_id': user.id
+        })
+
+        # Get without eager loading
+        loaded_user = await user_repo.get(user.id)
+
+        assert loaded_user is not None
+        assert loaded_user.name == 'Jane'
+
+    @pytest.mark.asyncio
+    async def test_get_all_with_load_relations(self, user_repo, post_repo):
+        """Should load relationships for all records with get_all()."""
+        # Create multiple users with posts
+        user1 = await user_repo.create({'name': 'User1', 'email': 'u1@test.com'})
+        user2 = await user_repo.create({'name': 'User2', 'email': 'u2@test.com'})
+        user3 = await user_repo.create({'name': 'User3', 'email': 'u3@test.com'})
+
+        await post_repo.create({'title': 'Post1', 'content': 'C1', 'user_id': user1.id})
+        await post_repo.create({'title': 'Post2', 'content': 'C2', 'user_id': user1.id})
+        await post_repo.create({'title': 'Post3', 'content': 'C3', 'user_id': user2.id})
+
+        # Get all users with posts
+        users = await user_repo.get_all(load_relations=['posts'])
+
+        assert len(users) == 3
+
+        # Check that posts are loaded
+        user_with_2_posts = next(u for u in users if u.id == user1.id)
+        assert len(user_with_2_posts.posts) == 2
+
+        user_with_1_post = next(u for u in users if u.id == user2.id)
+        assert len(user_with_1_post.posts) == 1
+
+        user_with_0_posts = next(u for u in users if u.id == user3.id)
+        assert len(user_with_0_posts.posts) == 0
+
+    @pytest.mark.asyncio
+    async def test_filter_with_load_relations(self, user_repo, post_repo):
+        """Should load relationships when filtering."""
+        # Create users
+        active_user = await user_repo.create({
+            'name': 'Active',
+            'email': 'active@test.com',
+            'is_active': True
+        })
+        inactive_user = await user_repo.create({
+            'name': 'Inactive',
+            'email': 'inactive@test.com',
+            'is_active': False
+        })
+
+        await post_repo.create({'title': 'Active AsyncPost', 'content': 'C', 'user_id': active_user.id})
+        await post_repo.create({'title': 'Inactive AsyncPost', 'content': 'C', 'user_id': inactive_user.id})
+
+        # Filter active users with posts
+        active_users = await user_repo.filter(
+            is_active=True,
+            _load_relations=['posts']
+        )
+
+        assert len(active_users) == 1
+        assert active_users[0].name == 'Active'
+        assert len(active_users[0].posts) == 1
+        assert active_users[0].posts[0].title == 'Active AsyncPost'
+
+    @pytest.mark.asyncio
+    async def test_paginate_with_load_relations(self, user_repo, post_repo):
+        """Should load relationships when paginating."""
+        # Create 5 users with posts
+        for i in range(5):
+            user = await user_repo.create({
+                'name': f'AsyncUser{i}',
+                'email': f'user{i}@test.com'
+            })
+            await post_repo.create({
+                'title': f'AsyncPost{i}',
+                'content': f'Content{i}',
+                'user_id': user.id
+            })
+
+        # Paginate with eager loading
+        users, meta = await user_repo.paginate(
+            page=1,
+            per_page=3,
+            _load_relations=['posts']
+        )
+
+        assert len(users) == 3
+        assert meta['total'] == 5
+        assert meta['total_pages'] == 2
+
+        # All users should have posts loaded
+        for user in users:
+            assert len(user.posts) == 1
+
+    @pytest.mark.asyncio
+    async def test_get_or_404_with_load_relations(self, user_repo, post_repo):
+        """Should load relationships with get_or_404()."""
+        user = await user_repo.create({'name': 'Test', 'email': 'test@test.com'})
+        await post_repo.create({'title': 'AsyncPost', 'content': 'C', 'user_id': user.id})
+
+        # Get with eager loading
+        loaded_user = await user_repo.get_or_404(
+            user.id,
+            load_relations=['posts']
+        )
+
+        assert loaded_user.name == 'Test'
+        assert len(loaded_user.posts) == 1
+        assert loaded_user.posts[0].title == 'AsyncPost'
+
+    @pytest.mark.asyncio
+    async def test_load_relations_none_works(self, user_repo):
+        """Should handle load_relations=None gracefully."""
+        user = await user_repo.create({'name': 'Test', 'email': 't@test.com'})
+
+        # Should work without error
+        loaded = await user_repo.get(user.id, load_relations=None)
+        assert loaded is not None
+        assert loaded.name == 'Test'
+
+    @pytest.mark.asyncio
+    async def test_load_relations_empty_list_works(self, user_repo):
+        """Should handle load_relations=[] gracefully."""
+        user = await user_repo.create({'name': 'Test', 'email': 't@test.com'})
+
+        loaded = await user_repo.get(user.id, load_relations=[])
+        assert loaded is not None
+        assert loaded.name == 'Test'
+
+    @pytest.mark.asyncio
+    async def test_invalid_relation_name_raises_error(self, user_repo):
+        """Should raise AttributeError for invalid relationship name."""
+        user = await user_repo.create({'name': 'Test', 'email': 't@test.com'})
+
+        with pytest.raises(AttributeError):
+            await user_repo.get(
+                user.id,
+                load_relations=['nonexistent_relation']
+            )
+
+    @pytest.mark.asyncio
+    async def test_reverse_relationship_loading(self, user_repo, post_repo):
+        """Should load reverse relationships (post.user)."""
+        user = await user_repo.create({'name': 'Author', 'email': 'author@test.com'})
+        post = await post_repo.create({
+            'title': 'My AsyncPost',
+            'content': 'Content',
+            'user_id': user.id
+        })
+
+        # Load post with user
+        loaded_post = await post_repo.get(post.id, load_relations=['user'])
+
+        assert loaded_post is not None
+        assert loaded_post.user.name == 'Author'
+        assert loaded_post.user.email == 'author@test.com'
+
+    @pytest.mark.asyncio
+    async def test_filter_with_relations_and_operators(self, user_repo, post_repo):
+        """Should combine filters, operators, and eager loading."""
+        # Create users with different ages and posts
+        young_user = await user_repo.create({'name': 'Young', 'email': 'young@test.com', 'age': 20})
+        old_user = await user_repo.create({'name': 'Old', 'email': 'old@test.com', 'age': 50})
+
+        await post_repo.create({'title': 'Young AsyncPost', 'content': 'C', 'user_id': young_user.id})
+        await post_repo.create({'title': 'Old AsyncPost', 'content': 'C', 'user_id': old_user.id})
+
+        # Filter users age >= 30 with posts loaded
+        users = await user_repo.filter(
+            age__gte=30,
+            _load_relations=['posts']
+        )
+
+        assert len(users) == 1
+        assert users[0].name == 'Old'
+        assert users[0].age == 50
+        assert len(users[0].posts) == 1
+        assert users[0].posts[0].title == 'Old AsyncPost'
+
+    @pytest.mark.asyncio
+    async def test_paginate_with_filters_and_relations(self, user_repo, post_repo):
+        """Should combine pagination, filters, and eager loading."""
+        # Create active and inactive users
+        for i in range(3):
+            user = await user_repo.create({
+                'name': f'Active{i}',
+                'email': f'active{i}@test.com',
+                'is_active': True
+            })
+            await post_repo.create({'title': f'AsyncPost{i}', 'content': 'C', 'user_id': user.id})
+
+        for i in range(2):
+            user = await user_repo.create({
+                'name': f'Inactive{i}',
+                'email': f'inactive{i}@test.com',
+                'is_active': False
+            })
+            await post_repo.create({'title': f'Inactive AsyncPost{i}', 'content': 'C', 'user_id': user.id})
+
+        # Paginate active users with posts
+        users, meta = await user_repo.paginate(
+            page=1,
+            per_page=2,
+            is_active=True,
+            _load_relations=['posts']
+        )
+
+        assert len(users) == 2
+        assert meta['total'] == 3
+        assert all(u.is_active for u in users)
+        assert all(len(u.posts) == 1 for u in users)
+
+    @pytest.mark.asyncio
+    async def test_multiple_get_calls_with_different_relations(self, user_repo, post_repo):
+        """Should handle multiple calls with different load_relations."""
+        user = await user_repo.create({'name': 'AsyncUser', 'email': 'user@test.com'})
+        await post_repo.create({'title': 'AsyncPost', 'content': 'C', 'user_id': user.id})
+
+        # First call without relations
+        user1 = await user_repo.get(user.id)
+        assert user1 is not None
+
+        # Second call with relations
+        user2 = await user_repo.get(user.id, load_relations=['posts'])
+        assert user2 is not None
+        assert len(user2.posts) == 1
+
+        # Third call without relations again
+        user3 = await user_repo.get(user.id)
+        assert user3 is not None
