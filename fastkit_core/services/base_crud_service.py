@@ -5,8 +5,9 @@ Provides business logic layer on top of repository pattern.
 Handles validation, transactions, lifecycle hooks, and response mapping.
 """
 
-from typing import Any, Generic, TypeVar, Optional, Type
+from typing import Any, Generic, TypeVar, Optional, Type, Sequence
 from abc import ABC
+from sqlalchemy.orm import Load
 
 from fastkit_core.database import Repository
 
@@ -236,12 +237,12 @@ class BaseCrudService(
     # READ Operations
     # ========================================================================
 
-    def find(self, id: Any,  load_relations: list[str] | None = None) -> Optional[ResponseSchemaType] | Optional[ModelType]:
+    def find(self, id: Any,  load_relations: Sequence[Load] | None = None) -> Optional[ResponseSchemaType] | Optional[ModelType]:
         """Find record by ID."""
         instance = self.repository.get(id, load_relations=load_relations)
         return self._to_response(instance)
 
-    def find_or_fail(self, id: Any, load_relations: list[str] | None = None,) -> ResponseSchemaType | ModelType:
+    def find_or_fail(self, id: Any, load_relations: Sequence[Load] | None = None,) -> ResponseSchemaType | ModelType:
         """Find record by ID or raise exception."""
         instance = self.repository.get(id, load_relations=load_relations)
         if instance is None:
@@ -251,7 +252,7 @@ class BaseCrudService(
 
     def get_all(self,
                 limit: int | None = None,
-                load_relations: list[str] | None = None
+                load_relations: Sequence[Load] | None = None
                 ) -> list[ResponseSchemaType] | list[ModelType]:
         """Get all records."""
         instances = self.repository.get_all(limit=limit, load_relations=load_relations)
@@ -262,7 +263,7 @@ class BaseCrudService(
         _limit: int | None = None,
         _offset: int | None = None,
         _order_by: str | None = None,
-        _load_relations: list[str] | None = None,
+        _load_relations: Sequence[Load] | None = None,
         **filters
     ) -> list[ResponseSchemaType] | list[ModelType]:
         """Filter records with operator support."""
@@ -275,7 +276,7 @@ class BaseCrudService(
         )
         return self._to_response_list(instances)
 
-    def filter_one(self, _load_relations: list[str] | None = None, **filters) -> Optional[ResponseSchemaType] | Optional[ModelType]:
+    def filter_one(self, _load_relations: Sequence[Load] | None = None, **filters) -> Optional[ResponseSchemaType] | Optional[ModelType]:
         """Get first record matching filters."""
         instance = self.repository.first(_load_relations=_load_relations, **filters)
         return self._to_response(instance)
@@ -285,7 +286,7 @@ class BaseCrudService(
         page: int = 1,
         per_page: int = 20,
         _order_by: str | None = None,
-        _load_relations: list[str] | None = None,
+        _load_relations: Sequence[Load] | None = None,
         **filters
     ) -> tuple[list[ResponseSchemaType] | list[ModelType], dict[str, Any]]:
         """Paginate records with operator support."""
