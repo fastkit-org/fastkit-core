@@ -898,10 +898,10 @@ Async repository has full eager loading support (same API as sync):
 **Basic Usage:**
 ```python
 # Load user with posts
-user = await repo.get(1, load_relations=['posts'])
+user = await repo.get(1, load_relations=[selectinload(User.posts)])
 
 # Load all users with posts (prevent N+1)
-users = await repo.get_all(load_relations=['posts'])
+users = await repo.get_all(load_relations=[selectinload(User.posts)])
 for user in users:
     print(user.posts)  # Already loaded, no additional queries
 ```
@@ -911,14 +911,14 @@ for user in users:
 # Multiple relationships
 invoice = await repo.get(
     invoice_id,
-    load_relations=['client', 'items', 'payments']
+    load_relations=[selectinload(Invoice.client), selectinload(Invoice.items), selectinload(Invoice.payments)]
 )
 
 # Nested relationships
 invoices = await repo.get_all(load_relations=[
-    'client',
-    'items.product',
-    'items.product.category'
+    selectinload(Invoice.client),
+    selectinload(Invoice.items).selectinload(InvoiceItem.product),
+    selectinload(Invoice.items).selectinload(InvoiceItem.product).selectinload(Product.Category)
 ])
 ```
 
@@ -927,14 +927,14 @@ invoices = await repo.get_all(load_relations=[
 # With filtering
 invoices = await repo.filter(
     status='paid',
-    _load_relations=['client', 'items']
+    _load_relations=[selectinload(Invoice.client), selectinload(Invoice.items)]
 )
 
 # With pagination
 invoices, meta = await repo.paginate(
     page=1,
     per_page=20,
-    _load_relations=['client', 'items.product']
+    _load_relations=[selectinload(Invoice.client), selectinload(Invoice.items).selectinload(InvoiceItem.product)]
 )
 ```
 
@@ -947,7 +947,7 @@ for invoice in invoices:
     print(invoice.client.name)  # Error!
 
 # ✅ Eager loading required in async
-invoices = await repo.get_all(load_relations=['client'])
+invoices = await repo.get_all(load_relations=[selectinload(Invoice.client)])
 for invoice in invoices:
     print(invoice.client.name)  # Works! Already loaded
 ```
