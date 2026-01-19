@@ -242,7 +242,7 @@ class BaseCrudService(
         instance = self.repository.get(id, load_relations=load_relations)
         return self._to_response(instance)
 
-    def find_or_fail(self, id: Any, load_relations: Sequence[Load] | None = None,) -> ResponseSchemaType | ModelType:
+    def find_or_fail(self, id: Any, load_relations: Sequence[Load] | None = None) -> ResponseSchemaType | ModelType:
         """Find record by ID or raise exception."""
         instance = self.repository.get(id, load_relations=load_relations)
         if instance is None:
