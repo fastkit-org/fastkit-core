@@ -1438,7 +1438,7 @@ class TestAsyncEagerLoading:
 
     @pytest.mark.asyncio
     async def test_invalid_relation_name_raises_error(self, user_repo):
-        """Should raise AttributeError for invalid relationship name."""
+        """Should raise ArgumentError for invalid relationship name."""
         user = await user_repo.create({'name': 'Test', 'email': 't@test.com'})
 
         with pytest.raises(ArgumentError):

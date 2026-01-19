@@ -13,7 +13,6 @@ Tests Repository functionality:
 """
 
 import pytest
-from datetime import datetime, timezone, timedelta
 from sqlalchemy import create_engine, String, Integer, ForeignKey, Boolean
 from sqlalchemy.orm import sessionmaker, Mapped, mapped_column, relationship
 
@@ -25,7 +24,8 @@ from fastkit_core.database import (
     TimestampMixin,
     create_repository,
 )
-
+from sqlalchemy.orm import selectinload
+from  sqlalchemy.exc import ArgumentError
 
 # ============================================================================
 # Test Models
@@ -986,7 +986,7 @@ class TestSyncEagerLoading:
         })
 
         # Get user with posts loaded
-        loaded_user = user_repo.get(user.id, load_relations=['posts'])
+        loaded_user = user_repo.get(user.id, load_relations=[selectinload(SyncUser.posts)])
 
         assert loaded_user is not None
         assert len(loaded_user.posts) == 2
@@ -1025,7 +1025,7 @@ class TestSyncEagerLoading:
         post_repo.create({'title': 'Post3', 'content': 'C3', 'user_id': user2.id})
 
         # Get all users with posts
-        users = user_repo.get_all(load_relations=['posts'])
+        users = user_repo.get_all(load_relations=[selectinload(SyncUser.posts)])
 
         assert len(users) == 3
 
@@ -1061,7 +1061,7 @@ class TestSyncEagerLoading:
         # Filter active users with posts
         active_users = user_repo.filter(
             is_active=True,
-            _load_relations=['posts']
+            _load_relations=[selectinload(SyncUser.posts)]
         )
 
         assert len(active_users) == 1
@@ -1088,7 +1088,7 @@ class TestSyncEagerLoading:
         users, meta = user_repo.paginate(
             page=1,
             per_page=3,
-            _load_relations=['posts']
+            _load_relations=[selectinload(SyncUser.posts)]
         )
 
         assert len(users) == 3
@@ -1107,7 +1107,7 @@ class TestSyncEagerLoading:
         # Get with eager loading
         loaded_user = user_repo.get_or_404(
             user.id,
-            load_relations=['posts']
+            load_relations=[selectinload(SyncUser.posts)]
         )
 
         assert loaded_user.name == 'Test'
@@ -1132,10 +1132,10 @@ class TestSyncEagerLoading:
         assert loaded.name == 'Test'
 
     def test_invalid_relation_name_raises_error(self, user_repo):
-        """Should raise AttributeError for invalid relationship name."""
+        """Should raise ArgumentError for invalid relationship name."""
         user = user_repo.create({'name': 'Test', 'email': 't@test.com', 'age': 25})
 
-        with pytest.raises(AttributeError):
+        with pytest.raises(ArgumentError):
             user_repo.get(
                 user.id,
                 load_relations=['nonexistent_relation']
@@ -1151,7 +1151,7 @@ class TestSyncEagerLoading:
         })
 
         # Load post with user
-        loaded_post = post_repo.get(post.id, load_relations=['user'])
+        loaded_post = post_repo.get(post.id, load_relations=[selectinload(SyncPost.user)])
 
         assert loaded_post is not None
         assert loaded_post.user.name == 'Author'
@@ -1169,7 +1169,7 @@ class TestSyncEagerLoading:
         # Filter users age >= 30 with posts loaded
         users = user_repo.filter(
             age__gte=30,
-            _load_relations=['posts']
+            _load_relations=[selectinload(SyncUser.posts)]
         )
 
         assert len(users) == 1
@@ -1204,7 +1204,7 @@ class TestSyncEagerLoading:
             page=1,
             per_page=2,
             is_active=True,
-            _load_relations=['posts']
+            _load_relations=[selectinload(SyncUser.posts)]
         )
 
         assert len(users) == 2
