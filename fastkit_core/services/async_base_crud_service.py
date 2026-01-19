@@ -5,8 +5,9 @@ Provides async business logic layer on top of async repository pattern.
 Handles validation, transactions, lifecycle hooks, and response mapping.
 """
 
-from typing import Any, Generic, TypeVar, Optional, Type
+from typing import Any, Generic, TypeVar, Optional, Type, Sequence
 from abc import ABC
+from sqlalchemy.orm import Load
 
 from fastkit_core.database import AsyncRepository
 
@@ -329,7 +330,7 @@ class AsyncBaseCrudService(
     async def find(
         self,
         id: Any,
-        load_relations: list[str] | None = None,
+        load_relations: Sequence[Load] | None = None,
     ) -> Optional[ResponseSchemaType] | Optional[ModelType]:
         """
         Find record by ID (async).
@@ -353,7 +354,7 @@ class AsyncBaseCrudService(
     async def find_or_fail(
         self,
         id: Any,
-        load_relations: list[str] | None = None,
+        load_relations: Sequence[Load] | None = None,
     ) -> ResponseSchemaType | ModelType:
         """
         Find record by ID or raise exception (async).
@@ -379,7 +380,7 @@ class AsyncBaseCrudService(
     async def get_all(
             self,
             limit: int | None = None,
-            load_relations: list[str] | None = None
+            load_relations: Sequence[Load] | None = None
     ) -> list[ResponseSchemaType] | list[ModelType]:
         """
         Get all records (async).
@@ -402,7 +403,7 @@ class AsyncBaseCrudService(
         _limit: int | None = None,
         _offset: int | None = None,
         _order_by: str | None = None,
-        _load_relations: list[str] | None = None,
+        _load_relations: Sequence[Load] | None = None,
         **filters
     ) -> list[ResponseSchemaType] | list[ModelType]:
         """
@@ -438,7 +439,7 @@ class AsyncBaseCrudService(
 
     async def filter_one(
         self,
-        load_relations: list[str] | None = None,
+        load_relations: Sequence[Load] | None = None,
         **filters
     ) -> Optional[ResponseSchemaType] | Optional[ModelType]:
         """
@@ -463,7 +464,7 @@ class AsyncBaseCrudService(
         page: int = 1,
         per_page: int = 20,
         _order_by: str | None = None,
-        _load_relations: list[str] | None = None,
+        _load_relations: Sequence[Load] | None = None,
         **filters
     ) -> tuple[
         list[ResponseSchemaType] | list[ModelType],

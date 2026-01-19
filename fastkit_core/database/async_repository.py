@@ -7,11 +7,11 @@ Full feature parity with sync Repository.
 
 from __future__ import annotations
 
-from typing import Any, Generic, Type, TypeVar, Optional, List
+from typing import Any, Generic, Type, TypeVar, Sequence
 
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload, joinedload
+from sqlalchemy.orm import Load
 
 from fastkit_core.database.base import Base
 
@@ -89,23 +89,50 @@ class AsyncRepository(Generic[T]):
     def _apply_eager_loading(
             self,
             stmt,
-            load: Optional[List[str]] = None,
-            load_strategy: str = 'selectin'
+            load: Sequence[Load] | None = None
     ):
-        """Apply eager loading to statement."""
+        """
+        Apply eager loading options to statement.
+
+        Uses SQLAlchemy's native Load objects for type-safe relationship loading.
+
+        Args:
+            stmt: SQLAlchemy select statement
+            load: Sequence of SQLAlchemy Load objects (selectinload, joinedload, etc.)
+
+        Returns:
+            Statement with eager loading options applied
+
+        Example:
+            from sqlalchemy.orm import selectinload
+
+            # Single relationship
+            stmt = self._apply_eager_loading(
+                stmt,
+                [selectinload(Invoice.items)]
+            )
+
+            # Nested relationships
+            stmt = self._apply_eager_loading(
+                stmt,
+                [selectinload(Invoice.items).selectinload(InvoiceItem.product)]
+            )
+
+            # Multiple relationships
+            stmt = self._apply_eager_loading(
+                stmt,
+                [
+                    selectinload(Invoice.client),
+                    selectinload(Invoice.items).selectinload(InvoiceItem.product)
+                ]
+            )
+        """
         if not load:
             return stmt
 
-        loader = selectinload if load_strategy == 'selectin' else joinedload
-
-        for relationship_path in load:
-            parts = relationship_path.split('.')
-            current_loader = loader(getattr(self.model, parts[0]))
-
-            for part in parts[1:]:
-                current_loader = current_loader.selectinload(part)
-
-            stmt = stmt.options(current_loader)
+        # Simply apply each SQLAlchemy Load object to the statement
+        for load_option in load:
+            stmt = stmt.options(load_option)
 
         return stmt
 
@@ -179,7 +206,7 @@ class AsyncRepository(Generic[T]):
     # READ
     # ========================================================================
 
-    async def get(self, id: Any, load_relations: list[str] | None = None) -> T | None:
+    async def get(self, id: Any, load_relations: Sequence[Load] | None = None) -> T | None:
         """
         Get record by primary key asynchronously.
 
@@ -187,15 +214,32 @@ class AsyncRepository(Generic[T]):
 
         Args:
             id: Primary key value
-            load_relations: List of relationship names to eager load (prevents N+1)
+            load_relations: SQLAlchemy Load objects for eager loading (prevents N+1)
 
 
         Returns:
             Model instance or None if not found or soft-deleted
 
-        Example:
+       Example:
         ```python
+            # Simple get
             user = await repo.get(1)
+
+            # With eager loading
+            from sqlalchemy.orm import selectinload
+
+            invoice = await repo.get(
+                invoice_id,
+                load_relations=[selectinload(Invoice.items)]
+            )
+
+            # Nested relationships
+            invoice = await repo.get(
+                invoice_id,
+                load_relations=[
+                    selectinload(Invoice.items).selectinload(InvoiceItem.product)
+                ]
+            )
         ```
         """
         query = select(self.model).where(self.model.id == id)
@@ -209,13 +253,13 @@ class AsyncRepository(Generic[T]):
         result = await self.session.execute(query)
         return result.scalar_one_or_none()
 
-    async def get_or_404(self, id: Any, load_relations: list[str] | None = None  ) -> T:
+    async def get_or_404(self, id: Any, load_relations: Sequence[Load] | None = None  ) -> T:
         """
         Get record by ID or raise exception asynchronously.
 
         Args:
             id: Primary key value
-            load_relations: List of relationship names to eager load
+            load_relations: SQLAlchemy Load objects for eager loading (prevents N+1)
 
         Returns:
             Model instance
@@ -233,13 +277,13 @@ class AsyncRepository(Generic[T]):
             raise ValueError(f"{self.model.__name__} with id={id} not found")
         return instance
 
-    async def get_all(self, limit: int | None = None, load_relations: list[str] | None = None) -> list[T]:
+    async def get_all(self, limit: int | None = None, load_relations: Sequence[Load] | None = None,) -> list[T]:
         """
         Get all records asynchronously.
 
         Args:
             limit: Maximum number of records to return
-            load_relations: List of relationship names to eager load
+            load_relations: SQLAlchemy Load objects for eager loading (prevents N+1)
 
         Returns:
             List of model instances
@@ -269,7 +313,7 @@ class AsyncRepository(Generic[T]):
             _limit: int | None = None,
             _offset: int | None = None,
             _order_by: str | None = None,
-            _load_relations: list[str] | None = None,
+            _load_relations: Sequence[Load] | None = None,
             **filters
     ) -> list[T]:
         """
@@ -352,14 +396,14 @@ class AsyncRepository(Generic[T]):
 
     async def first(self,
                     _order_by: str | None = None,
-                    _load_relations: list[str] | None = None,
+                    _load_relations: Sequence[Load] | None = None,
                     **filters) -> T | None:
         """
         Get first record matching filters asynchronously.
 
         Args:
             _order_by: Order by field
-            _load_relations: List of relationship names to eager load
+            _load_relations: SQLAlchemy Load objects for eager loading (prevents N+1)
             **filters: Filter conditions
 
         Returns:
@@ -589,7 +633,7 @@ class AsyncRepository(Generic[T]):
             page: int = 1,
             per_page: int = 20,
             _order_by: str | None = None,
-            _load_relations: list[str] | None = None,
+            _load_relations: Sequence[Load] | None = None,
             **filters
     ) -> tuple[list[T], dict[str, Any]]:
         """
@@ -601,7 +645,7 @@ class AsyncRepository(Generic[T]):
             page: Page number (1-indexed)
             per_page: Items per page
             _order_by: Order by field (prefix with - for DESC)
-            _load_relations: Relationships to eager load (prevents N+1)
+            _load_relations: SQLAlchemy Load objects for eager loading (prevents N+1)
             **filters: Filter conditions with operators
 
         Returns:
