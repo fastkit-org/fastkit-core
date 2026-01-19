@@ -676,7 +676,7 @@ for user in users:
     print(user.posts)  # N additional queries! 😱
 
 # With eager loading (2 queries total)
-users = repo.get_all(load_relations=['posts'])  # 2 queries total
+users = repo.get_all(load_relations=[selectinload(User.posts)])  # 2 queries total
 for user in users:
     print(user.posts)  # Already loaded! ✅
 ```
@@ -684,11 +684,11 @@ for user in users:
 **Single Relationship:**
 ```python
 # Load user with posts
-user = repo.get(1, load_relations=['posts'])
+user = repo.get(1, load_relations=[selectinload(User.posts)])
 print(user.posts)  # No additional query
 
 # Load all users with posts
-users = repo.get_all(load_relations=['posts'])
+users = repo.get_all(load_relations=[selectinload(User.posts)])
 ```
 
 **Multiple Relationships:**
@@ -696,7 +696,7 @@ users = repo.get_all(load_relations=['posts'])
 # Load multiple relationships
 invoice = repo.get(
     invoice_id,
-    load_relations=['client', 'items', 'payments']
+    load_relations=[selectinload(Invoice.client), selectinload(Invoice.items), selectinload(Invoice.payments)]
 )
 
 # Access all without additional queries
@@ -709,9 +709,9 @@ print(invoice.payments)
 ```python
 # Load nested relationships (use dot notation)
 invoices = repo.get_all(load_relations=[
-    'client',              # Load client
-    'items.product',       # Load items and their products
-    'items.product.category'  # Load products and their categories
+    selectinload(Invoice.client),              # Load client
+    selectinload(Invoice.items).selectinload(InvoiceItem.product),       # Load items and their products
+    selectinload(Invoice.items).selectinload(InvoiceItem.product).selectinload(Product.Category)  # Load products and their categories
 ])
 
 # Access nested data without N+1
@@ -725,7 +725,7 @@ for invoice in invoices:
 # Combine filtering and eager loading
 invoices = repo.filter(
     status='paid',
-    _load_relations=['client', 'items']
+    _load_relations=[selectinload(Invoice.client), selectinload(Invoice.items)]
 )
 
 # All loaded
@@ -739,7 +739,7 @@ for invoice in invoices:
 invoices, meta = repo.paginate(
     page=1,
     per_page=20,
-    _load_relations=['client', 'items.product']
+    _load_relations=[selectinload(Invoice.client), selectinload(Invoice.items).selectinload(InvoiceItem.product)]
 )
 
 # No N+1 in paginated results
@@ -758,22 +758,10 @@ for invoice in invoices:
 # Total: 101 queries, ~5000ms
 
 # ✅ With eager loading
-invoices = repo.get_all(load_relations=['client'])  # 2 queries total
+invoices = repo.get_all(load_relations=selectinload(Invoice.client))  # 2 queries total
 for invoice in invoices:
     print(invoice.client.name)  # No additional query!
 # Total: 2 queries, ~100ms (50x faster!)
-```
-
-**Loading Strategy:**
-
-By default, `selectinload` strategy is used (recommended for most cases):
-```python
-# Uses selectinload (default - efficient for one-to-many)
-users = repo.get_all(load_relations=['posts'])
-
-# SQL executed:
-# SELECT * FROM users;
-# SELECT * FROM posts WHERE user_id IN (1, 2, 3, ...);
 ```
 
 **Edge Cases:**
@@ -784,8 +772,8 @@ user = repo.get(1, load_relations=None)  # Works
 # Handle empty list
 user = repo.get(1, load_relations=[])  # Works
 
-# Invalid relationship raises AttributeError
-user = repo.get(1, load_relations=['nonexistent'])  # AttributeError
+# Invalid relationship raises ArgumentError
+user = repo.get(1, load_relations=['nonexistent'])  # ArgumentError
 ```
 
 **All Methods Support Eager Loading:**
