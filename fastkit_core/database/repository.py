@@ -6,10 +6,10 @@ Provides common CRUD operations and query helpers.
 
 from __future__ import annotations
 
-from typing import Any, Generic, Type, TypeVar, Optional, List
+from typing import Any, Generic, Type, TypeVar, Sequence
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session, selectinload, joinedload
+from sqlalchemy.orm import Session, Load
 from sqlalchemy import and_, or_
 
 from fastkit_core.database.base import Base
@@ -87,23 +87,50 @@ class Repository(Generic[T]):
     def _apply_eager_loading(
             self,
             stmt,
-            load: Optional[List[str]] = None,
-            load_strategy: str = 'selectin'
+            load: Sequence[Load] | None = None
     ):
-        """Apply eager loading to statement."""
+        """
+        Apply eager loading options to statement.
+
+        Uses SQLAlchemy's native Load objects for type-safe relationship loading.
+
+        Args:
+            stmt: SQLAlchemy select statement
+            load: Sequence of SQLAlchemy Load objects (selectinload, joinedload, etc.)
+
+        Returns:
+            Statement with eager loading options applied
+
+        Example:
+            from sqlalchemy.orm import selectinload
+
+            # Single relationship
+            stmt = self._apply_eager_loading(
+                stmt,
+                [selectinload(Invoice.items)]
+            )
+
+            # Nested relationships
+            stmt = self._apply_eager_loading(
+                stmt,
+                [selectinload(Invoice.items).selectinload(InvoiceItem.product)]
+            )
+
+            # Multiple relationships
+            stmt = self._apply_eager_loading(
+                stmt,
+                [
+                    selectinload(Invoice.client),
+                    selectinload(Invoice.items).selectinload(InvoiceItem.product)
+                ]
+            )
+        """
         if not load:
             return stmt
 
-        loader = selectinload if load_strategy == 'selectin' else joinedload
-
-        for relationship_path in load:
-            parts = relationship_path.split('.')
-            current_loader = loader(getattr(self.model, parts[0]))
-
-            for part in parts[1:]:
-                current_loader = current_loader.selectinload(part)
-
-            stmt = stmt.options(current_loader)
+        # Simply apply each SQLAlchemy Load object to the statement
+        for load_option in load:
+            stmt = stmt.options(load_option)
 
         return stmt
 
@@ -177,14 +204,14 @@ class Repository(Generic[T]):
     # READ
     # ========================================================================
 
-    def get(self, id: Any, load_relations: list[str] | None = None) -> T | None:
+    def get(self, id: Any, load_relations: Sequence[Load] | None = None) -> T | None:
         """
         Get record by primary key.
 
         Excludes soft-deleted records by default.
 
         Args:
-            load_relations: List of relations
+            load_relations: SQLAlchemy Load objects for eager loading (prevents N+1)
             id: Primary key value
 
         Returns:
@@ -202,13 +229,13 @@ class Repository(Generic[T]):
         result = self.session.execute(query)
         return result.scalar_one_or_none()
 
-    def get_or_404(self, id: Any, load_relations: list[str] | None = None ) -> T:
+    def get_or_404(self, id: Any, load_relations: Sequence[Load] | None = None) -> T:
         """
         Get record by ID or raise exception.
 
         Args:
             id: Primary key value
-            load_relations: List of relationship names to eager load
+            load_relations: SQLAlchemy Load objects for eager loading (prevents N+1)
         Returns:
             Model instance
 
@@ -220,13 +247,13 @@ class Repository(Generic[T]):
             raise ValueError(f"{self.model.__name__} with id={id} not found")
         return instance
 
-    def get_all(self, limit: int | None = None, load_relations: list[str] | None = None) -> list[T]:
+    def get_all(self, limit: int | None = None, load_relations: Sequence[Load] | None = None) -> list[T]:
         """
         Get all records.
 
         Args:
             limit: Maximum number of records to return
-            load_relations: List of relationship names to eager load
+            load_relations: SQLAlchemy Load objects for eager loading (prevents N+1)
         Returns:
             List of model instances
 
@@ -255,7 +282,7 @@ class Repository(Generic[T]):
             _limit: int | None = None,
             _offset: int | None = None,
             _order_by: str | None = None,
-            _load_relations: list[str] | None = None,
+            _load_relations: Sequence[Load] | None = None,
             **filters
     ) -> list[T]:
         """
@@ -333,12 +360,12 @@ class Repository(Generic[T]):
         result = self.session.execute(query)
         return result.scalars().all()
 
-    def first(self, _load_relations: list[str] | None = None, **filters) -> T | None:
+    def first(self, _load_relations: Sequence[Load] | None = None, **filters) -> T | None:
         """
         Get first record matching filters.
 
         Args:
-            _load_relations: List of relationship names to eager load
+            _load_relations: SQLAlchemy Load objects for eager loading (prevents N+1)
             **filters: Keyword arguments for filtering
 
         Returns:
@@ -595,7 +622,7 @@ class Repository(Generic[T]):
             page: int = 1,
             per_page: int = 20,
             _order_by: str | None = None,
-            _load_relations: list[str] | None = None,
+            _load_relations: Sequence[Load] | None = None,
             **filters
     ) -> tuple[list[T], dict[str, Any]]:
         """
@@ -607,7 +634,7 @@ class Repository(Generic[T]):
             page: Page number (1-indexed)
             per_page: Items per page
             _order_by: Order by field (prefix with - for DESC)
-             _load_relations: Relationships to eager load (prevents N+1)
+            _load_relations: SQLAlchemy Load objects for eager loading (prevents N+1)
             **filters: Filter conditions with operators
 
         Returns:

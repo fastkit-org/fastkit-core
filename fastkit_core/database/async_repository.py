@@ -7,7 +7,7 @@ Full feature parity with sync Repository.
 
 from __future__ import annotations
 
-from typing import Any, Generic, Type, TypeVar, Optional, List, Sequence
+from typing import Any, Generic, Type, TypeVar, Sequence
 
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
