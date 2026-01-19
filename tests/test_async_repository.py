@@ -23,6 +23,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 
 from fastkit_core.database import Base, IntIdMixin, TimestampMixin, SoftDeleteMixin
 from fastkit_core.database.async_repository import AsyncRepository, create_async_repository
+from sqlalchemy.orm import selectinload
+from  sqlalchemy.exc import ArgumentError
 
 
 # ============================================================================
@@ -1286,7 +1288,7 @@ class TestAsyncEagerLoading:
         })
 
         # Get user with posts loaded
-        loaded_user = await user_repo.get(user.id, load_relations=['posts'])
+        loaded_user = await user_repo.get(user.id, load_relations=[selectinload(AsyncUser.posts)])
 
         assert loaded_user is not None
         assert len(loaded_user.posts) == 2
@@ -1326,7 +1328,7 @@ class TestAsyncEagerLoading:
         await post_repo.create({'title': 'Post3', 'content': 'C3', 'user_id': user2.id})
 
         # Get all users with posts
-        users = await user_repo.get_all(load_relations=['posts'])
+        users = await user_repo.get_all(load_relations=[selectinload(AsyncUser.posts)])
 
         assert len(users) == 3
 
@@ -1361,7 +1363,7 @@ class TestAsyncEagerLoading:
         # Filter active users with posts
         active_users = await user_repo.filter(
             is_active=True,
-            _load_relations=['posts']
+            _load_relations=[selectinload(AsyncUser.posts)]
         )
 
         assert len(active_users) == 1
@@ -1388,7 +1390,7 @@ class TestAsyncEagerLoading:
         users, meta = await user_repo.paginate(
             page=1,
             per_page=3,
-            _load_relations=['posts']
+            _load_relations=[selectinload(AsyncUser.posts)]
         )
 
         assert len(users) == 3
@@ -1408,7 +1410,7 @@ class TestAsyncEagerLoading:
         # Get with eager loading
         loaded_user = await user_repo.get_or_404(
             user.id,
-            load_relations=['posts']
+            load_relations=[selectinload(AsyncUser.posts)]
         )
 
         assert loaded_user.name == 'Test'
@@ -1439,7 +1441,7 @@ class TestAsyncEagerLoading:
         """Should raise AttributeError for invalid relationship name."""
         user = await user_repo.create({'name': 'Test', 'email': 't@test.com'})
 
-        with pytest.raises(AttributeError):
+        with pytest.raises(ArgumentError):
             await user_repo.get(
                 user.id,
                 load_relations=['nonexistent_relation']
@@ -1456,7 +1458,7 @@ class TestAsyncEagerLoading:
         })
 
         # Load post with user
-        loaded_post = await post_repo.get(post.id, load_relations=['user'])
+        loaded_post = await post_repo.get(post.id, load_relations=[selectinload(AsyncPost.user)])
 
         assert loaded_post is not None
         assert loaded_post.user.name == 'Author'
@@ -1475,7 +1477,7 @@ class TestAsyncEagerLoading:
         # Filter users age >= 30 with posts loaded
         users = await user_repo.filter(
             age__gte=30,
-            _load_relations=['posts']
+            _load_relations=[selectinload(AsyncUser.posts)]
         )
 
         assert len(users) == 1
@@ -1509,7 +1511,7 @@ class TestAsyncEagerLoading:
             page=1,
             per_page=2,
             is_active=True,
-            _load_relations=['posts']
+            _load_relations=[selectinload(AsyncUser.posts)]
         )
 
         assert len(users) == 2
@@ -1528,7 +1530,7 @@ class TestAsyncEagerLoading:
         assert user1 is not None
 
         # Second call with relations
-        user2 = await user_repo.get(user.id, load_relations=['posts'])
+        user2 = await user_repo.get(user.id, load_relations=[selectinload(AsyncUser.posts)])
         assert user2 is not None
         assert len(user2.posts) == 1
 
