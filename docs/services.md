@@ -654,10 +654,10 @@ Services support eager loading to prevent N+1 query problems. The service layer 
 **Basic Usage:**
 ```python
 # Sync - load user with posts
-user = service.find(1, load_relations=['posts'])
+user = service.find(1, load_relations=[selectinload(User.posts)])
 
 # Async - load user with posts
-user = await service.find(1, load_relations=['posts'])
+user = await service.find(1, load_relations=[selectinload(User.posts)])
 
 # Access relationships without additional queries
 print(user.posts)  # Already loaded!
@@ -668,13 +668,13 @@ print(user.posts)  # Already loaded!
 # Sync
 invoice = service.find(
     invoice_id,
-    load_relations=['client', 'items', 'payments']
+    load_relations=[selectinload(Invoice.client), selectinload(Invoice.items), selectinload(Invoice.payments)]
 )
 
 # Async
 invoice = await service.find(
     invoice_id,
-    load_relations=['client', 'items', 'payments']
+    load_relations=[selectinload(Invoice.client), selectinload(Invoice.items), selectinload(Invoice.payments)]
 )
 
 # All relationships loaded
@@ -687,16 +687,16 @@ print(invoice.payments)
 ```python
 # Sync - load nested data
 invoices = service.get_all(load_relations=[
-    'client',
-    'items.product',
-    'items.product.category'
+    selectinload(Invoice.client),              # Load client
+    selectinload(Invoice.items).selectinload(InvoiceItem.product),       # Load items and their products
+    selectinload(Invoice.items).selectinload(InvoiceItem.product).selectinload(Product.Category)  # Load products and their categories
 ])
 
 # Async
 invoices = await service.get_all(load_relations=[
-    'client',
-    'items.product',
-    'items.product.category'
+    selectinload(Invoice.client),              # Load client
+    selectinload(Invoice.items).selectinload(InvoiceItem.product),       # Load items and their products
+    selectinload(Invoice.items).selectinload(InvoiceItem.product).selectinload(Product.Category)  # Load products and their categories
 ])
 
 # Access nested data without N+1
@@ -710,13 +710,13 @@ for invoice in invoices:
 # Sync
 invoices = service.filter(
     status='paid',
-    _load_relations=['client', 'items']
+    _load_relations=[selectinload(Invoice.client), selectinload(Invoice.items)]
 )
 
 # Async
 invoices = await service.filter(
     status='paid',
-    _load_relations=['client', 'items']
+    _load_relations=[selectinload(Invoice.client), selectinload(Invoice.items)]
 )
 ```
 
@@ -726,34 +726,34 @@ invoices = await service.filter(
 invoices, meta = service.paginate(
     page=1,
     per_page=20,
-    _load_relations=['client', 'items.product']
+    _load_relations=[selectinload(Invoice.client), selectinload(Invoice.items).selectinload(InvoiceItem.product)]
 )
 
 # Async
 invoices, meta = await service.paginate(
     page=1,
     per_page=20,
-    _load_relations=['client', 'items.product']
+    _load_relations=[selectinload(Invoice.client), selectinload(Invoice.items).selectinload(InvoiceItem.product)]
 )
 ```
 
 **All Service Methods Support Eager Loading:**
 ```python
 # Sync
-user = service.find(id, load_relations=['posts'])
-user = service.find_or_fail(id, load_relations=['posts'])
-users = service.get_all(load_relations=['posts'])
-users = service.filter(status='active', _load_relations=['posts'])
-users, meta = service.paginate(page=1, per_page=20, _load_relations=['posts'])
-user = service.filter_one(email='john@test.com', _load_relations=['posts'])
+user = service.find(id, load_relations=[selectinload(User.posts)])
+user = service.find_or_fail(id, load_relations=[selectinload(User.posts)])
+users = service.get_all(load_relations=[selectinload(User.posts)])
+users = service.filter(status='active', _load_relations=[selectinload(User.posts)])
+users, meta = service.paginate(page=1, per_page=20, _load_relations=[selectinload(User.posts)])
+user = service.filter_one(email='john@test.com', _load_relations=[selectinload(User.posts)])
 
 # Async (same API with await)
-user = await service.find(id, load_relations=['posts'])
-user = await service.find_or_fail(id, load_relations=['posts'])
-users = await service.get_all(load_relations=['posts'])
-users = await service.filter(status='active', _load_relations=['posts'])
-users, meta = await service.paginate(page=1, per_page=20, _load_relations=['posts'])
-user = await service.filter_one(email='john@test.com', _load_relations=['posts'])
+user = await service.find(id, load_relations=[selectinload(User.posts)])
+user = await service.find_or_fail(id, load_relations=[selectinload(User.posts)])
+users = await service.get_all(load_relations=[selectinload(User.posts)])
+users = await service.filter(status='active', _load_relations=[selectinload(User.posts)])
+users, meta = await service.paginate(page=1, per_page=20, _load_relations=[selectinload(User.posts)])
+user = await service.filter_one(email='john@test.com', _load_relations=[selectinload(User.posts)])
 ```
 
 **With Response Schema Mapping:**
@@ -764,7 +764,7 @@ class UserService(BaseCrudService[User, UserCreate, UserUpdate, UserResponse]):
         super().__init__(repository, response_schema=UserResponse)
 
 # Eager loading works with response mapping
-user_response = service.find(1, load_relations=['posts'])
+user_response = service.find(1, load_relations=[selectinload(User.posts)])
 # Returns UserResponse, relationships loaded before mapping
 ```
 
