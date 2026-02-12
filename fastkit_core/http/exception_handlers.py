@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from fastkit_core.http.responses import error_response
 from fastkit_core.http.exceptions import FastKitException
 from fastkit_core.i18n import _
+from fastkit_core.validation.errors import format_validation_errors
 import logging
 
 logger = logging.getLogger(__name__)
@@ -50,16 +51,9 @@ def register_exception_handlers(app: FastAPI) -> None:
         from fastkit_core.validation import BaseSchema
 
         # Convert Pydantic errors to FastKit format
-        errors = {}
-        for error in exc.errors():
-            field = str(error['loc'][-1]) if error['loc'] else 'unknown'
-            if field not in errors:
-                errors[field] = []
-            errors[field].append(error['msg'])
-
         return error_response(
             message=_('validation.failed'),
-            errors=errors,
+            errors=format_validation_errors(exc.errors()),
             status_code=422
         )
 
@@ -69,12 +63,9 @@ def register_exception_handlers(app: FastAPI) -> None:
             exc: ValidationError
     ):
         """Handle Pydantic validation errors."""
-        from fastkit_core.validation import BaseSchema
-        errors = BaseSchema.format_errors(exc)
-
         return error_response(
             message=_('validation.failed'),
-            errors=errors,
+            errors=format_validation_errors(exc.errors()),
             status_code=422
         )
 
