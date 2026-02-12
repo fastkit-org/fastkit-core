@@ -1168,3 +1168,90 @@ class TestRaiseMultipleValidationErrors:
         assert 'email' in formatted
         assert 'password' in formatted
         assert len(formatted['password']) == 2
+
+class TestFormatValidationErrors:
+    """Test format_validation_errors helper."""
+
+    def test_formats_single_error(self):
+        """Should format a single error correctly."""
+        raw_errors = [
+            {'loc': ('name',), 'msg': 'Field required', 'type': 'missing'}
+        ]
+
+        result = format_validation_errors(raw_errors)
+        assert result == {'name': ['Field required']}
+
+    def test_formats_multiple_fields(self):
+        """Should group errors by field."""
+        raw_errors = [
+            {'loc': ('name',), 'msg': 'Field required', 'type': 'missing'},
+            {'loc': ('email',), 'msg': 'Invalid email', 'type': 'value_error'},
+        ]
+
+        result = format_validation_errors(raw_errors)
+        assert 'name' in result
+        assert 'email' in result
+        assert result['name'] == ['Field required']
+        assert result['email'] == ['Invalid email']
+
+    def test_formats_multiple_errors_same_field(self):
+        """Should collect multiple errors for the same field."""
+        raw_errors = [
+            {'loc': ('password',), 'msg': 'Too short', 'type': 'value_error'},
+            {'loc': ('password',), 'msg': 'Needs uppercase', 'type': 'value_error'},
+        ]
+
+        result = format_validation_errors(raw_errors)
+        assert len(result['password']) == 2
+        assert 'Too short' in result['password']
+        assert 'Needs uppercase' in result['password']
+
+    def test_formats_nested_loc(self):
+        """Should use last element of loc tuple for nested fields."""
+        raw_errors = [
+            {'loc': ('body', 'address', 'city'), 'msg': 'Field required', 'type': 'missing'},
+        ]
+
+        result = format_validation_errors(raw_errors)
+        assert 'city' in result
+        assert result['city'] == ['Field required']
+
+    def test_handles_empty_loc(self):
+        """Should use 'unknown' for errors with empty loc."""
+        raw_errors = [
+            {'loc': (), 'msg': 'Something went wrong', 'type': 'value_error'},
+        ]
+
+        result = format_validation_errors(raw_errors)
+        assert 'unknown' in result
+
+    def test_handles_missing_loc(self):
+        """Should use 'unknown' for errors without loc key."""
+        raw_errors = [
+            {'msg': 'Something went wrong', 'type': 'value_error'},
+        ]
+
+        result = format_validation_errors(raw_errors)
+        assert 'unknown' in result
+
+    def test_empty_error_list(self):
+        """Should return empty dict for empty error list."""
+        result = format_validation_errors([])
+        assert result == {}
+
+    def test_with_real_pydantic_errors(self, setup_i18n):
+        """Should correctly format real Pydantic validation errors."""
+
+        class TestSchema(BaseSchema):
+            name: str
+            email: str = Field(min_length=5)
+
+        with pytest.raises(ValidationError) as exc_info:
+            TestSchema(email="ab")
+
+        result = format_validation_errors(exc_info.value.errors())
+
+        assert 'name' in result
+        assert 'email' in result
+        assert len(result['name']) >= 1
+        assert len(result['email']) >= 1
