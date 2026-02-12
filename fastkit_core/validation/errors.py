@@ -29,3 +29,13 @@ def raise_multiple_validation_errors(errors: list[tuple[str, str, Any]]) -> None
             for field, message, value in errors
         ]
     )
+
+def format_validation_errors(errors: list[dict]) -> dict[str, list[str]]:
+    """Parse raw Pydantic/FastAPI error list into {field: [messages]} format."""
+    formatted = {}
+    for error in errors:
+        field = str(error['loc'][-1]) if error.get('loc') else 'unknown'
+        if field not in formatted:
+            formatted[field] = []
+        formatted[field].append(error['msg'])
+    return formatted
