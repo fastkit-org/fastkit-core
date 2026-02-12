@@ -15,6 +15,12 @@ from fastkit_core.validation.validators import (
     SlugValidatorMixin
 )
 
+from fastkit_core.validation.errors import (
+    raise_validation_error,
+    raise_multiple_validation_errors,
+    format_validation_errors
+)
+
 __all__ = [
     'BaseSchema',
     'min_length',
@@ -28,4 +34,7 @@ __all__ = [
     'StrongPasswordValidatorMixin',
     'UsernameValidatorMixin',
     'SlugValidatorMixin',
+    'raise_multiple_validation_errors',
+    'raise_validation_error',
+    'format_validation_errors'
 ]
