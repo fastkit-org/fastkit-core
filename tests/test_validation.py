@@ -31,6 +31,9 @@ from fastkit_core.validation import (
     StrongPasswordValidatorMixin,
     UsernameValidatorMixin,
     SlugValidatorMixin,
+    raise_validation_error,
+    raise_multiple_validation_errors,
+    format_validation_errors
 )
 from fastkit_core.i18n import set_locale, set_translation_manager, TranslationManager
 from fastkit_core.config import ConfigManager, set_config_manager
@@ -1047,3 +1050,53 @@ class TestIntegration:
         except ValidationError as e:
             errors_es = BaseSchema.format_errors(e)
             assert 'contraseña' in errors_es['password'][0].lower()
+
+# ============================================================================
+# Test Error Helper Functions
+# ============================================================================
+
+class TestRaiseValidationError:
+    """Test raise_validation_error helper."""
+
+    def test_raises_validation_error(self):
+        """Should raise ValidationError with correct field and message."""
+        with pytest.raises(ValidationError) as exc_info:
+            raise_validation_error('email', 'Email already exists')
+
+        errors = exc_info.value.errors()
+        assert len(errors) == 1
+        assert errors[0]['loc'] == ('email',)
+        assert 'Email already exists' in errors[0]['msg']
+
+    def test_raises_with_value(self):
+        """Should include the input value in error."""
+        with pytest.raises(ValidationError) as exc_info:
+            raise_validation_error('email', 'Email already exists', 'test@test.com')
+
+        errors = exc_info.value.errors()
+        assert errors[0]['input'] == 'test@test.com'
+
+    def test_raises_with_none_value(self):
+        """Should handle None as value."""
+        with pytest.raises(ValidationError) as exc_info:
+            raise_validation_error('name', 'Name is required', None)
+
+        errors = exc_info.value.errors()
+        assert errors[0]['input'] is None
+
+    def test_error_type_is_value_error(self):
+        """Should use value_error as error type."""
+        with pytest.raises(ValidationError) as exc_info:
+            raise_validation_error('field', 'some error')
+
+        errors = exc_info.value.errors()
+        assert errors[0]['type'] == 'value_error'
+
+    def test_format_errors_integration(self, setup_i18n):
+        """Should work with format_validation_errors."""
+        with pytest.raises(ValidationError) as exc_info:
+            raise_validation_error('username', 'Username taken', 'john')
+
+        formatted = format_validation_errors(exc_info.value.errors())
+        assert 'username' in formatted
+        assert any('Username taken' in msg for msg in formatted['username'])
