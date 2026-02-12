@@ -8,6 +8,7 @@
 - [Translated Error Messages](#translated-error-messages)
 - [API Integration](#api-integration)
 - [Custom Validators](#custom-validators)
+- [Error Helpers](#error-helpers)
 - [Best Practices](#best-practices)
 - [API Reference](#api-reference)
 
@@ -653,6 +654,101 @@ class UserCreate(BaseSchema, PhoneValidatorMixin):
 
 ---
 
+<a name="error-helpers"></a>
+## Error Helpers
+
+FastKit Core provides helper functions in `fastkit_core.validation.errors` for programmatically 
+raising and formatting validation errors. These are useful when you need to throw validation 
+errors outside of Pydantic schemas — for example, in services, repositories, or exception handlers.
+
+### raise_validation_error
+
+Raise a `ValidationError` for a single field:
+```python
+from fastkit_core.validation.errors import raise_validation_error
+
+# In a service or repository
+def create_user(email: str):
+    if user_exists(email):
+        raise_validation_error('email', 'Email already exists', email)
+```
+
+Parameters:
+
+- `field` (str) — The field name that failed validation
+- `message` (str) — The error message
+- `value` (Any, optional) — The input value that caused the error (defaults to `None`)
+
+### raise_multiple_validation_errors
+
+Raise a `ValidationError` with multiple field errors at once. Useful when validating 
+a whole form or running multiple business-rule checks before returning all errors together:
+```python
+from fastkit_core.validation.errors import raise_multiple_validation_errors
+
+# Validate multiple business rules at once
+def create_transfer(from_account: str, to_account: str, amount: float):
+    errors = []
+    
+    if not account_exists(from_account):
+        errors.append(('from_account', 'Account not found', from_account))
+    
+    if not account_exists(to_account):
+        errors.append(('to_account', 'Account not found', to_account))
+    
+    if amount <= 0:
+        errors.append(('amount', 'Amount must be positive', amount))
+    
+    if errors:
+        raise_multiple_validation_errors(errors)
+```
+
+Parameters:
+
+- `errors` (list[tuple[str, str, Any]]) — A list of `(field, message, value)` tuples
+
+### format_validation_errors
+
+Parse a raw Pydantic/FastAPI error list into a clean `{field: [messages]}` dictionary. 
+This is the same format used throughout FastKit's error responses:
+```python
+from fastkit_core.validation.errors import format_validation_errors
+
+# From a Pydantic ValidationError
+try:
+    schema = UserCreate(**data)
+except ValidationError as e:
+    errors = format_validation_errors(e.errors())
+    # {'email': ['Field required'], 'password': ['Too short', 'Needs uppercase']}
+```
+
+This function is also used internally by FastKit's exception handlers to ensure consistent 
+error formatting across both `RequestValidationError` (FastAPI) and `ValidationError` (Pydantic):
+```python
+from fastapi import Request
+from fastapi.exceptions import RequestValidationError
+from fastkit_core.validation.errors import format_validation_errors
+from fastkit_core.http.responses import error_response
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return error_response(
+        message="Validation failed",
+        errors=format_validation_errors(exc.errors()),
+        status_code=422
+    )
+```
+
+Parameters:
+
+- `errors` (list[dict]) — Raw error list from `ValidationError.errors()` or `RequestValidationError.errors()`
+
+Returns:
+
+- `dict[str, list[str]]` — Dictionary mapping field names to lists of error messages. For nested fields (e.g. `('body', 'address', 'city')`), the last element is used as the field name. Errors without a `loc` are grouped under `'unknown'`.
+
+---
+
 <a name="best-practices"></a>
 ## Best Practices
 
@@ -937,6 +1033,35 @@ URL-friendly slug validation.
 ```python
 class PostCreate(BaseSchema, SlugValidatorMixin):
     slug: str
+```
+
+---
+
+### Error Helpers
+
+**`raise_validation_error(field: str, message: str, value: Any = None) -> None`**
+
+Raise a `ValidationError` for a single field.
+```python
+raise_validation_error('email', 'Email already exists', 'test@test.com')
+```
+
+**`raise_multiple_validation_errors(errors: list[tuple[str, str, Any]]) -> None`**
+
+Raise a `ValidationError` with multiple field errors.
+```python
+raise_multiple_validation_errors([
+    ('email', 'Email is required', None),
+    ('password', 'Password too short', 'abc'),
+])
+```
+
+**`format_validation_errors(errors: list[dict]) -> dict[str, list[str]]`**
+
+Parse raw Pydantic/FastAPI error list into `{field: [messages]}` format.
+```python
+formatted = format_validation_errors(exc.errors())
+# {'name': ['Field required'], 'email': ['Invalid email']}
 ```
 
 ---
