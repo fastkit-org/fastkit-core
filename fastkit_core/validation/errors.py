@@ -15,3 +15,17 @@ def raise_validation_error(field: str, message: str, value: Any = None) -> None:
         ]
     )
 
+def raise_multiple_validation_errors(errors: list[tuple[str, str, Any]]) -> None:
+    """errors: list of (field, message, value) tuples"""
+    raise ValidationError.from_exception_data(
+        'ValidationError',
+        [
+            InitErrorDetails(
+                type='value_error',
+                loc=(field,),
+                input=value,
+                ctx={'error': ValueError(message)}
+            )
+            for field, message, value in errors
+        ]
+    )
