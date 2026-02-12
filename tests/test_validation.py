@@ -1100,3 +1100,71 @@ class TestRaiseValidationError:
         formatted = format_validation_errors(exc_info.value.errors())
         assert 'username' in formatted
         assert any('Username taken' in msg for msg in formatted['username'])
+
+class TestRaiseMultipleValidationErrors:
+    """Test raise_multiple_validation_errors helper."""
+
+    def test_raises_multiple_errors(self):
+        """Should raise ValidationError with multiple field errors."""
+        with pytest.raises(ValidationError) as exc_info:
+            raise_multiple_validation_errors([
+                ('email', 'Email is required', None),
+                ('password', 'Password is too short', 'abc'),
+            ])
+
+        errors = exc_info.value.errors()
+        assert len(errors) == 2
+
+        fields = [e['loc'][0] for e in errors]
+        assert 'email' in fields
+        assert 'password' in fields
+
+    def test_raises_multiple_errors_same_field(self):
+        """Should support multiple errors on the same field."""
+        with pytest.raises(ValidationError) as exc_info:
+            raise_multiple_validation_errors([
+                ('password', 'Too short', 'ab'),
+                ('password', 'Must contain uppercase', 'ab'),
+            ])
+
+        errors = exc_info.value.errors()
+        assert len(errors) == 2
+        assert all(e['loc'] == ('password',) for e in errors)
+
+    def test_raises_single_error_in_list(self):
+        """Should work with a single error in the list."""
+        with pytest.raises(ValidationError) as exc_info:
+            raise_multiple_validation_errors([
+                ('name', 'Name is required', None),
+            ])
+
+        errors = exc_info.value.errors()
+        assert len(errors) == 1
+        assert errors[0]['loc'] == ('name',)
+
+    def test_preserves_input_values(self):
+        """Should preserve input values for each error."""
+        with pytest.raises(ValidationError) as exc_info:
+            raise_multiple_validation_errors([
+                ('email', 'Invalid email', 'bad-email'),
+                ('age', 'Must be 18+', 15),
+            ])
+
+        errors = exc_info.value.errors()
+        inputs = {e['loc'][0]: e['input'] for e in errors}
+        assert inputs['email'] == 'bad-email'
+        assert inputs['age'] == 15
+
+    def test_format_errors_integration(self, setup_i18n):
+        """Should work with format_validation_errors."""
+        with pytest.raises(ValidationError) as exc_info:
+            raise_multiple_validation_errors([
+                ('email', 'Email is required', None),
+                ('password', 'Password too short', 'abc'),
+                ('password', 'Must contain digit', 'abc'),
+            ])
+
+        formatted = format_validation_errors(exc_info.value.errors())
+        assert 'email' in formatted
+        assert 'password' in formatted
+        assert len(formatted['password']) == 2
