@@ -267,7 +267,7 @@ class Repository(Generic[T]):
     def get_all(self,
                 limit: int | None = None,
                 load_relations: Sequence[Load] | None = None,
-                _order_by: list[str] | None = None
+                _order_by: str | list[str] | None = None
                 ) -> list[T]:
         """
         Get all records.
@@ -306,7 +306,7 @@ class Repository(Generic[T]):
             self,
             _limit: int | None = None,
             _offset: int | None = None,
-            _order_by: list[str] | None = None,
+            _order_by: str | list[str] | None = None,
             _load_relations: Sequence[Load] | None = None,
             **filters
     ) -> list[T]:
@@ -379,7 +379,7 @@ class Repository(Generic[T]):
 
     def first(self,
               _load_relations: Sequence[Load] | None = None,
-              _order_by: list[str] | None = None,
+              _order_by: str | list[str] | None = None,
               **filters) -> T | None:
         """
         Get first record matching filters.
@@ -642,7 +642,7 @@ class Repository(Generic[T]):
             self,
             page: int = 1,
             per_page: int = 20,
-            _order_by: list[str] | None = None,
+            _order_by: str | list[str] | None = None,
             _load_relations: Sequence[Load] | None = None,
             **filters
     ) -> tuple[list[T], dict[str, Any]]:
