@@ -377,12 +377,16 @@ class Repository(Generic[T]):
         result = self.session.execute(query)
         return result.scalars().all()
 
-    def first(self, _load_relations: Sequence[Load] | None = None, **filters) -> T | None:
+    def first(self,
+              _load_relations: Sequence[Load] | None = None,
+              _order_by: list[str] | None = None,
+              **filters) -> T | None:
         """
         Get first record matching filters.
 
         Args:
             _load_relations: SQLAlchemy Load objects for eager loading (prevents N+1)
+            _order_by: List of columns for ordering
             **filters: Keyword arguments for filtering
 
         Returns:
@@ -393,7 +397,7 @@ class Repository(Generic[T]):
             user = repo.first(email='john@test.com')
 ```
         """
-        results = self.filter(_limit=1, _load_relations=_load_relations, **filters)
+        results = self.filter(_limit=1, _load_relations=_load_relations, _order_by=_order_by, **filters)
         return results[0] if results else None
 
     def exists(self, **filters) -> bool:
