@@ -336,7 +336,7 @@ class AsyncRepository(Generic[T]):
             self,
             _limit: int | None = None,
             _offset: int | None = None,
-            _order_by: str | None = None,
+            _order_by: str | list[str] | None = None,
             _load_relations: Sequence[Load] | None = None,
             **filters
     ) -> list[T]:
@@ -397,15 +397,7 @@ class AsyncRepository(Generic[T]):
 
         # Apply ordering
         if _order_by:
-            if _order_by.startswith('-'):
-                # Descending order
-                field = _order_by[1:]
-                if hasattr(self.model, field):
-                    query = query.order_by(getattr(self.model, field).desc())
-            else:
-                # Ascending order
-                if hasattr(self.model, _order_by):
-                    query = query.order_by(getattr(self.model, _order_by))
+            query = self._apply_ordering(query, _order_by)
 
         # Apply offset
         if _offset:
