@@ -252,17 +252,18 @@ class BaseCrudService(
 
     def get_all(self,
                 limit: int | None = None,
-                load_relations: Sequence[Load] | None = None
+                load_relations: Sequence[Load] | None = None,
+                _order_by: str | list[str] | None = None
                 ) -> list[ResponseSchemaType] | list[ModelType]:
         """Get all records."""
-        instances = self.repository.get_all(limit=limit, load_relations=load_relations)
+        instances = self.repository.get_all(limit=limit, load_relations=load_relations, _order_by=_order_by)
         return self._to_response_list(instances)
 
     def filter(
         self,
         _limit: int | None = None,
         _offset: int | None = None,
-        _order_by: str | None = None,
+        _order_by: str | list[str] | None = None,
         _load_relations: Sequence[Load] | None = None,
         **filters
     ) -> list[ResponseSchemaType] | list[ModelType]:
@@ -276,16 +277,20 @@ class BaseCrudService(
         )
         return self._to_response_list(instances)
 
-    def filter_one(self, _load_relations: Sequence[Load] | None = None, **filters) -> Optional[ResponseSchemaType] | Optional[ModelType]:
+    def filter_one(self,
+                   _load_relations: Sequence[Load] | None = None,
+                   _order_by: str | list[str] | None = None,
+                   **filters
+                   ) -> Optional[ResponseSchemaType] | Optional[ModelType]:
         """Get first record matching filters."""
-        instance = self.repository.first(_load_relations=_load_relations, **filters)
+        instance = self.repository.first(_load_relations=_load_relations, _order_by=_order_by, **filters)
         return self._to_response(instance)
 
     def paginate(
         self,
         page: int = 1,
         per_page: int = 20,
-        _order_by: str | None = None,
+        _order_by: str | list[str] | None = None,
         _load_relations: Sequence[Load] | None = None,
         **filters
     ) -> tuple[list[ResponseSchemaType] | list[ModelType], dict[str, Any]]:

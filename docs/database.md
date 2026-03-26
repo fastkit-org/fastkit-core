@@ -26,6 +26,7 @@ FastKit Core's database module provides a powerful, production-ready foundation 
 - **Rich Mixins** - IntId, UUID, soft delete, timestamps, slugs, publishing
 - **Multi-language Models** - TranslatableMixin for i18n content
 - **Repository Pattern** - Clean data access layer with Django-style filters
+- **Multi-Field Ordering** - Order by multiple fields with ASC/DESC per field
 - **Async/Sync Support** - Full async support with feature parity
 - **Read Replicas** - Automatic read/write splitting
 - **Connection Manager** - Handle multiple databases
@@ -52,10 +53,10 @@ FastKit Core's database module provides a powerful, production-ready foundation 
 pip install fastkit-core
 
 # With PostgreSQL async support
-pip install fastkit-core[postgresql]
+pip install fastkit-core[postgresql-async]
 
 # With MySQL async support
-pip install fastkit-core[mysql]
+pip install fastkit-core[mysql-async]
 ```
 
 ### Define Models
@@ -68,7 +69,7 @@ from sqlalchemy import String
 class User(Base, IntIdMixin, TimestampMixin, SoftDeleteMixin):
     """User model with ID, timestamps, and soft delete."""
     __tablename__ = 'users'  # Optional - auto-generated as 'users'
-    
+
     username: Mapped[str] = mapped_column(String(50), unique=True)
     email: Mapped[str] = mapped_column(String(255), unique=True)
     full_name: Mapped[str] = mapped_column(String(200))
@@ -87,13 +88,13 @@ async def lifespan(app: FastAPI):
     # Startup
     config = ConfigManager()
     init_database(config)
-    
+
     # Create tables
     from fastkit_core.database import get_db_manager
     Base.metadata.create_all(get_db_manager().engine)
-    
+
     yield
-    
+
     # Shutdown
     shutdown_database()
 
@@ -142,7 +143,7 @@ class Product(Base):
 
 **Auto table name generation:**
 - `User` → `users`
-- `UserProfile` → `user_profiles`  
+- `UserProfile` → `user_profiles`
 - `Category` → `categories`
 - `Address` → `addresses`
 
@@ -184,7 +185,7 @@ product.update_from_dict(
 class User(Base):
     name: Mapped[str]
     email: Mapped[str]
-    
+
     def __repr_attrs__(self):
         return [('id', self.id), ('name', self.name), ('email', self.email)]
 
@@ -240,18 +241,11 @@ from fastkit_core.database import Base, UUIDMixin
 class User(Base, UUIDMixin):
     name: Mapped[str]
 
-# Automatically has:
-# id: Mapped[UUID] - UUID v4 primary key
-
 user = User(name="Alice")
 print(user.id)  # UUID('550e8400-e29b-41d4-a716-446655440000')
 ```
 
-**When to use:**
-- Distributed systems
-- Public-facing IDs (non-sequential)
-- Security (harder to guess)
-- Merging databases
+**When to use:** distributed systems, public-facing IDs, security (non-sequential).
 
 ### TimestampMixin
 
@@ -263,10 +257,6 @@ from fastkit_core.database import Base, IntIdMixin, TimestampMixin
 class Post(Base, IntIdMixin, TimestampMixin):
     title: Mapped[str]
 
-# Automatically has:
-# created_at: Mapped[datetime] - set on creation
-# updated_at: Mapped[datetime] - updated automatically
-
 post = Post(title="Hello")
 session.add(post)
 session.commit()
@@ -274,11 +264,10 @@ session.commit()
 print(post.created_at)  # 2025-01-10 10:30:00
 print(post.updated_at)  # 2025-01-10 10:30:00
 
-# Update
+# updated_at is auto-updated on every save
 post.title = "Hello World"
 session.commit()
-
-print(post.updated_at)  # 2025-01-10 10:35:00 (auto-updated!)
+print(post.updated_at)  # 2025-01-10 10:35:00
 ```
 
 ### SoftDeleteMixin
@@ -291,18 +280,13 @@ from fastkit_core.database import Base, IntIdMixin, SoftDeleteMixin
 class Post(Base, IntIdMixin, SoftDeleteMixin):
     title: Mapped[str]
 
-# Automatically has:
-# deleted_at: Mapped[datetime | None] - null = active
-
 # Soft delete
 post.soft_delete()
 print(post.is_deleted)  # True
-print(post.deleted_at)  # 2025-01-10 10:40:00
 
 # Restore
 post.restore()
 print(post.is_deleted)  # False
-print(post.deleted_at)  # None
 
 # Query helpers
 active_posts = Post.active(session).all()      # Only non-deleted
@@ -310,9 +294,12 @@ deleted_posts = Post.deleted(session).all()    # Only deleted
 all_posts = Post.with_deleted(session).all()   # Including deleted
 ```
 
+Repository methods automatically exclude soft-deleted records from all queries.
+Use `force=True` on `delete()` to bypass soft delete and remove the record permanently.
+
 ### SlugMixin
 
-Automatic URL-friendly slug, generating slug you can do by `SlugServiceMixin`
+URL-friendly slug field. To generate the slug value automatically, use `SlugServiceMixin` in your service layer.
 
 ```python
 from fastkit_core.database import Base, IntIdMixin, SlugMixin
@@ -335,23 +322,17 @@ from datetime import datetime, timedelta, timezone
 class Article(Base, IntIdMixin, PublishableMixin):
     title: Mapped[str]
 
-# Automatically has:
-# published_at: Mapped[datetime | None]
-
 article = Article(title="News")
 
-# States
 print(article.is_draft)       # True
 print(article.is_published)   # False
 print(article.is_scheduled)   # False
 
 # Publish immediately
 article.publish()
-print(article.is_published)   # True
 
 # Unpublish (make draft)
 article.unpublish()
-print(article.is_draft)       # True
 
 # Schedule for future
 future = datetime.now(timezone.utc) + timedelta(days=7)
@@ -359,9 +340,9 @@ article.schedule(future)
 print(article.is_scheduled)   # True
 
 # Query helpers
-published = Article.published(session).all()   # Published articles
-drafts = Article.drafts(session).all()         # Draft articles
-scheduled = Article.scheduled(session).all()   # Scheduled articles
+published = Article.published(session).all()
+drafts = Article.drafts(session).all()
+scheduled = Article.scheduled(session).all()
 ```
 
 ---
@@ -370,8 +351,6 @@ scheduled = Article.scheduled(session).all()   # Scheduled articles
 ## Session Management
 
 ### Configuration
-
-Database connections are configured in your config file:
 
 ```python
 # config/database.py
@@ -386,8 +365,6 @@ CONNECTIONS = {
         'pool_size': 5,
         'max_overflow': 10,
     },
-    
-    # Read replica
     'read_replica_1': {
         'driver': 'postgresql',
         'host': 'replica1.example.com',
@@ -396,12 +373,10 @@ CONNECTIONS = {
         'username': 'readonly',
         'password': 'secret',
     },
-    
-    # Or use direct URL
+    # Direct URL
     'analytics': {
         'url': 'postgresql://user:pass@analytics-db:5432/analytics'
     },
-    
     # SQLite
     'sqlite_db': {
         'driver': 'sqlite',
@@ -413,63 +388,46 @@ CONNECTIONS = {
 ### Initialize Database
 
 ```python
-from contextlib import asynccontextmanager
-from fastapi import FastAPI
 from fastkit_core.database import init_database, shutdown_database
 from fastkit_core.config import ConfigManager
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup
-    config = ConfigManager()
-    
-    # Simple initialization
-    init_database(config)
-    
-    # With read replicas
-    init_database(
-        config,
-        connection_name='default',
-        read_replicas=['read_replica_1', 'read_replica_2']
-    )
-    
-    # With SQL echo (debugging)
-    init_database(config, echo=True)
-    
-    yield
-    
-    # Shutdown
-    shutdown_database()
+config = ConfigManager()
 
-app = FastAPI(lifespan=lifespan)
+# Simple
+init_database(config)
+
+# With read replicas
+init_database(
+    config,
+    connection_name='default',
+    read_replicas=['read_replica_1', 'read_replica_2']
+)
 ```
 
 ### Using Sessions
 
-**Context manager (recommended):**
 ```python
 from fastkit_core.database import get_db_manager
 
 db = get_db_manager()
 
-# Write operation
+# Write operation — auto-commits on success, rolls back on error
 with db.session() as session:
     user = User(name="John")
     session.add(user)
-    # Auto-commits on success, rolls back on error
 
-# Read operation (uses read replicas if configured)
+# Read operation — uses read replicas if configured
 with db.read_session() as session:
     users = session.query(User).all()
 ```
 
-**FastAPI dependency injection:**
+### FastAPI Dependency Injection
+
 ```python
 from fastapi import Depends
 from sqlalchemy.orm import Session
 from fastkit_core.database import get_db, get_read_db
 
-# Write endpoint
 @app.post("/users")
 def create_user(data: dict, session: Session = Depends(get_db)):
     user = User(**data)
@@ -477,7 +435,6 @@ def create_user(data: dict, session: Session = Depends(get_db)):
     session.commit()
     return user.to_dict()
 
-# Read endpoint (uses replicas)
 @app.get("/users")
 def list_users(session: Session = Depends(get_read_db)):
     return session.query(User).all()
@@ -488,7 +445,6 @@ def list_users(session: Session = Depends(get_read_db)):
 ```python
 from fastkit_core.database import health_check_all
 
-# Check all connections
 health = health_check_all()
 # {
 #     'default': {
@@ -518,8 +474,7 @@ def get_user_repo(session: Session = Depends(get_db)) -> Repository:
 
 @app.get("/users")
 def list_users(repo: Repository = Depends(get_user_repo)):
-    users = repo.get_all(limit=100)
-    return [user.to_dict() for user in users]
+    return [user.to_dict() for user in repo.get_all(limit=100)]
 ```
 
 ### CRUD Operations
@@ -527,10 +482,7 @@ def list_users(repo: Repository = Depends(get_user_repo)):
 **Create:**
 ```python
 # Single record
-user = repo.create({
-    'name': 'John Doe',
-    'email': 'john@example.com'
-})
+user = repo.create({'name': 'John Doe', 'email': 'john@example.com'})
 
 # Multiple records
 users = repo.create_many([
@@ -540,38 +492,25 @@ users = repo.create_many([
 
 # Without auto-commit
 user = repo.create({'name': 'John'}, commit=False)
-repo.commit()  # Manual commit
+repo.commit()
 ```
 
 **Read:**
 ```python
-# By ID
 user = repo.get(1)
-
-# Or raise exception if not found
 user = repo.get_or_404(1)
-
-# All records
 users = repo.get_all()
 users = repo.get_all(limit=100)
-
-# First matching
 user = repo.first(email='john@test.com')
-
-# Check existence
 exists = repo.exists(email='john@test.com')
-
-# Count
 total = repo.count()
 active_count = repo.count(status='active')
 ```
 
 **Update:**
 ```python
-# Single record
 user = repo.update(1, {'name': 'Jane Doe'})
 
-# Multiple records
 count = repo.update_many(
     filters={'status': 'pending'},
     data={'status': 'active'}
@@ -580,13 +519,8 @@ count = repo.update_many(
 
 **Delete:**
 ```python
-# Single record (soft delete if supported)
-deleted = repo.delete(1)
-
-# Force hard delete
-deleted = repo.delete(1, force=True)
-
-# Multiple records
+deleted = repo.delete(1)             # Soft delete if model supports it
+deleted = repo.delete(1, force=True) # Force hard delete
 count = repo.delete_many({'status': 'inactive'})
 ```
 
@@ -595,55 +529,52 @@ count = repo.delete_many({'status': 'inactive'})
 Django-style filtering with operator support:
 
 ```python
-# Simple equality
 users = repo.filter(status='active')
-
-# Greater than / less than
 adults = repo.filter(age__gte=18, age__lt=65)
-
-# Pattern matching
 gmail_users = repo.filter(email__ilike='%@gmail.com')
 names_starting_with_j = repo.filter(name__startswith='J')
-names_containing_doe = repo.filter(name__contains='doe')
-
-# IN lists
 active_users = repo.filter(status__in=['active', 'pending'])
-
-# NULL checks
 users_without_email = repo.filter(email__is_null=True)
-users_with_email = repo.filter(email__is_not_null=True)
-
-# BETWEEN
 products = repo.filter(price__between=(10, 100))
-
-# With limit, offset, ordering
-users = repo.filter(
-    status='active',
-    age__gte=18,
-    _limit=10,
-    _offset=20,
-    _order_by='-created_at'  # DESC
-)
 ```
 
-**Available operators:**
-- `eq` - Equal (default if no operator)
-- `ne` - Not equal
-- `lt`, `lte`, `gt`, `gte` - Comparisons
-- `in`, `not_in` - IN/NOT IN lists
-- `like`, `ilike` - LIKE patterns (ilike is case-insensitive)
-- `is_null` - IS NULL (pass True/False)
-- `is_not_null` - IS NOT NULL
-- `between` - BETWEEN (pass tuple/list of 2 values)
-- `startswith`, `endswith`, `contains` - String patterns
+**Available operators:** `eq`, `ne`, `lt`, `lte`, `gt`, `gte`, `in`, `not_in`, `like`, `ilike`, `is_null`, `is_not_null`, `between`, `startswith`, `endswith`, `contains`.
+
+### Ordering
+
+`_order_by` accepts a single field string or a list of fields. Prefix a field name with `-` for descending order.
+
+```python
+# Single field — ascending
+users = repo.filter(_order_by='name')
+
+# Single field — descending
+users = repo.filter(_order_by='-created_at')
+
+# Multiple fields — list syntax
+# ORDER BY age ASC, name ASC
+users = repo.filter(_order_by=['age', 'name'])
+
+# Mixed directions
+# ORDER BY status ASC, created_at DESC
+users = repo.filter(_order_by=['status', '-created_at'])
+
+# Three fields
+tasks = repo.filter(_order_by=['-priority', 'due_date', 'name'])
+
+# Works on all read methods
+users = repo.get_all(_order_by=['-created_at', 'name'])
+user = repo.first(_order_by='-score')
+users, meta = repo.paginate(page=1, per_page=20, _order_by=['-created_at', 'name'])
+```
+
+Unknown or invalid field names in `_order_by` are silently ignored — the query still executes with the valid fields applied.
 
 ### Pagination
 
 ```python
-# Simple pagination
 users, meta = repo.paginate(page=1, per_page=20)
 
-# With filters and ordering
 users, meta = repo.paginate(
     page=2,
     per_page=20,
@@ -652,7 +583,6 @@ users, meta = repo.paginate(
     age__gte=18
 )
 
-# Metadata structure
 print(meta)
 # {
 #     'page': 2,
@@ -664,143 +594,95 @@ print(meta)
 # }
 ```
 
-### Eager Loading (Relationship Loading)
+### Eager Loading (Preventing N+1)
 
-Load related entities in a single query to prevent N+1 query problems.
+Load related entities in a single query using SQLAlchemy `Load` objects.
 
-**Basic Usage:**
 ```python
-# Without eager loading (N+1 problem)
-users = repo.get_all()  # 1 query
+from sqlalchemy.orm import selectinload
+
+# Without eager loading — N+1 problem
+users = repo.get_all()
 for user in users:
-    print(user.posts)  # N additional queries! 😱
+    print(user.posts)  # One query per user!
 
-# With eager loading (2 queries total)
-users = repo.get_all(load_relations=[selectinload(User.posts)])  # 2 queries total
-for user in users:
-    print(user.posts)  # Already loaded! ✅
-```
-
-**Single Relationship:**
-```python
-# Load user with posts
-user = repo.get(1, load_relations=[selectinload(User.posts)])
-print(user.posts)  # No additional query
-
-# Load all users with posts
+# With eager loading — 2 queries total
 users = repo.get_all(load_relations=[selectinload(User.posts)])
+for user in users:
+    print(user.posts)  # Already loaded
 ```
 
-**Multiple Relationships:**
+**Multiple and nested relationships:**
 ```python
-# Load multiple relationships
+# Multiple relationships
 invoice = repo.get(
     invoice_id,
-    load_relations=[selectinload(Invoice.client), selectinload(Invoice.items), selectinload(Invoice.payments)]
+    load_relations=[
+        selectinload(Invoice.client),
+        selectinload(Invoice.items),
+        selectinload(Invoice.payments)
+    ]
 )
 
-# Access all without additional queries
-print(invoice.client.name)
-print(len(invoice.items))
-print(invoice.payments)
-```
-
-**Nested Relationships:**
-```python
-# Load nested relationships (use dot notation)
+# Nested relationships
 invoices = repo.get_all(load_relations=[
-    selectinload(Invoice.client),              # Load client
-    selectinload(Invoice.items).selectinload(InvoiceItem.product),       # Load items and their products
-    selectinload(Invoice.items).selectinload(InvoiceItem.product).selectinload(Product.Category)  # Load products and their categories
+    selectinload(Invoice.client),
+    selectinload(Invoice.items).selectinload(InvoiceItem.product),
 ])
-
-# Access nested data without N+1
-for invoice in invoices:
-    for item in invoice.items:
-        print(f"{item.product.name} - {item.product.category.name}")
 ```
 
-**With Filtering:**
+**With filtering and pagination:**
 ```python
-# Combine filtering and eager loading
 invoices = repo.filter(
     status='paid',
     _load_relations=[selectinload(Invoice.client), selectinload(Invoice.items)]
 )
 
-# All loaded
-for invoice in invoices:
-    print(f"{invoice.client.name}: {len(invoice.items)} items")
-```
-
-**With Pagination:**
-```python
-# Pagination with eager loading
 invoices, meta = repo.paginate(
-    page=1,
-    per_page=20,
-    _load_relations=[selectinload(Invoice.client), selectinload(Invoice.items).selectinload(InvoiceItem.product)]
+    page=1, per_page=20,
+    _load_relations=[selectinload(Invoice.client)]
 )
-
-# No N+1 in paginated results
-for invoice in invoices:
-    print(invoice.client.name)
-    for item in invoice.items:
-        print(f"  - {item.product.name}")
 ```
 
-**Performance Comparison:**
-```python
-# ❌ Without eager loading (N+1 problem)
-invoices = repo.get_all()  # 1 query
-for invoice in invoices:
-    print(invoice.client.name)  # 100 queries if 100 invoices!
-# Total: 101 queries, ~5000ms
-
-# ✅ With eager loading
-invoices = repo.get_all(load_relations=selectinload(Invoice.client))  # 2 queries total
-for invoice in invoices:
-    print(invoice.client.name)  # No additional query!
-# Total: 2 queries, ~100ms (50x faster!)
-```
-
-**Edge Cases:**
-```python
-# Handle None gracefully
-user = repo.get(1, load_relations=None)  # Works
-
-# Handle empty list
-user = repo.get(1, load_relations=[])  # Works
-
-# Invalid relationship raises ArgumentError
-user = repo.get(1, load_relations=['nonexistent'])  # ArgumentError
-```
-
-**All Methods Support Eager Loading:**
+**All methods that support eager loading:**
 - `get(id, load_relations=None)`
 - `get_or_404(id, load_relations=None)`
-- `get_all(limit=None, load_relations=None)`
+- `get_all(limit=None, load_relations=None, _order_by=None)`
 - `filter(..., _load_relations=None, **filters)`
 - `paginate(..., _load_relations=None, **filters)`
-- `first(_load_relations=None, **filters)`
+- `first(_load_relations=None, _order_by=None, **filters)`
 
 ### Transaction Management
 
 ```python
-# Manual transaction control
 try:
     user = repo.create({'name': 'John'}, commit=False)
     profile = profile_repo.create({'user_id': user.id}, commit=False)
-    
     repo.commit()  # Commit both or neither
 except Exception:
     repo.rollback()
     raise
 
-# Or use flush for intermediate operations
+# Flush to get ID without committing
 repo.create({'name': 'John'}, commit=False)
-repo.flush()  # Send to DB but don't commit
-print(user.id)  # ID is available after flush
+repo.flush()
+print(user.id)  # Available after flush
+```
+
+### Custom Repository Methods
+
+```python
+from fastkit_core.database import Repository
+
+class UserRepository(Repository):
+    def get_active_users(self):
+        return self.filter(status='active', deleted_at__is_null=True)
+
+    def find_by_email(self, email: str):
+        return self.first(email=email)
+
+    def search_by_name(self, query: str):
+        return self.filter(name__ilike=f'%{query}%')
 ```
 
 ---
@@ -808,57 +690,46 @@ print(user.id)  # ID is available after flush
 <a name="async-support"></a>
 ## Async Support
 
-FastKit Core provides full async support with feature parity to sync operations.
-
 ### Async Session Management
 
-**Initialize:**
 ```python
 from fastkit_core.database import init_async_database
 from fastkit_core.config import ConfigManager
-configuration = ConfigManager(modules=['database'])
-init_async_database(configuration)
+
+config = ConfigManager()
+init_async_database(config)
 ```
 
-**FastAPI async dependency:**
+### FastAPI Async Dependency
+
 ```python
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastkit_core.database import get_async_db, get_async_read_db
 
 @app.post("/users")
-async def create_user(
-    data: dict,
-    session: AsyncSession = Depends(get_async_db)
-):
+async def create_user(data: dict, session: AsyncSession = Depends(get_async_db)):
     user = User(**data)
     session.add(user)
     await session.commit()
     return user.to_dict()
 
 @app.get("/users")
-async def list_users(
-    session: AsyncSession = Depends(get_async_read_db)
-):
+async def list_users(session: AsyncSession = Depends(get_async_read_db)):
     result = await session.execute(select(User))
-    users = result.scalars().all()
-    return [user.to_dict() for user in users]
+    return [u.to_dict() for u in result.scalars().all()]
 ```
 
 ### Async Repository
 
-Full CRUD operations with async/await:
+Full CRUD operations with async/await — identical API to `Repository`:
 
 ```python
 from fastkit_core.database import AsyncRepository
 
 repo = AsyncRepository(User, session)
 
-# Create
 user = await repo.create({'name': 'John', 'email': 'john@test.com'})
-users = await repo.create_many([...])
-
-# Read
 user = await repo.get(1)
 user = await repo.get_or_404(1)
 users = await repo.get_all(limit=100)
@@ -866,7 +737,7 @@ user = await repo.first(email='john@test.com')
 exists = await repo.exists(email='john@test.com')
 count = await repo.count(status='active')
 
-# Filter
+# Filtering with operators — same syntax as sync
 users = await repo.filter(
     status='active',
     age__gte=18,
@@ -874,108 +745,64 @@ users = await repo.filter(
     _order_by='-created_at'
 )
 
-# Paginate
-users, meta = await repo.paginate(
-    page=1,
-    per_page=20,
-    status='active'
-)
+# Multi-field ordering
+users = await repo.filter(_order_by=['-created_at', 'name'])
+users = await repo.get_all(_order_by=['department', '-score'])
+users, meta = await repo.paginate(page=1, per_page=20, _order_by=['-priority', 'due_date'])
 
-# Update
+# Pagination
+users, meta = await repo.paginate(page=1, per_page=20, status='active')
+
 user = await repo.update(1, {'name': 'Jane'})
 count = await repo.update_many({'status': 'pending'}, {'status': 'active'})
-
-# Delete
 deleted = await repo.delete(1)
 count = await repo.delete_many({'status': 'inactive'})
-
 ```
 
 ### Async Eager Loading
 
-Async repository has full eager loading support (same API as sync):
+In async SQLAlchemy, **lazy loading does not work**. Always use `load_relations` for related data.
 
-**Basic Usage:**
 ```python
-# Load user with posts
-user = await repo.get(1, load_relations=[selectinload(User.posts)])
+from sqlalchemy.orm import selectinload
 
-# Load all users with posts (prevent N+1)
-users = await repo.get_all(load_relations=[selectinload(User.posts)])
-for user in users:
-    print(user.posts)  # Already loaded, no additional queries
+# ❌ This will fail in async — lazy loading unsupported
+invoices = await repo.get_all()
+for invoice in invoices:
+    print(invoice.client.name)  # MissingGreenlet error!
+
+# ✅ Correct — eager load everything you need
+invoices = await repo.get_all(load_relations=[selectinload(Invoice.client)])
+for invoice in invoices:
+    print(invoice.client.name)  # Works
 ```
 
-**Multiple & Nested Relationships:**
+The API is identical to the sync version:
+
 ```python
+# Single relationship
+user = await repo.get(1, load_relations=[selectinload(User.posts)])
+
 # Multiple relationships
 invoice = await repo.get(
     invoice_id,
-    load_relations=[selectinload(Invoice.client), selectinload(Invoice.items), selectinload(Invoice.payments)]
+    load_relations=[
+        selectinload(Invoice.client),
+        selectinload(Invoice.items).selectinload(InvoiceItem.product),
+    ]
 )
 
-# Nested relationships
-invoices = await repo.get_all(load_relations=[
-    selectinload(Invoice.client),
-    selectinload(Invoice.items).selectinload(InvoiceItem.product),
-    selectinload(Invoice.items).selectinload(InvoiceItem.product).selectinload(Product.Category)
-])
-```
-
-**With Filtering & Pagination:**
-```python
 # With filtering
 invoices = await repo.filter(
     status='paid',
-    _load_relations=[selectinload(Invoice.client), selectinload(Invoice.items)]
+    _load_relations=[selectinload(Invoice.client)]
 )
 
 # With pagination
 invoices, meta = await repo.paginate(
-    page=1,
-    per_page=20,
-    _load_relations=[selectinload(Invoice.client), selectinload(Invoice.items).selectinload(InvoiceItem.product)]
+    page=1, per_page=20,
+    _load_relations=[selectinload(Invoice.client)]
 )
-```
-
-**Performance:**
-```python
-# ❌ N+1 problem (async context doesn't support lazy loading!)
-invoices = await repo.get_all()
-for invoice in invoices:
-    # This will FAIL in async! Lazy loading not supported
-    print(invoice.client.name)  # Error!
-
-# ✅ Eager loading required in async
-invoices = await repo.get_all(load_relations=[selectinload(Invoice.client)])
-for invoice in invoices:
-    print(invoice.client.name)  # Works! Already loaded
-```
-
-**Important for Async:**
-- Lazy loading does NOT work in async SQLAlchemy
-- Always use `load_relations` for related data in async code
-- Prevents both errors AND N+1 problems
-
-**FastAPI with async repository:**
-```python
-from fastkit_core.database import AsyncRepository, get_async_db
-from fastapi import Depends
-
-async def get_user_repo(
-    session: AsyncSession = Depends(get_async_db)
-) -> AsyncRepository:
-    return AsyncRepository(User, session)
-
-@app.get("/users")
-async def list_users(repo: AsyncRepository = Depends(get_user_repo)):
-    users = await repo.get_all(limit=100)
-    return [user.to_dict() for user in users]
-
-@app.get("/users/{user_id}")
-async def get_user(user_id: int, repo: AsyncRepository = Depends(get_user_repo)):
-    user = await repo.get_or_404(user_id)
-    return user.to_dict()
 ```
 
 ### Async Health Checks
@@ -983,11 +810,8 @@ async def get_user(user_id: int, repo: AsyncRepository = Depends(get_user_repo))
 ```python
 from fastkit_core.database import health_check_all_async
 
-# Inside an async function
 health = await health_check_all_async()
 ```
-
-**Note:** Async shutdown is handled automatically in the `lifespan` context manager shown above.
 
 ---
 
@@ -1000,158 +824,65 @@ Automatic multi-language support with zero boilerplate.
 
 ```python
 from fastkit_core.database import Base, IntIdMixin, TimestampMixin, TranslatableMixin
-from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import String, JSON
+from sqlalchemy import JSON
 
 class Article(Base, IntIdMixin, TimestampMixin, TranslatableMixin):
     __tablename__ = 'articles'
     __translatable__ = ['title', 'content']
-    __fallback_locale__ = 'en'  # Optional - defaults to config
-    
-    # Translatable fields - MUST be JSON columns
+    __fallback_locale__ = 'en'
+
+    # Translatable fields MUST be JSON columns
     title: Mapped[dict] = mapped_column(JSON)
     content: Mapped[dict] = mapped_column(JSON)
-    
+
     # Regular fields work normally
     author: Mapped[str] = mapped_column(String(100))
-    status: Mapped[str] = mapped_column(String(20), default='draft')
 ```
 
 ### Basic Usage
 
-**Transparent string interface:**
 ```python
-# Create article
 article = Article(author="John")
 
-# Set title for current locale (defaults to 'en')
-article.title = "Hello World"
-article.content = "This is content"
+article.title = "Hello World"        # Saves to current locale (en)
 
-# Switch locale and add translation
 article.set_locale('es')
-article.title = "Hola Mundo"
-article.content = "Este es el contenido"
+article.title = "Hola Mundo"         # Updates Spanish only
 
-# Switch back
 article.set_locale('en')
-print(article.title)  # "Hello World"
-
-# Save to database
-session.add(article)
-session.commit()
+print(article.title)                 # "Hello World"
 ```
 
 ### Explicit Translation Management
 
 ```python
-# Set translation for specific locale
 article.set_translation('title', 'Bonjour le monde', locale='fr')
-article.set_translation('title', 'Hallo Welt', locale='de')
 
-# Get translation for specific locale
 title_es = article.get_translation('title', locale='es')
-# "Hola Mundo"
+title_ja = article.get_translation('title', locale='ja', fallback=True)  # Falls back to 'en'
 
-# Get translation with fallback
-title_ja = article.get_translation('title', locale='ja', fallback=True)
-# Falls back to 'en' if 'ja' doesn't exist
-
-# Get all translations
 translations = article.get_translations('title')
-# {
-#     'en': 'Hello World',
-#     'es': 'Hola Mundo',
-#     'fr': 'Bonjour le monde',
-#     'de': 'Hallo Welt'
-# }
+# {'en': 'Hello World', 'es': 'Hola Mundo', 'fr': 'Bonjour le monde'}
 
-# Check if translation exists
 has_spanish = article.has_translation('title', 'es')  # True
-has_japanese = article.has_translation('title', 'ja')  # False
-```
-
-### Global Locale
-
-```python
-# Set global locale (affects all instances)
-TranslatableMixin.set_global_locale('es')
-
-# Now all articles will use Spanish
-article = Article.query.first()
-print(article.title)  # Returns Spanish version
-
-# Get current global locale
-current = TranslatableMixin.get_global_locale()
 ```
 
 ### FastAPI Integration
 
-**Middleware:**
 ```python
 from fastkit_core.database import set_locale_from_request
-from fastapi import Request
 
 @app.middleware("http")
 async def locale_middleware(request: Request, call_next):
-    # Get locale from header
     locale = request.headers.get('Accept-Language', 'en')[:2]
     set_locale_from_request(locale)
-    
-    response = await call_next(request)
-    return response
-```
+    return await call_next(request)
 
-**In endpoints:**
-```python
 @app.get("/articles/{article_id}")
-def get_article(
-    article_id: int,
-    locale: str = 'en',
-    session: Session = Depends(get_db)
-):
+def get_article(article_id: int, locale: str = 'en', session: Session = Depends(get_db)):
     repo = Repository(Article, session)
     article = repo.get(article_id)
-    
-    # Return article in specific locale
     return article.to_dict(locale=locale)
-```
-
-### Validation
-
-```python
-# Validate required translations
-missing = article.validate_translations(
-    required_locales=['en', 'es', 'fr']
-)
-
-if missing:
-    print(missing)
-    # {'content': ['fr']}  # French content is missing
-```
-
-### Serialization
-
-```python
-# Default locale
-data = article.to_dict()
-# Uses current locale
-
-# Specific locale
-data = article.to_dict(locale='es')
-# {
-#     'id': 1,
-#     'title': 'Hola Mundo',
-#     'content': 'Este es el contenido',
-#     'author': 'John',
-#     ...
-# }
-
-# With relationships
-data = article.to_dict(
-    include_relationships=True,
-    locale='es'
-)
 ```
 
 ---
@@ -1161,8 +892,6 @@ data = article.to_dict(
 
 Centralized manager for multiple database connections.
 
-### Setup
-
 ```python
 from fastkit_core.database import ConnectionManager
 from fastkit_core.config import ConfigManager
@@ -1170,115 +899,31 @@ from fastkit_core.config import ConfigManager
 config = ConfigManager()
 conn_manager = ConnectionManager(config)
 
-# Add primary database with read replicas
-conn_manager.add_connection(
-    name='default',
-    read_replicas=['read_replica_1', 'read_replica_2']
-)
+conn_manager.add_connection('default', read_replicas=['read_replica_1', 'read_replica_2'])
+conn_manager.add_connection('analytics', echo=True)
 
-# Add analytics database
-conn_manager.add_connection(
-    name='analytics',
-    echo=True  # Enable SQL logging for this connection
-)
-
-# Add reporting database
-conn_manager.add_connection(name='reporting')
-```
-
-### Using Connections
-
-```python
-# Get database managers
+# Use different databases
 primary_db = conn_manager.get('default')
 analytics_db = conn_manager.get('analytics')
 
-# Use different databases
 with primary_db.session() as session:
     user = User(name="John")
     session.add(user)
 
-with analytics_db.session() as session:
-    event = Event(type="signup", user_id=user.id)
-    session.add(event)
-```
-
-### Health Checks
-
-```python
-# Check all connections
+# Health check all
 health = conn_manager.health_check_all()
-# {
-#     'default': {
-#         'primary': True,
-#         'read_replica_1': True,
-#         'read_replica_2': True
-#     },
-#     'analytics': {
-#         'primary': True
-#     },
-#     'reporting': {
-#         'primary': False
-#     }
-# }
-```
 
-### Management
-
-```python
-# List connections
-connections = conn_manager.list_connections()
-# ['default', 'analytics', 'reporting']
-
-# Check if connection exists
-if conn_manager.has_connection('cache'):
-    cache_db = conn_manager.get('cache')
-
-# Remove connection
-conn_manager.remove_connection('reporting')
-
-# Dispose all connections (shutdown)
-conn_manager.dispose_all()
-```
-
-### Global Instance
-
-```python
-from fastkit_core.database import (
-    get_connection_manager,
-    set_connection_manager
-)
-
-# Get global instance (creates if doesn't exist)
-conn_manager = get_connection_manager()
-
-# Or set your own
-my_manager = ConnectionManager(config)
-set_connection_manager(my_manager)
+# Management
+conn_manager.list_connections()          # ['default', 'analytics']
+conn_manager.has_connection('cache')
+conn_manager.remove_connection('analytics')
+conn_manager.dispose_all()               # Shutdown
 ```
 
 ---
 
 <a name="advanced-features"></a>
 ## Advanced Features
-
-### Multiple Primary Keys
-
-```python
-from sqlalchemy import Integer
-
-class UserRole(Base):
-    __tablename__ = 'user_roles'
-    
-    user_id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    role_id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    
-    # Repository still works with composite keys
-    repo = Repository(UserRole, session)
-    # Note: get() won't work with composite keys
-    # Use filter() instead
-    user_role = repo.first(user_id=1, role_id=2)
-```
 
 ### Relationships
 
@@ -1288,106 +933,53 @@ from sqlalchemy.orm import relationship
 
 class User(Base, IntIdMixin, TimestampMixin):
     username: Mapped[str]
-    
-    # One-to-many
-    posts: Mapped[list["Post"]] = relationship(
-        back_populates="author",
-        cascade="all, delete-orphan"
-    )
+    posts: Mapped[list["Post"]] = relationship(back_populates="author", cascade="all, delete-orphan")
 
 class Post(Base, IntIdMixin, TimestampMixin):
     title: Mapped[str]
     author_id: Mapped[int] = mapped_column(ForeignKey('users.id'))
-    
-    # Many-to-one
     author: Mapped["User"] = relationship(back_populates="posts")
 
 # Serialize with relationships
 user = repo.get(1)
 data = user.to_dict(include_relationships=True, max_depth=2)
-# {
-#     'id': 1,
-#     'username': 'alice',
-#     'posts': [
-#         {'id': 1, 'title': 'Post 1', 'author_id': 1},
-#         {'id': 2, 'title': 'Post 2', 'author_id': 1}
-#     ]
-# }
 ```
 
 ### Complex Queries
 
 ```python
-# Get query builder
 query = repo.query()
 
-# Build complex query
 from sqlalchemy import and_, or_
-
 query = query.where(
     and_(
         User.age >= 18,
-        or_(
-            User.status == 'active',
-            User.status == 'pending'
-        )
+        or_(User.status == 'active', User.status == 'pending')
     )
 )
-
-# Execute
 result = session.execute(query)
 users = result.scalars().all()
 ```
 
-### Transactions
+### Transactions with Multiple Repositories
 
 ```python
 from fastkit_core.database import get_db_manager
 
 db = get_db_manager()
 
-# Manual transaction
 with db.session() as session:
     try:
-        # Multiple operations
         user_repo = Repository(User, session)
-        user = user_repo.create({'name': 'John'}, commit=False)
-        
         account_repo = Repository(Account, session)
-        account = account_repo.create(
-            {'user_id': user.id, 'balance': 0},
-            commit=False
-        )
-        
-        # Commit all or none
+
+        user = user_repo.create({'name': 'John'}, commit=False)
+        account = account_repo.create({'user_id': user.id, 'balance': 0}, commit=False)
+
         session.commit()
-        
     except Exception:
         session.rollback()
         raise
-```
-
-### Custom Repository Methods
-
-```python
-from fastkit_core.database import Repository
-
-class UserRepository(Repository):
-    """Custom repository with domain-specific methods."""
-    
-    def get_active_users(self):
-        return self.filter(status='active', deleted_at__is_null=True)
-    
-    def find_by_email(self, email: str):
-        return self.first(email=email)
-    
-    def search_by_name(self, query: str):
-        return self.filter(name__ilike=f'%{query}%')
-
-# Usage
-repo = UserRepository(User, session)
-active_users = repo.get_active_users()
-user = repo.find_by_email('john@test.com')
 ```
 
 ---
@@ -1395,524 +987,120 @@ user = repo.find_by_email('john@test.com')
 <a name="best-practices"></a>
 ## Best Practices
 
-### 1. Use Mixins Appropriately
+**Use mixins appropriately** — only add what the model actually needs. `LogEntry` does not need `SoftDeleteMixin` or `PublishableMixin`.
 
-✅ **Good:**
-```python
-class User(Base, IntIdMixin, TimestampMixin):
-    """User with ID and timestamps."""
-    pass
+**Use the repository pattern** — keep database access in the repository, business logic in the service layer.
 
-class BlogPost(Base, IntIdMixin, TimestampMixin, SoftDeleteMixin, SlugMixin):
-    """Blog post with full features."""
-    pass
+**Use dependency injection** — inject repositories via FastAPI `Depends()` rather than instantiating them in route handlers.
 
-class LogEntry(Base, IntIdMixin):
-    """Logs don't need timestamps or soft delete."""
-    pass
-```
+**Exclude sensitive fields on serialization** — always pass `exclude=['password']` or use response schemas in the service layer.
 
-❌ **Bad:**
-```python
-class LogEntry(Base, SoftDeleteMixin, PublishableMixin):
-    """Logs don't need soft delete or publishing."""
-    pass
-```
+**Use read replicas for reads** — inject `get_read_db` for GET endpoints, `get_db` for write endpoints.
 
-### 2. Repository Pattern
+**Use async for I/O-bound operations** — prefer `AsyncRepository` and `get_async_db` in FastAPI async endpoints.
 
-✅ **Good:**
-```python
-# In service layer
-class UserService:
-    def __init__(self, repository: Repository):
-        self.repo = repository
-    
-    def get_active_users(self):
-        return self.repo.filter(status='active')
-    
-    def register_user(self, data: dict):
-        # Business logic here
-        user = self.repo.create(data)
-        send_welcome_email(user)
-        return user
-```
+**Always eager load in async code** — lazy loading is not supported in async SQLAlchemy. Use `load_relations` whenever you need related data.
 
-❌ **Bad:**
-```python
-# In controller - mixing concerns
-@app.get("/users")
-def list_users(session: Session = Depends(get_db)):
-    users = session.query(User).filter_by(status='active').all()
-    return users
-```
-
-### 3. Use Dependency Injection
-
-✅ **Good:**
-```python
-def get_user_repo(session: Session = Depends(get_db)) -> Repository:
-    return Repository(User, session)
-
-@app.get("/users")
-def list_users(repo: Repository = Depends(get_user_repo)):
-    return repo.get_all()
-```
-
-### 4. Serialize Carefully
-
-✅ **Good:**
-```python
-user = repo.get(1)
-return user.to_dict(exclude=['password', 'secret_token'])
-```
-
-❌ **Bad:**
-```python
-user = repo.get(1)
-return user.to_dict()  # Exposes sensitive fields!
-```
-
-### 5. Handle Soft Deletes
-
-✅ **Good:**
-```python
-# Repository automatically excludes soft-deleted
-users = repo.get_all()
-
-# Explicitly include if needed
-all_users = repo.get_all_with_deleted()
-```
-
-### 6. Use Filters Over Raw SQL
-
-✅ **Good:**
-```python
-adults = repo.filter(age__gte=18, status='active')
-```
-
-❌ **Bad:**
-```python
-adults = session.query(User).filter(
-    User.age >= 18,
-    User.status == 'active'
-).all()
-```
-
-### 7. Use Read Replicas
-
-✅ **Good:**
-```python
-# Write to primary
-@app.post("/users")
-def create_user(data: dict, session: Session = Depends(get_db)):
-    repo = Repository(User, session)
-    return repo.create(data)
-
-# Read from replica
-@app.get("/users")
-def list_users(session: Session = Depends(get_read_db)):
-    repo = Repository(User, session)
-    return repo.get_all()
-```
-
-### 8. Use Async for I/O-Bound Operations
-
-✅ **Good:**
-```python
-@app.get("/users")
-async def list_users(
-    session: AsyncSession = Depends(get_async_read_db)
-):
-    repo = AsyncRepository(User, session)
-    users = await repo.get_all()
-    return [user.to_dict() for user in users]
-```
-
-### 9. Validate Input Data
-
-✅ **Good:**
-```python
-from pydantic import BaseModel
-
-class UserCreate(BaseModel):
-    name: str
-    email: str
-    age: int
-
-@app.post("/users")
-def create_user(
-    data: UserCreate,
-    session: Session = Depends(get_db)
-):
-    repo = Repository(User, session)
-    user = repo.create(data.dict())
-    return user.to_dict()
-```
-
-### 10. Use Transactions for Related Operations
-
-✅ **Good:**
-```python
-with db.session() as session:
-    try:
-        user_repo = Repository(User, session)
-        account_repo = Repository(Account, session)
-        
-        user = user_repo.create({'name': 'John'}, commit=False)
-        account = account_repo.create(
-            {'user_id': user.id},
-            commit=False
-        )
-        
-        session.commit()  # Commit both or neither
-    except Exception:
-        session.rollback()
-        raise
-```
+**Use transactions for related operations** — wrap multi-repository writes in a single transaction with `commit=False` and a manual `session.commit()`.
 
 ---
 
 <a name="api-reference"></a>
 ## API Reference
 
-### Base
+### Repository / AsyncRepository
 
-```python
-class Base(DeclarativeBase):
-    """Base model with serialization."""
-    
-    def to_dict(
-        exclude: list[str] | None = None,
-        include_relationships: bool = False,
-        max_depth: int = 1,
-        locale: str | None = None
-    ) -> dict
-    
-    def to_json(
-        exclude: list[str] | None = None,
-        include_relationships: bool = False
-    ) -> dict
-    
-    def update_from_dict(
-        data: dict,
-        exclude: list[str] | None = None,
-        allow_only: list[str] | None = None
-    ) -> None
-    
-    def __repr_attrs__(self) -> list[tuple[str, Any]]
+Both classes share an identical public interface. `AsyncRepository` methods are coroutines (use `await`).
+
+```
+# Create
+create(data: dict, commit: bool = True) -> T
+create_many(data_list: list[dict], commit: bool = True) -> list[T]
+
+# Read
+get(id, load_relations: Sequence[Load] | None = None) -> T | None
+get_or_404(id, load_relations: Sequence[Load] | None = None) -> T
+get_all(
+    limit: int | None = None,
+    load_relations: Sequence[Load] | None = None,
+    _order_by: str | list[str] | None = None
+) -> list[T]
+first(
+    _load_relations: Sequence[Load] | None = None,
+    _order_by: str | list[str] | None = None,
+    **filters
+) -> T | None
+filter(
+    _limit: int | None = None,
+    _offset: int | None = None,
+    _order_by: str | list[str] | None = None,
+    _load_relations: Sequence[Load] | None = None,
+    **filters
+) -> list[T]
+paginate(
+    page: int = 1,
+    per_page: int = 20,
+    _order_by: str | list[str] | None = None,
+    _load_relations: Sequence[Load] | None = None,
+    **filters
+) -> tuple[list[T], dict]
+exists(**filters) -> bool
+count(**filters) -> int
+
+# Update
+update(id, data: dict, commit: bool = True) -> T | None
+update_many(filters: dict, data: dict, commit: bool = True) -> int
+
+# Delete
+delete(id, commit: bool = True, force: bool = False) -> bool
+delete_many(filters: dict, commit: bool = True) -> int
+
+# Utility
+refresh(instance: T) -> T
+commit() -> None
+rollback() -> None
+flush() -> None
 ```
 
-### Repository
+**`_order_by` accepts:**
+- `str` — single field, optionally prefixed with `-` for DESC (e.g. `'-created_at'`)
+- `list[str]` — multiple fields applied in order (e.g. `['-priority', 'due_date', 'name']`)
+- `None` — no ordering applied
 
-```python
-class Repository(Generic[T]):
-    def __init__(self, model: Type[T], session: Session)
-    
-    # Create
-    def create(data: dict, commit: bool = True) -> T
-    def create_many(data_list: list[dict], commit: bool = True) -> list[T]
-    
-    # Read
-    def get(id: Any, load_relations: list[str] | None = None) -> T | None
-    def get_or_404(id: Any, load_relations: list[str] | None = None) -> T
-    def get_all(
-        limit: int | None = None,
-        load_relations: list[str] | None = None
-    ) -> list[T]
-    def first(_load_relations: list[str] | None = None, **filters) -> T | None
-    def filter(
-        _limit=None,
-        _offset=None,
-        _order_by=None,
-        _load_relations: list[str] | None = None,
-        **filters
-    ) -> list[T]
-    def paginate(
-        page: int = 1,
-        per_page: int = 20,
-        _order_by: str | None = None,
-        _load_relations: list[str] | None = None,
-        **filters
-    ) -> tuple[list[T], dict]
-    def exists(**filters) -> bool
-    def count(**filters) -> int
+### DatabaseManager / AsyncDatabaseManager
 
-    
-    # Update
-    def update(id: Any, data: dict, commit: bool = True) -> T | None
-    def update_many(filters: dict, data: dict, commit: bool = True) -> int
-    
-    # Delete
-    def delete(id: Any, commit: bool = True, force: bool = False) -> bool
-    def delete_many(filters: dict, commit: bool = True) -> int
-    
-    # Utility
-    def refresh(instance: T) -> T
-    def commit() -> None
-    def rollback() -> None
-    def flush() -> None
 ```
+__init__(config, connection_name='default', read_replicas=None, echo=False)
 
-### AsyncRepository
+get_session() -> Session | AsyncSession
+get_read_session() -> Session | AsyncSession
 
-```python
-class AsyncRepository(Generic[T]):
-    """Same API as Repository but with async/await."""
-    
-    async def create(data: dict, commit: bool = True) -> T
-    async def create_many(data_list: list[dict], commit: bool = True) -> list[T]
-    
-    async def get(id: Any, load_relations: list[str] | None = None) -> T | None
-    async def get_or_404(id: Any, load_relations: list[str] | None = None) -> T
-    async def get_all(
-        limit: int | None = None,
-        load_relations: list[str] | None = None
-    ) -> list[T]
-    async def first(_load_relations: list[str] | None = None, **filters) -> T | None
-    async def filter(
-        _limit=None,
-        _offset=None,
-        _order_by=None,
-        _load_relations: list[str] | None = None,
-        **filters
-    ) -> list[T]
-    async def paginate(
-        page: int,
-        per_page: int,
-        _order_by: str | None = None,
-        _load_relations: list[str] | None = None,
-        **filters
-    ) -> tuple[list[T], dict]
-    async def exists(**filters) -> bool
-    async def count(**filters) -> int
-    
-    async def update(id: Any, data: dict, commit: bool = True) -> T | None
-    async def update_many(filters: dict, data: dict, commit: bool = True) -> int
-    
-    async def delete(id: Any, commit: bool = True, force: bool = False) -> bool
-    async def delete_many(filters: dict, commit: bool = True) -> int
-    
-    async def refresh(instance: T) -> T
-    async def commit() -> None
-    async def rollback() -> None
-    async def flush() -> None
+session() -> contextmanager / asynccontextmanager
+read_session() -> contextmanager / asynccontextmanager
+
+health_check() -> dict[str, bool]
+dispose() -> None          # async: await dispose()
 ```
 
 ### TranslatableMixin
 
-```python
-class TranslatableMixin:
-    __translatable__: list[str]
-    __fallback_locale__: str
-    
-    def set_locale(locale: str) -> self
-    def get_locale() -> str
-    
-    @classmethod
-    def set_global_locale(locale: str) -> None
-    
-    @classmethod
-    def get_global_locale() -> str
-    
-    def set_translation(field: str, value: str, locale: str = None) -> self
-    def get_translation(field: str, locale: str = None, fallback: bool = True) -> str | None
-    def get_translations(field: str) -> dict[str, str]
-    def has_translation(field: str, locale: str = None) -> bool
-    def validate_translations(required_locales: list[str] = None) -> dict[str, list[str]]
 ```
+set_locale(locale: str) -> self
+get_locale() -> str
 
-### DatabaseManager
+set_global_locale(locale: str) -> None          # classmethod
+get_global_locale() -> str                       # classmethod
 
-```python
-class DatabaseManager:
-    def __init__(
-        config: ConfigManager,
-        connection_name: str = 'default',
-        read_replicas: list[str] | None = None,
-        echo: bool = False
-    )
-    
-    def get_session() -> Session
-    def get_read_session() -> Session
-    
-    @contextmanager
-    def session() -> Generator[Session, None, None]
-    
-    @contextmanager
-    def read_session() -> Generator[Session, None, None]
-    
-    def health_check() -> dict[str, bool]
-    def dispose() -> None
-```
-
-### AsyncDatabaseManager
-
-```python
-class AsyncDatabaseManager:
-    def __init__(
-        config: ConfigManager,
-        connection_name: str = 'default',
-        read_replicas: list[str] | None = None,
-        echo: bool = False
-    )
-    
-    def get_session() -> AsyncSession
-    def get_read_session() -> AsyncSession
-    
-    @asynccontextmanager
-    async def session() -> AsyncGenerator[AsyncSession, None]
-    
-    @asynccontextmanager
-    async def read_session() -> AsyncGenerator[AsyncSession, None]
-    
-    async def health_check() -> dict[str, bool]
-    async def dispose() -> None
-```
-
-### ConnectionManager
-
-```python
-class ConnectionManager:
-    def __init__(config: ConfigManager, echo: bool = False)
-    
-    def add_connection(
-        name: str,
-        read_replicas: list[str] | None = None,
-        echo: bool | None = None
-    ) -> DatabaseManager
-    
-    def get(name: str = 'default') -> DatabaseManager
-    def has_connection(name: str) -> bool
-    def remove_connection(name: str) -> None
-    def list_connections() -> list[str]
-    def health_check_all() -> dict[str, dict[str, bool]]
-    def dispose_all() -> None
-```
-
----
-
-## Complete Example
-
-```python
-# models.py
-from fastkit_core.database import (
-    Base,
-    IntIdMixin,
-    TimestampMixin,
-    SoftDeleteMixin,
-    TranslatableMixin
-)
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import String, JSON, ForeignKey
-
-class Article(
-    Base,
-    IntIdMixin,
-    TimestampMixin,
-    SoftDeleteMixin,
-    TranslatableMixin
-):
-    __tablename__ = 'articles'
-    __translatable__ = ['title', 'content']
-    
-    # Translatable fields (JSON)
-    title: Mapped[dict] = mapped_column(JSON)
-    content: Mapped[dict] = mapped_column(JSON)
-    
-    # Regular fields
-    author_id: Mapped[int] = mapped_column(ForeignKey('users.id'))
-    status: Mapped[str] = mapped_column(String(20), default='draft')
-    
-    # Relationships
-    author: Mapped["User"] = relationship(back_populates="articles")
-
-class User(Base, IntIdMixin, TimestampMixin):
-    __tablename__ = 'users'
-    
-    username: Mapped[str] = mapped_column(String(50), unique=True)
-    email: Mapped[str] = mapped_column(String(255), unique=True)
-    
-    articles: Mapped[list["Article"]] = relationship(back_populates="author")
-```
-
-```python
-# main.py
-from contextlib import asynccontextmanager
-from fastapi import FastAPI, Depends, Request
-from fastkit_core.database import (
-    init_database,
-    shutdown_database,
-    get_db,
-    Repository,
-    set_locale_from_request
-)
-from fastkit_core.config import ConfigManager
-from sqlalchemy.orm import Session
-configuration = ConfigManager(modules=['database'])
-init_database(configuration)
-
-app = FastAPI(lifespan=lifespan)
-
-# Locale middleware
-@app.middleware("http")
-async def locale_middleware(request: Request, call_next):
-    locale = request.headers.get('Accept-Language', 'en')[:2]
-    set_locale_from_request(locale)
-    response = await call_next(request)
-    return response
-
-# Dependencies
-def get_article_repo(session: Session = Depends(get_db)) -> Repository:
-    return Repository(Article, session)
-
-# Routes
-@app.post("/articles")
-def create_article(data: dict, repo: Repository = Depends(get_article_repo)):
-    article = repo.create(data)
-    repo.commit()
-    
-    return article.to_dict()
-
-@app.get("/articles")
-def list_articles(
-    page: int = 1,
-    per_page: int = 20,
-    repo: Repository = Depends(get_article_repo)
-):
-    articles, meta = repo.paginate(
-        page=page,
-        per_page=per_page,
-        status='published'
-    )
-    
-    return {
-        'items': [a.to_dict() for a in articles],
-        'pagination': meta
-    }
-
-@app.get("/articles/{article_id}")
-def get_article(
-    article_id: int,
-    locale: str = 'en',
-    repo: Repository = Depends(get_article_repo)
-):
-    article = repo.get_or_404(article_id)
-    return article.to_dict(
-        include_relationships=True,
-        locale=locale
-    )
-
-@app.delete("/articles/{article_id}", status_code=204)
-def delete_article(article_id: int, repo: Repository = Depends(get_article_repo)):
-    repo.delete(article_id)  # Soft delete
+set_translation(field, value, locale=None) -> self
+get_translation(field, locale=None, fallback=True) -> str | None
+get_translations(field) -> dict[str, str]
+has_translation(field, locale=None) -> bool
+validate_translations(required_locales=None) -> dict[str, list[str]]
 ```
 
 ---
 
 ## Next Steps
 
-Now that you understand the database module:
-
-- **[Services](/docs/services)** - Build on repository pattern
+- **[Services](/docs/services)** - Build on repository pattern with lifecycle hooks
 - **[Validation](/docs/validation)** - Validate data before saving

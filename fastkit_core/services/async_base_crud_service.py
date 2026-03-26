@@ -380,7 +380,8 @@ class AsyncBaseCrudService(
     async def get_all(
             self,
             limit: int | None = None,
-            load_relations: Sequence[Load] | None = None
+            load_relations: Sequence[Load] | None = None,
+            _order_by: str | list[str] | None = None
     ) -> list[ResponseSchemaType] | list[ModelType]:
         """
         Get all records (async).
@@ -388,21 +389,25 @@ class AsyncBaseCrudService(
         Args:
             load_relations:  List of relations
             limit: Maximum number of records
-
+            _order_by: List of columns for order by
         Returns:
             List of response schemas or model instances
 
         Example:
             users: list[UserResponse] = await service.get_all(limit=100)
         """
-        instances = await self.repository.get_all(limit=limit, load_relations=load_relations)
+        instances = await self.repository.get_all(
+            limit=limit,
+            load_relations=load_relations,
+            _order_by=_order_by
+        )
         return self._to_response_list(instances)
 
     async def filter(
         self,
         _limit: int | None = None,
         _offset: int | None = None,
-        _order_by: str | None = None,
+        _order_by: str | list[str] | None = None,
         _load_relations: Sequence[Load] | None = None,
         **filters
     ) -> list[ResponseSchemaType] | list[ModelType]:
@@ -440,6 +445,7 @@ class AsyncBaseCrudService(
     async def filter_one(
         self,
         load_relations: Sequence[Load] | None = None,
+        _order_by: str | list[str] | None = None,
         **filters
     ) -> Optional[ResponseSchemaType] | Optional[ModelType]:
         """
@@ -447,6 +453,7 @@ class AsyncBaseCrudService(
 
         Args:
             load_relations: List of relationship names to eager load
+            _order_by: Order by field (prefix with - for DESC)
             **filters: Filter conditions with operators
 
         Returns:
@@ -455,15 +462,18 @@ class AsyncBaseCrudService(
         Example:
             user: UserResponse | None = await service.filter_one(email='john@example.com')
         """
-        results = await self.repository.filter(_limit=1, _load_relations=load_relations, **filters)
-        instance = results[0] if results else None
+        instance = await self.repository.first(
+            _load_relations=load_relations,
+            _order_by=_order_by,
+            **filters
+        )
         return self._to_response(instance)
 
     async def paginate(
         self,
         page: int = 1,
         per_page: int = 20,
-        _order_by: str | None = None,
+        _order_by: str | list[str] | None = None,
         _load_relations: Sequence[Load] | None = None,
         **filters
     ) -> tuple[

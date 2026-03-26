@@ -136,6 +136,23 @@ class AsyncRepository(Generic[T]):
 
         return stmt
 
+    def _apply_ordering(self, query, order_by: str | list[str] | None):
+        if not order_by:
+            return query
+
+        fields = [order_by] if isinstance(order_by, str) else order_by
+
+        for field in fields:
+            if field.startswith('-'):
+                col = field[1:]
+                if hasattr(self.model, col):
+                    query = query.order_by(getattr(self.model, col).desc())
+            else:
+                if hasattr(self.model, field):
+                    query = query.order_by(getattr(self.model, field))
+
+        return query
+
     def query(self):
         """Get query builder for complex queries."""
         return select(self.model)
@@ -277,14 +294,18 @@ class AsyncRepository(Generic[T]):
             raise ValueError(f"{self.model.__name__} with id={id} not found")
         return instance
 
-    async def get_all(self, limit: int | None = None, load_relations: Sequence[Load] | None = None,) -> list[T]:
+    async def get_all(self,
+                      limit: int | None = None,
+                      load_relations: Sequence[Load] | None = None,
+                      _order_by: str | list[str] | None = None
+                      ) -> list[T]:
         """
         Get all records asynchronously.
 
         Args:
             limit: Maximum number of records to return
             load_relations: SQLAlchemy Load objects for eager loading (prevents N+1)
-
+            _order_by: List of columns for ordering
         Returns:
             List of model instances
 
@@ -302,6 +323,9 @@ class AsyncRepository(Generic[T]):
         if self._has_soft_delete():
             query = query.where(self.model.deleted_at.is_(None))
 
+        if _order_by:
+            query = self._apply_ordering(query, _order_by)
+
         if limit:
             query = query.limit(limit)
 
@@ -312,7 +336,7 @@ class AsyncRepository(Generic[T]):
             self,
             _limit: int | None = None,
             _offset: int | None = None,
-            _order_by: str | None = None,
+            _order_by: str | list[str] | None = None,
             _load_relations: Sequence[Load] | None = None,
             **filters
     ) -> list[T]:
@@ -373,15 +397,7 @@ class AsyncRepository(Generic[T]):
 
         # Apply ordering
         if _order_by:
-            if _order_by.startswith('-'):
-                # Descending order
-                field = _order_by[1:]
-                if hasattr(self.model, field):
-                    query = query.order_by(getattr(self.model, field).desc())
-            else:
-                # Ascending order
-                if hasattr(self.model, _order_by):
-                    query = query.order_by(getattr(self.model, _order_by))
+            query = self._apply_ordering(query, _order_by)
 
         # Apply offset
         if _offset:
@@ -395,7 +411,7 @@ class AsyncRepository(Generic[T]):
         return result.scalars().all()
 
     async def first(self,
-                    _order_by: str | None = None,
+                    _order_by: str | list[str] | None = None,
                     _load_relations: Sequence[Load] | None = None,
                     **filters) -> T | None:
         """
@@ -632,7 +648,7 @@ class AsyncRepository(Generic[T]):
             self,
             page: int = 1,
             per_page: int = 20,
-            _order_by: str | None = None,
+            _order_by: str | list[str] | None = None,
             _load_relations: Sequence[Load] | None = None,
             **filters
     ) -> tuple[list[T], dict[str, Any]]:
