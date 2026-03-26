@@ -396,7 +396,11 @@ class AsyncBaseCrudService(
         Example:
             users: list[UserResponse] = await service.get_all(limit=100)
         """
-        instances = await self.repository.get_all(limit=limit, load_relations=load_relations, _order_by=_order_by)
+        instances = await self.repository.get_all(
+            limit=limit,
+            load_relations=load_relations,
+            _order_by=_order_by
+        )
         return self._to_response_list(instances)
 
     async def filter(
@@ -458,8 +462,11 @@ class AsyncBaseCrudService(
         Example:
             user: UserResponse | None = await service.filter_one(email='john@example.com')
         """
-        results = await self.repository.first(_load_relations=load_relations, _order_by=_order_by, **filters)
-        instance = results[0] if results else None
+        instance = await self.repository.first(
+            _load_relations=load_relations,
+            _order_by=_order_by,
+            **filters
+        )
         return self._to_response(instance)
 
     async def paginate(
