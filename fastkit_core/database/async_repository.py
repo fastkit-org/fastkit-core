@@ -648,7 +648,7 @@ class AsyncRepository(Generic[T]):
             self,
             page: int = 1,
             per_page: int = 20,
-            _order_by: str | None = None,
+            _order_by: str | list[str] | None = None,
             _load_relations: Sequence[Load] | None = None,
             **filters
     ) -> tuple[list[T], dict[str, Any]]:
