@@ -396,7 +396,7 @@ class AsyncBaseCrudService(
         Example:
             users: list[UserResponse] = await service.get_all(limit=100)
         """
-        instances = await self.repository.get_all(limit=limit, load_relations=load_relations)
+        instances = await self.repository.get_all(limit=limit, load_relations=load_relations, _order_by=_order_by)
         return self._to_response_list(instances)
 
     async def filter(
