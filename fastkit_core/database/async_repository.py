@@ -411,7 +411,7 @@ class AsyncRepository(Generic[T]):
         return result.scalars().all()
 
     async def first(self,
-                    _order_by: str | None = None,
+                    _order_by: str | list[str] | None = None,
                     _load_relations: Sequence[Load] | None = None,
                     **filters) -> T | None:
         """
