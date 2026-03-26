@@ -642,7 +642,7 @@ class Repository(Generic[T]):
             self,
             page: int = 1,
             per_page: int = 20,
-            _order_by: str | None = None,
+            _order_by: list[str] | None = None,
             _load_relations: Sequence[Load] | None = None,
             **filters
     ) -> tuple[list[T], dict[str, Any]]:
@@ -654,7 +654,7 @@ class Repository(Generic[T]):
         Args:
             page: Page number (1-indexed)
             per_page: Items per page
-            _order_by: Order by field (prefix with - for DESC)
+            _order_by: List of columns for ordering
             _load_relations: SQLAlchemy Load objects for eager loading (prevents N+1)
             **filters: Filter conditions with operators
 
