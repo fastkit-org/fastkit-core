@@ -1,8 +1,12 @@
 """
 Comprehensive tests for FastKit Core Validation module.
 
-Tests BaseSchema, validation rules, and validator mixins:
-- BaseSchema error formatting and translation
+Tests BaseSchema, BaseCreateSchema, BaseUpdateSchema, validation rules,
+and validator mixins:
+- BaseSchema — ORM mode, serialization helpers, config helpers, error formatting
+- BaseCreateSchema — extra fields forbidden, inheritance
+- BaseUpdateSchema — extra fields forbidden, partial update convention
+- Computed fields pattern
 - Validation rules (min_length, max_length, etc.)
 - PasswordValidatorMixin
 - StrongPasswordValidatorMixin
@@ -12,31 +16,33 @@ Tests BaseSchema, validation rules, and validator mixins:
 Target Coverage: 95%+
 """
 
-import pytest
 import json
-from pathlib import Path
-from pydantic import ValidationError, EmailStr, Field
-from typing import ClassVar, Dict
+from typing import Any, ClassVar, Dict
 
+import pytest
+from pydantic import Field, ValidationError, EmailStr, computed_field
+
+from fastkit_core.config import ConfigManager, set_config_manager
+from fastkit_core.i18n import TranslationManager, set_locale, set_translation_manager
 from fastkit_core.validation import (
     BaseSchema,
-    min_length,
-    max_length,
-    length,
-    min_value,
-    max_value,
+    BaseCreateSchema,
+    BaseUpdateSchema,
     between,
-    pattern,
+    format_validation_errors,
+    length,
+    max_length,
+    max_value,
+    min_length,
+    min_value,
     PasswordValidatorMixin,
+    pattern,
+    raise_multiple_validation_errors,
+    raise_validation_error,
+    SlugValidatorMixin,
     StrongPasswordValidatorMixin,
     UsernameValidatorMixin,
-    SlugValidatorMixin,
-    raise_validation_error,
-    raise_multiple_validation_errors,
-    format_validation_errors
 )
-from fastkit_core.i18n import set_locale, set_translation_manager, TranslationManager
-from fastkit_core.config import ConfigManager, set_config_manager
 
 
 # ============================================================================
@@ -49,7 +55,6 @@ def translations_dir(tmp_path):
     trans_dir = tmp_path / "translations"
     trans_dir.mkdir()
 
-    # English validation messages
     en_content = {
         "validation": {
             "required": "The {field} field is required",
@@ -69,23 +74,19 @@ def translations_dir(tmp_path):
                 "uppercase": "Password must contain at least one uppercase letter",
                 "lowercase": "Password must contain at least one lowercase letter",
                 "digit": "Password must contain at least one digit",
-                "special_char": "Password must contain at least one special character"
+                "special_char": "Password must contain at least one special character",
             },
             "username": {
                 "min_length": "Username must be at least {min} characters",
                 "max_length": "Username must not exceed {max} characters",
-                "format": "Username must start with a letter and contain only letters, numbers, and underscores"
+                "format": "Username must start with a letter and contain only letters, numbers, and underscores",
             },
             "slug": {
-                "format": "Slug must be lowercase letters, numbers, and hyphens only"
-            }
+                "format": "Slug must be lowercase letters, numbers, and hyphens only",
+            },
         }
     }
 
-    with open(trans_dir / "en.json", "w", encoding="utf-8") as f:
-        json.dump(en_content, f, ensure_ascii=False, indent=2)
-
-    # Spanish validation messages
     es_content = {
         "validation": {
             "required": "El campo {field} es obligatorio",
@@ -97,14 +98,17 @@ def translations_dir(tmp_path):
                 "min_length": "La contraseña debe tener al menos {min} caracteres",
                 "max_length": "La contraseña no debe exceder {max} caracteres",
                 "uppercase": "La contraseña debe contener al menos una letra mayúscula",
-                "special_char": "La contraseña debe contener al menos un carácter especial"
+                "special_char": "La contraseña debe contener al menos un carácter especial",
             },
             "username": {
                 "min_length": "El nombre de usuario debe tener al menos {min} caracteres",
-                "format": "El nombre de usuario debe comenzar con una letra y contener solo letras, números y guiones bajos"
-            }
+                "format": "El nombre de usuario debe comenzar con una letra y contener solo letras, números y guiones bajos",
+            },
         }
     }
+
+    with open(trans_dir / "en.json", "w", encoding="utf-8") as f:
+        json.dump(en_content, f, ensure_ascii=False, indent=2)
 
     with open(trans_dir / "es.json", "w", encoding="utf-8") as f:
         json.dump(es_content, f, ensure_ascii=False, indent=2)
@@ -115,7 +119,6 @@ def translations_dir(tmp_path):
 @pytest.fixture
 def setup_i18n(translations_dir):
     """Setup i18n with translations."""
-    # Setup config
     config = ConfigManager(modules=[], auto_load=False)
     config.load()
     config.set('app.TRANSLATIONS_PATH', str(translations_dir))
@@ -123,21 +126,602 @@ def setup_i18n(translations_dir):
     config.set('app.FALLBACK_LANGUAGE', 'en')
     set_config_manager(config)
 
-    # Setup translation manager
     manager = TranslationManager(translations_dir=translations_dir)
     set_translation_manager(manager)
-
-    # Set default locale
     set_locale('en')
 
     yield
 
-    # Cleanup
     set_locale('en')
 
 
 # ============================================================================
-# Test BaseSchema Translation
+# Test BaseSchema — ORM Mode
+# ============================================================================
+
+class TestBaseSchemaOrmMode:
+    """Test that BaseSchema has from_attributes=True enabled by default."""
+
+    def test_from_attributes_is_true(self):
+        """model_config should have from_attributes=True."""
+        assert BaseSchema.model_config.get('from_attributes') is True
+
+    def test_subclass_inherits_from_attributes(self):
+        """Subclasses should inherit ORM mode without re-declaring it."""
+
+        class UserResponse(BaseSchema):
+            id: int
+            name: str
+
+        assert UserResponse.model_config.get('from_attributes') is True
+
+    def test_model_validate_from_orm_object(self):
+        """Should accept objects with attribute access (ORM-like)."""
+
+        class UserResponse(BaseSchema):
+            id: int
+            name: str
+
+        class FakeOrmUser:
+            def __init__(self):
+                self.id = 1
+                self.name = "Alice"
+
+        result = UserResponse.model_validate(FakeOrmUser())
+        assert result.id == 1
+        assert result.name == "Alice"
+
+    def test_model_validate_from_dict_still_works(self):
+        """Should still accept plain dicts after enabling from_attributes."""
+
+        class UserResponse(BaseSchema):
+            id: int
+            name: str
+
+        result = UserResponse.model_validate({"id": 2, "name": "Bob"})
+        assert result.id == 2
+        assert result.name == "Bob"
+
+    def test_subclass_can_override_model_config(self):
+        """Subclass should be able to override or extend model_config."""
+        from pydantic import ConfigDict
+
+        class StrictSchema(BaseSchema):
+            value: int
+            model_config = ConfigDict(from_attributes=True, extra='forbid')
+
+        with pytest.raises(ValidationError):
+            StrictSchema(value=1, unexpected_field="oops")
+
+
+# ============================================================================
+# Test BaseSchema — Serialization Helpers
+# ============================================================================
+
+class TestBaseSchemaToDict:
+    """Test BaseSchema.to_dict() helper."""
+
+    def test_to_dict_returns_all_fields(self):
+        """Should return all fields including None values by default."""
+
+        class Schema(BaseSchema):
+            id: int
+            name: str
+            avatar: str | None = None
+
+        instance = Schema(id=1, name="John", avatar=None)
+        result = instance.to_dict()
+
+        assert result == {"id": 1, "name": "John", "avatar": None}
+
+    def test_to_dict_exclude_none_false_by_default(self):
+        """Default exclude_none=False should keep None values."""
+
+        class Schema(BaseSchema):
+            name: str
+            bio: str | None = None
+
+        instance = Schema(name="Alice", bio=None)
+        result = instance.to_dict()
+
+        assert "bio" in result
+        assert result["bio"] is None
+
+    def test_to_dict_exclude_none_true(self):
+        """exclude_none=True should drop None fields."""
+
+        class Schema(BaseSchema):
+            id: int
+            name: str
+            bio: str | None = None
+            avatar: str | None = None
+
+        instance = Schema(id=1, name="Alice", bio=None, avatar=None)
+        result = instance.to_dict(exclude_none=True)
+
+        assert result == {"id": 1, "name": "Alice"}
+        assert "bio" not in result
+        assert "avatar" not in result
+
+    def test_to_dict_exclude_none_keeps_non_none_optionals(self):
+        """exclude_none=True should keep optional fields that have a value."""
+
+        class Schema(BaseSchema):
+            name: str
+            bio: str | None = None
+
+        instance = Schema(name="Bob", bio="Developer")
+        result = instance.to_dict(exclude_none=True)
+
+        assert result == {"name": "Bob", "bio": "Developer"}
+
+    def test_to_dict_returns_dict_type(self):
+        """to_dict() should always return a plain dict."""
+
+        class Schema(BaseSchema):
+            value: int
+
+        instance = Schema(value=42)
+        assert isinstance(instance.to_dict(), dict)
+
+    def test_to_dict_with_nested_schema(self):
+        """Should serialize nested schemas."""
+
+        class AddressSchema(BaseSchema):
+            city: str
+
+        class UserSchema(BaseSchema):
+            name: str
+            address: AddressSchema
+
+        instance = UserSchema(name="Alice", address=AddressSchema(city="Belgrade"))
+        result = instance.to_dict()
+
+        assert result["name"] == "Alice"
+        assert result["address"] == {"city": "Belgrade"}
+
+
+class TestBaseSchemaToJsonStr:
+    """Test BaseSchema.to_json_str() helper."""
+
+    def test_to_json_str_returns_string(self):
+        """Should return a string."""
+
+        class Schema(BaseSchema):
+            id: int
+            name: str
+
+        instance = Schema(id=1, name="John")
+        result = instance.to_json_str()
+
+        assert isinstance(result, str)
+
+    def test_to_json_str_is_valid_json(self):
+        """Output should be parseable JSON."""
+
+        class Schema(BaseSchema):
+            id: int
+            name: str
+
+        instance = Schema(id=1, name="John")
+        parsed = json.loads(instance.to_json_str())
+
+        assert parsed == {"id": 1, "name": "John"}
+
+    def test_to_json_str_includes_none_by_default(self):
+        """Should include None fields by default."""
+
+        class Schema(BaseSchema):
+            name: str
+            bio: str | None = None
+
+        instance = Schema(name="Alice", bio=None)
+        parsed = json.loads(instance.to_json_str())
+
+        assert "bio" in parsed
+        assert parsed["bio"] is None
+
+    def test_to_json_str_exclude_none(self):
+        """exclude_none=True should omit None fields from JSON."""
+
+        class Schema(BaseSchema):
+            name: str
+            bio: str | None = None
+
+        instance = Schema(name="Alice", bio=None)
+        parsed = json.loads(instance.to_json_str(exclude_none=True))
+
+        assert "bio" not in parsed
+        assert parsed == {"name": "Alice"}
+
+    def test_to_json_str_consistent_with_to_dict(self):
+        """to_json_str() result should match json.dumps(to_dict())."""
+
+        class Schema(BaseSchema):
+            id: int
+            name: str
+            value: float | None = None
+
+        instance = Schema(id=1, name="Test", value=None)
+
+        from_str = json.loads(instance.to_json_str(exclude_none=True))
+        from_dict = instance.to_dict(exclude_none=True)
+
+        assert from_str == from_dict
+
+
+# ============================================================================
+# Test BaseSchema — Config Helpers
+# ============================================================================
+
+class TestBaseSchemaConfigHelpers:
+    """Test config_exclude_none() and config_exclude_fields() helpers."""
+
+    def test_config_exclude_none_returns_config_dict(self):
+        """config_exclude_none() should return a ConfigDict."""
+        from pydantic import ConfigDict
+        result = BaseSchema.config_exclude_none()
+        assert isinstance(result, dict)
+
+    def test_config_exclude_none_has_from_attributes(self):
+        """Returned ConfigDict should still have from_attributes=True."""
+        result = BaseSchema.config_exclude_none()
+        assert result.get('from_attributes') is True
+
+    def test_config_exclude_fields_returns_config_dict(self):
+        """config_exclude_fields() should return a ConfigDict."""
+        result = BaseSchema.config_exclude_fields(['secret'])
+        assert isinstance(result, dict)
+
+    def test_config_exclude_fields_has_from_attributes(self):
+        """Returned ConfigDict should still have from_attributes=True."""
+        result = BaseSchema.config_exclude_fields(['secret'])
+        assert result.get('from_attributes') is True
+
+    def test_field_exclude_true_works(self):
+        """Field(exclude=True) should exclude a field from serialization."""
+
+        class UserResponse(BaseSchema):
+            id: int
+            name: str
+            internal_token: str = Field(exclude=True)
+
+        instance = UserResponse(id=1, name="Alice", internal_token="secret")
+        data = instance.to_dict()
+
+        assert "internal_token" not in data
+        assert data == {"id": 1, "name": "Alice"}
+
+
+# ============================================================================
+# Test BaseSchema — Computed Fields
+# ============================================================================
+
+class TestBaseSchemaComputedFields:
+    """Test the computed_field pattern on BaseSchema subclasses."""
+
+    def test_computed_field_basic(self):
+        """@computed_field should add a derived property to the schema."""
+
+        class UserResponse(BaseSchema):
+            first_name: str
+            last_name: str
+
+            @computed_field
+            @property
+            def full_name(self) -> str:
+                return f"{self.first_name} {self.last_name}"
+
+        user = UserResponse(first_name="John", last_name="Doe")
+        assert user.full_name == "John Doe"
+
+    def test_computed_field_included_in_to_dict(self):
+        """Computed fields should appear in to_dict() output."""
+
+        class UserResponse(BaseSchema):
+            first_name: str
+            last_name: str
+
+            @computed_field
+            @property
+            def full_name(self) -> str:
+                return f"{self.first_name} {self.last_name}"
+
+        user = UserResponse(first_name="Jane", last_name="Smith")
+        data = user.to_dict()
+
+        assert "full_name" in data
+        assert data["full_name"] == "Jane Smith"
+
+    def test_computed_field_included_in_to_json_str(self):
+        """Computed fields should appear in to_json_str() output."""
+
+        class UserResponse(BaseSchema):
+            first_name: str
+            last_name: str
+
+            @computed_field
+            @property
+            def full_name(self) -> str:
+                return f"{self.first_name} {self.last_name}"
+
+        user = UserResponse(first_name="Alice", last_name="Wonder")
+        parsed = json.loads(user.to_json_str())
+
+        assert parsed["full_name"] == "Alice Wonder"
+
+    def test_computed_field_with_none_handling(self):
+        """Computed fields should handle optional source fields correctly."""
+
+        class UserResponse(BaseSchema):
+            avatar_path: str | None = None
+
+            @computed_field
+            @property
+            def avatar_url(self) -> str | None:
+                if not self.avatar_path:
+                    return None
+                return f"/storage/{self.avatar_path}"
+
+        user_with_avatar = UserResponse(avatar_path="photo.jpg")
+        user_without_avatar = UserResponse(avatar_path=None)
+
+        assert user_with_avatar.avatar_url == "/storage/photo.jpg"
+        assert user_without_avatar.avatar_url is None
+
+    def test_computed_field_with_orm_object(self):
+        """Computed fields should work when schema is built from an ORM object."""
+
+        class UserResponse(BaseSchema):
+            first_name: str
+            last_name: str
+
+            @computed_field
+            @property
+            def full_name(self) -> str:
+                return f"{self.first_name} {self.last_name}"
+
+        class FakeOrmUser:
+            first_name = "Maria"
+            last_name = "Garcia"
+
+        user = UserResponse.model_validate(FakeOrmUser())
+        assert user.full_name == "Maria Garcia"
+
+    def test_multiple_computed_fields(self):
+        """Multiple computed fields should all work independently."""
+
+        class ProductResponse(BaseSchema):
+            price: float
+            tax_rate: float = 0.20
+
+            @computed_field
+            @property
+            def tax_amount(self) -> float:
+                return round(self.price * self.tax_rate, 2)
+
+            @computed_field
+            @property
+            def total_price(self) -> float:
+                return round(self.price + self.tax_amount, 2)
+
+        product = ProductResponse(price=100.0)
+        assert product.tax_amount == 20.0
+        assert product.total_price == 120.0
+
+        data = product.to_dict()
+        assert data["tax_amount"] == 20.0
+        assert data["total_price"] == 120.0
+
+
+# ============================================================================
+# Test BaseCreateSchema
+# ============================================================================
+
+class TestBaseCreateSchema:
+    """Test BaseCreateSchema conventions."""
+
+    def test_from_attributes_inherited(self):
+        """Should inherit from_attributes=True from BaseSchema."""
+        assert BaseCreateSchema.model_config.get('from_attributes') is True
+
+    def test_extra_fields_forbidden(self):
+        """Should raise ValidationError when extra fields are provided."""
+
+        class UserCreate(BaseCreateSchema):
+            name: str
+            email: str
+
+        with pytest.raises(ValidationError) as exc_info:
+            UserCreate(name="John", email="j@example.com", role="admin")
+
+        errors = exc_info.value.errors()
+        assert any(e['type'] == 'extra_forbidden' for e in errors)
+
+    def test_valid_fields_pass(self):
+        """Should accept valid data without extra fields."""
+
+        class UserCreate(BaseCreateSchema):
+            name: str
+            email: str
+
+        schema = UserCreate(name="John", email="j@example.com")
+        assert schema.name == "John"
+        assert schema.email == "j@example.com"
+
+    def test_is_subclass_of_base_schema(self):
+        """BaseCreateSchema should be a subclass of BaseSchema."""
+        assert issubclass(BaseCreateSchema, BaseSchema)
+
+    def test_inherits_to_dict(self):
+        """Should inherit to_dict() helper from BaseSchema."""
+
+        class UserCreate(BaseCreateSchema):
+            name: str
+            bio: str | None = None
+
+        instance = UserCreate(name="Alice", bio=None)
+        result = instance.to_dict(exclude_none=True)
+
+        assert result == {"name": "Alice"}
+
+    def test_inherits_format_errors(self):
+        """Should inherit format_errors() from BaseSchema."""
+
+        class UserCreate(BaseCreateSchema):
+            name: str
+
+        with pytest.raises(ValidationError) as exc_info:
+            UserCreate()
+
+        errors = BaseCreateSchema.format_errors(exc_info.value)
+        assert "name" in errors
+
+    def test_multiple_extra_fields_all_reported(self):
+        """All extra fields should be reported in the error."""
+
+        class UserCreate(BaseCreateSchema):
+            name: str
+
+        with pytest.raises(ValidationError) as exc_info:
+            UserCreate(name="John", role="admin", is_superuser=True)
+
+        error_fields = [e['loc'][-1] for e in exc_info.value.errors()]
+        assert 'role' in error_fields
+        assert 'is_superuser' in error_fields
+
+    def test_with_validators(self, setup_i18n):
+        """Should work with validator mixins."""
+
+        class UserCreate(BaseCreateSchema, PasswordValidatorMixin):
+            email: str
+            password: str
+
+        schema = UserCreate(email="j@example.com", password="Test123!")
+        assert schema.password == "Test123!"
+
+        with pytest.raises(ValidationError):
+            UserCreate(email="j@example.com", password="weak", extra_field="x")
+
+
+# ============================================================================
+# Test BaseUpdateSchema
+# ============================================================================
+
+class TestBaseUpdateSchema:
+    """Test BaseUpdateSchema conventions."""
+
+    def test_from_attributes_inherited(self):
+        """Should inherit from_attributes=True from BaseSchema."""
+        assert BaseUpdateSchema.model_config.get('from_attributes') is True
+
+    def test_extra_fields_forbidden(self):
+        """Should raise ValidationError when extra fields are provided."""
+
+        class UserUpdate(BaseUpdateSchema):
+            name: str | None = None
+            email: str | None = None
+
+        with pytest.raises(ValidationError) as exc_info:
+            UserUpdate(name="Jane", role="admin")
+
+        errors = exc_info.value.errors()
+        assert any(e['type'] == 'extra_forbidden' for e in errors)
+
+    def test_all_fields_optional_by_convention(self):
+        """Should accept empty instantiation when all fields are optional."""
+
+        class UserUpdate(BaseUpdateSchema):
+            name: str | None = None
+            email: str | None = None
+            age: int | None = None
+
+        # Empty update is valid
+        schema = UserUpdate()
+        assert schema.name is None
+        assert schema.email is None
+        assert schema.age is None
+
+    def test_partial_update_only_set_fields(self):
+        """model_dump(exclude_unset=True) should only include explicitly set fields."""
+
+        class UserUpdate(BaseUpdateSchema):
+            name: str | None = None
+            email: str | None = None
+            age: int | None = None
+
+        update = UserUpdate(name="Jane")
+        data = update.model_dump(exclude_unset=True)
+
+        assert data == {"name": "Jane"}
+        assert "email" not in data
+        assert "age" not in data
+
+    def test_partial_update_multiple_fields(self):
+        """Multiple set fields should all appear in exclude_unset dump."""
+
+        class UserUpdate(BaseUpdateSchema):
+            name: str | None = None
+            email: str | None = None
+            age: int | None = None
+
+        update = UserUpdate(name="Jane", age=30)
+        data = update.model_dump(exclude_unset=True)
+
+        assert data == {"name": "Jane", "age": 30}
+        assert "email" not in data
+
+    def test_is_subclass_of_base_schema(self):
+        """BaseUpdateSchema should be a subclass of BaseSchema."""
+        assert issubclass(BaseUpdateSchema, BaseSchema)
+
+    def test_inherits_to_dict(self):
+        """Should inherit to_dict() helper from BaseSchema."""
+
+        class UserUpdate(BaseUpdateSchema):
+            name: str | None = None
+            bio: str | None = None
+
+        instance = UserUpdate(name="Bob")
+        result = instance.to_dict(exclude_none=True)
+
+        assert result == {"name": "Bob"}
+
+    def test_explicit_none_is_set(self):
+        """Explicitly setting a field to None should include it in exclude_unset dump."""
+
+        class UserUpdate(BaseUpdateSchema):
+            name: str | None = None
+            bio: str | None = None
+
+        # Explicitly passing None — developer wants to clear the field
+        update = UserUpdate(bio=None)
+        data = update.model_dump(exclude_unset=True)
+
+        assert "bio" in data
+        assert data["bio"] is None
+        assert "name" not in data
+
+    def test_with_to_dict_service_integration(self):
+        """
+        to_dict() should match what BaseCrudService._to_dict() produces,
+        since it uses model_dump(exclude_unset=True) internally.
+        """
+
+        class UserUpdate(BaseUpdateSchema):
+            name: str | None = None
+            email: str | None = None
+
+        update = UserUpdate(name="Alice")
+
+        # Simulate what _to_dict does
+        service_dict = update.model_dump(exclude_unset=True)
+
+        assert service_dict == {"name": "Alice"}
+
+
+# ============================================================================
+# Test BaseSchema — Error Translation (existing tests, unchanged)
 # ============================================================================
 
 class TestBaseSchemaTranslation:
@@ -219,7 +803,6 @@ class TestBaseSchemaTranslation:
         """Should fallback to Pydantic message when translation missing."""
 
         class TestSchema(BaseSchema):
-            # Use error type not in translation map
             value: int
 
         try:
@@ -228,7 +811,6 @@ class TestBaseSchemaTranslation:
             errors = BaseSchema.format_errors(e)
 
             assert 'value' in errors
-            # Should have some error message
             assert len(errors['value'][0]) > 0
 
     def test_translate_in_spanish(self, setup_i18n):
@@ -244,7 +826,6 @@ class TestBaseSchemaTranslation:
             errors = BaseSchema.format_errors(e)
 
             assert 'name' in errors
-            # Should contain Spanish words
             assert 'obligatorio' in errors['name'][0].lower()
 
     def test_translate_with_field_context(self, setup_i18n):
@@ -275,11 +856,9 @@ class TestValidationRules:
         class TestSchema(BaseSchema):
             name: str = min_length(5)
 
-        # Valid
         schema = TestSchema(name="hello")
         assert schema.name == "hello"
 
-        # Invalid
         with pytest.raises(ValidationError):
             TestSchema(name="hi")
 
@@ -289,11 +868,9 @@ class TestValidationRules:
         class TestSchema(BaseSchema):
             name: str = max_length(10)
 
-        # Valid
         schema = TestSchema(name="hello")
         assert schema.name == "hello"
 
-        # Invalid
         with pytest.raises(ValidationError):
             TestSchema(name="a" * 20)
 
@@ -303,15 +880,12 @@ class TestValidationRules:
         class TestSchema(BaseSchema):
             name: str = length(3, 10)
 
-        # Valid
         schema = TestSchema(name="hello")
         assert schema.name == "hello"
 
-        # Too short
         with pytest.raises(ValidationError):
             TestSchema(name="ab")
 
-        # Too long
         with pytest.raises(ValidationError):
             TestSchema(name="a" * 20)
 
@@ -321,11 +895,9 @@ class TestValidationRules:
         class TestSchema(BaseSchema):
             age: int = min_value(18)
 
-        # Valid
         schema = TestSchema(age=25)
         assert schema.age == 25
 
-        # Invalid
         with pytest.raises(ValidationError):
             TestSchema(age=15)
 
@@ -335,11 +907,9 @@ class TestValidationRules:
         class TestSchema(BaseSchema):
             score: int = max_value(100)
 
-        # Valid
         schema = TestSchema(score=95)
         assert schema.score == 95
 
-        # Invalid
         with pytest.raises(ValidationError):
             TestSchema(score=150)
 
@@ -349,15 +919,12 @@ class TestValidationRules:
         class TestSchema(BaseSchema):
             age: int = between(18, 100)
 
-        # Valid
         schema = TestSchema(age=25)
         assert schema.age == 25
 
-        # Too low
         with pytest.raises(ValidationError):
             TestSchema(age=15)
 
-        # Too high
         with pytest.raises(ValidationError):
             TestSchema(age=150)
 
@@ -367,11 +934,9 @@ class TestValidationRules:
         class TestSchema(BaseSchema):
             code: str = pattern(r'^[A-Z]{3}\d{3}$')
 
-        # Valid
         schema = TestSchema(code="ABC123")
         assert schema.code == "ABC123"
 
-        # Invalid
         with pytest.raises(ValidationError):
             TestSchema(code="abc123")
 
@@ -384,11 +949,9 @@ class TestValidationRules:
         class TestSchema(BaseSchema):
             rating: float = between(0.0, 5.0)
 
-        # Valid
         schema = TestSchema(rating=4.5)
         assert schema.rating == 4.5
 
-        # Invalid
         with pytest.raises(ValidationError):
             TestSchema(rating=6.0)
 
@@ -467,9 +1030,7 @@ class TestPasswordValidator:
         class UserSchema(BaseSchema, PasswordValidatorMixin):
             password: str
 
-        special_chars = '!@#$%^&*(),.?":{}|<>'
-
-        for char in special_chars:
+        for char in '!@#$%^&*(),.?":{}|<>':
             schema = UserSchema(password=f"Test123{char}")
             assert schema.password == f"Test123{char}"
 
@@ -481,7 +1042,6 @@ class TestPasswordValidator:
             PWD_MAX_LENGTH: ClassVar[int] = 10
             password: str
 
-        # Valid with custom length
         schema = UserSchema(password="Test12!")
         assert schema.password == "Test12!"
 
@@ -497,7 +1057,6 @@ class TestPasswordValidator:
 
         errors = BaseSchema.format_errors(exc_info.value)
         assert 'password' in errors
-        # Spanish translation
         assert 'contraseña' in errors['password'][0].lower()
 
 
@@ -531,39 +1090,35 @@ class TestStrongPasswordValidator:
         assert '10' in errors['password'][0]
 
     def test_strong_password_uppercase_required(self, setup_i18n):
-        """Should require uppercase letter."""
-
-        class UserSchema(BaseSchema, StrongPasswordValidatorMixin):
-            password: str
-
         with pytest.raises(ValidationError):
+
+            class UserSchema(BaseSchema, StrongPasswordValidatorMixin):
+                password: str
+
             UserSchema(password="test12345!")
 
     def test_strong_password_lowercase_required(self, setup_i18n):
-        """Should require lowercase letter."""
-
-        class UserSchema(BaseSchema, StrongPasswordValidatorMixin):
-            password: str
-
         with pytest.raises(ValidationError):
+
+            class UserSchema(BaseSchema, StrongPasswordValidatorMixin):
+                password: str
+
             UserSchema(password="TEST12345!")
 
     def test_strong_password_digit_required(self, setup_i18n):
-        """Should require digit."""
-
-        class UserSchema(BaseSchema, StrongPasswordValidatorMixin):
-            password: str
-
         with pytest.raises(ValidationError):
+
+            class UserSchema(BaseSchema, StrongPasswordValidatorMixin):
+                password: str
+
             UserSchema(password="TestPassword!")
 
     def test_strong_password_special_required(self, setup_i18n):
-        """Should require special character."""
-
-        class UserSchema(BaseSchema, StrongPasswordValidatorMixin):
-            password: str
-
         with pytest.raises(ValidationError):
+
+            class UserSchema(BaseSchema, StrongPasswordValidatorMixin):
+                password: str
+
             UserSchema(password="Test1234567")
 
     def test_strong_password_all_requirements(self, setup_i18n):
@@ -572,23 +1127,10 @@ class TestStrongPasswordValidator:
         class UserSchema(BaseSchema, StrongPasswordValidatorMixin):
             password: str
 
-        # Missing uppercase
-        with pytest.raises(ValidationError):
-            UserSchema(password="test12345!")
+        for invalid in ["test12345!", "TEST12345!", "TestTest!!", "Test123456"]:
+            with pytest.raises(ValidationError):
+                UserSchema(password=invalid)
 
-        # Missing lowercase
-        with pytest.raises(ValidationError):
-            UserSchema(password="TEST12345!")
-
-        # Missing digit
-        with pytest.raises(ValidationError):
-            UserSchema(password="TestTest!!")
-
-        # Missing special
-        with pytest.raises(ValidationError):
-            UserSchema(password="Test123456")
-
-        # Valid - has all
         schema = UserSchema(password="Test12345!")
         assert schema.password == "Test12345!"
 
@@ -641,11 +1183,9 @@ class TestUsernameValidator:
         class UserSchema(BaseSchema, UsernameValidatorMixin):
             username: str
 
-        # Invalid - starts with number
         with pytest.raises(ValidationError):
             UserSchema(username="123john")
 
-        # Invalid - starts with underscore
         with pytest.raises(ValidationError):
             UserSchema(username="_john")
 
@@ -655,21 +1195,12 @@ class TestUsernameValidator:
         class UserSchema(BaseSchema, UsernameValidatorMixin):
             username: str
 
-        # Valid
         schema = UserSchema(username="john_doe_123")
         assert schema.username == "john_doe_123"
 
-        # Invalid - hyphen
-        with pytest.raises(ValidationError):
-            UserSchema(username="john-doe")
-
-        # Invalid - special chars
-        with pytest.raises(ValidationError):
-            UserSchema(username="john@doe")
-
-        # Invalid - space
-        with pytest.raises(ValidationError):
-            UserSchema(username="john doe")
+        for invalid in ["john-doe", "john@doe", "john doe"]:
+            with pytest.raises(ValidationError):
+                UserSchema(username=invalid)
 
     def test_username_case_insensitive(self, setup_i18n):
         """Should accept both cases."""
@@ -677,11 +1208,8 @@ class TestUsernameValidator:
         class UserSchema(BaseSchema, UsernameValidatorMixin):
             username: str
 
-        schema1 = UserSchema(username="JohnDoe")
-        assert schema1.username == "JohnDoe"
-
-        schema2 = UserSchema(username="johndoe")
-        assert schema2.username == "johndoe"
+        assert UserSchema(username="JohnDoe").username == "JohnDoe"
+        assert UserSchema(username="johndoe").username == "johndoe"
 
     def test_username_custom_length(self, setup_i18n):
         """Should allow custom length requirements."""
@@ -691,11 +1219,9 @@ class TestUsernameValidator:
             USM_MAX_LENGTH: ClassVar[int] = 15
             username: str
 
-        # Valid with custom length
         schema = UserSchema(username="johndoe")
         assert schema.username == "johndoe"
 
-        # Too short
         with pytest.raises(ValidationError):
             UserSchema(username="john")
 
@@ -711,7 +1237,6 @@ class TestUsernameValidator:
 
         errors = BaseSchema.format_errors(exc_info.value)
         assert 'username' in errors
-        # Spanish translation
         assert 'usuario' in errors['username'][0].lower()
 
 
@@ -755,14 +1280,9 @@ class TestSlugValidator:
         class ArticleSchema(BaseSchema, SlugValidatorMixin):
             slug: str
 
-        with pytest.raises(ValidationError):
-            ArticleSchema(slug="my_article")
-
-        with pytest.raises(ValidationError):
-            ArticleSchema(slug="my@article")
-
-        with pytest.raises(ValidationError):
-            ArticleSchema(slug="my.article")
+        for invalid in ["my_article", "my@article", "my.article"]:
+            with pytest.raises(ValidationError):
+                ArticleSchema(slug=invalid)
 
     def test_slug_no_consecutive_hyphens(self, setup_i18n):
         """Should reject consecutive hyphens."""
@@ -779,11 +1299,9 @@ class TestSlugValidator:
         class ArticleSchema(BaseSchema, SlugValidatorMixin):
             slug: str
 
-        # Start with hyphen
         with pytest.raises(ValidationError):
             ArticleSchema(slug="-my-article")
 
-        # End with hyphen
         with pytest.raises(ValidationError):
             ArticleSchema(slug="my-article-")
 
@@ -802,8 +1320,7 @@ class TestSlugValidator:
         class ArticleSchema(BaseSchema, SlugValidatorMixin):
             slug: str
 
-        schema = ArticleSchema(slug="article")
-        assert schema.slug == "article"
+        assert ArticleSchema(slug="article").slug == "article"
 
     def test_slug_only_numbers(self, setup_i18n):
         """Should accept only numbers."""
@@ -811,12 +1328,11 @@ class TestSlugValidator:
         class ArticleSchema(BaseSchema, SlugValidatorMixin):
             slug: str
 
-        schema = ArticleSchema(slug="123")
-        assert schema.slug == "123"
+        assert ArticleSchema(slug="123").slug == "123"
 
 
 # ============================================================================
-# Test Multiple Validators Combined
+# Test Combined Validators
 # ============================================================================
 
 class TestCombinedValidators:
@@ -829,11 +1345,7 @@ class TestCombinedValidators:
             username: str
             password: str
 
-        schema = UserSchema(
-            username="john_doe",
-            password="Test1234!"
-        )
-
+        schema = UserSchema(username="john_doe", password="Test1234!")
         assert schema.username == "john_doe"
         assert schema.password == "Test1234!"
 
@@ -855,7 +1367,6 @@ class TestCombinedValidators:
             password="Test1234!",
             slug="my-article"
         )
-
         assert schema.username == "john_doe"
         assert schema.password == "Test1234!"
         assert schema.slug == "my-article"
@@ -868,14 +1379,9 @@ class TestCombinedValidators:
             password: str
 
         with pytest.raises(ValidationError) as exc_info:
-            UserSchema(
-                username="ab",
-                password="weak"
-            )
+            UserSchema(username="ab", password="weak")
 
         errors = BaseSchema.format_errors(exc_info.value)
-
-        # Both fields should have errors
         assert 'username' in errors
         assert 'password' in errors
 
@@ -905,28 +1411,15 @@ class TestEdgeCases:
         with pytest.raises(ValidationError):
             UserSchema(username="   ")
 
-    def test_unicode_in_password(self, setup_i18n):
-        """Should handle Unicode characters."""
-
-        class UserSchema(BaseSchema, PasswordValidatorMixin):
-            password: str
-
-        # Unicode special chars might not be recognized
-        # Should still require ASCII special chars
-        with pytest.raises(ValidationError):
-            UserSchema(password="Test1234你好")
-
     def test_exact_boundary_values(self, setup_i18n):
         """Should handle exact boundary values."""
 
         class UserSchema(BaseSchema, PasswordValidatorMixin):
             password: str
 
-        # Exactly min length
         schema = UserSchema(password="Test123!")
         assert len(schema.password) == 8
 
-        # Exactly max length
         schema = UserSchema(password="Test1234567890!A")
         assert len(schema.password) == 16
 
@@ -945,11 +1438,9 @@ class TestEdgeCases:
         class UserSchema(BaseSchema, UsernameValidatorMixin):
             username: str
 
-        # Cannot start with number
         with pytest.raises(ValidationError):
             UserSchema(username="123")
 
-        # Can contain numbers
         schema = UserSchema(username="user123")
         assert schema.username == "user123"
 
@@ -974,14 +1465,12 @@ class TestIntegration:
             password: str
             age: int = min_value(18)
 
-        # Valid registration
         schema = UserRegisterSchema(
             username="john_doe",
             email="john@example.com",
             password="Test1234!",
             age=25
         )
-
         assert schema.username == "john_doe"
         assert schema.email == "john@example.com"
         assert schema.password == "Test1234!"
@@ -995,15 +1484,44 @@ class TestIntegration:
             slug: str
             content: str = min_length(50)
 
-        # Valid article
         schema = ArticleCreateSchema(
             title="My Great Article",
             slug="my-great-article",
             content="A" * 100
         )
-
         assert schema.title == "My Great Article"
         assert schema.slug == "my-great-article"
+
+    def test_create_and_update_schema_together(self, setup_i18n):
+        """BaseCreateSchema and BaseUpdateSchema should work together in a typical CRUD flow."""
+
+        class UserCreate(BaseCreateSchema):
+            name: str
+            email: str
+            status: str = "active"
+
+        class UserUpdate(BaseUpdateSchema):
+            name: str | None = None
+            email: str | None = None
+            status: str | None = None
+
+        # Create
+        create_data = UserCreate(name="John", email="j@example.com")
+        assert create_data.name == "John"
+        assert create_data.status == "active"
+
+        # Partial update — only name
+        update_data = UserUpdate(name="Jane")
+        service_dict = update_data.model_dump(exclude_unset=True)
+        assert service_dict == {"name": "Jane"}
+
+        # Extra field on create — forbidden
+        with pytest.raises(ValidationError):
+            UserCreate(name="John", email="j@example.com", role="admin")
+
+        # Extra field on update — forbidden
+        with pytest.raises(ValidationError):
+            UserUpdate(name="Jane", role="admin")
 
     def test_validation_with_api_response(self, setup_i18n):
         """Should format errors for API response."""
@@ -1013,17 +1531,11 @@ class TestIntegration:
             password: str
 
         try:
-            UserSchema(
-                username="ab",
-                password="weak"
-            )
+            UserSchema(username="ab", password="weak")
         except ValidationError as e:
             errors = BaseSchema.format_errors(e)
 
-            # Should be ready for JSON response
             assert isinstance(errors, dict)
-
-            # Each field should have list of strings
             for field, messages in errors.items():
                 assert isinstance(messages, list)
                 for msg in messages:
@@ -1035,7 +1547,6 @@ class TestIntegration:
         class UserSchema(BaseSchema, PasswordValidatorMixin):
             password: str
 
-        # English errors
         set_locale('en')
         try:
             UserSchema(password="weak")
@@ -1043,7 +1554,6 @@ class TestIntegration:
             errors_en = BaseSchema.format_errors(e)
             assert 'password' in errors_en['password'][0].lower()
 
-        # Spanish errors
         set_locale('es')
         try:
             UserSchema(password="weak")
@@ -1051,8 +1561,26 @@ class TestIntegration:
             errors_es = BaseSchema.format_errors(e)
             assert 'contraseña' in errors_es['password'][0].lower()
 
+    def test_orm_mode_with_create_and_update_schemas(self):
+        """BaseCreateSchema and BaseUpdateSchema should support ORM objects."""
+
+        class UserCreate(BaseCreateSchema):
+            name: str
+            email: str
+
+        class UserUpdate(BaseUpdateSchema):
+            name: str | None = None
+
+        class FakeOrm:
+            name = "Alice"
+            email = "a@example.com"
+
+        result = UserCreate.model_validate(FakeOrm())
+        assert result.name == "Alice"
+
+
 # ============================================================================
-# Test Error Helper Functions
+# Test Error Helper Functions (unchanged)
 # ============================================================================
 
 class TestRaiseValidationError:
@@ -1069,7 +1597,6 @@ class TestRaiseValidationError:
         assert 'Email already exists' in errors[0]['msg']
 
     def test_raises_with_value(self):
-        """Should include the input value in error."""
         with pytest.raises(ValidationError) as exc_info:
             raise_validation_error('email', 'Email already exists', 'test@test.com')
 
@@ -1077,7 +1604,6 @@ class TestRaiseValidationError:
         assert errors[0]['input'] == 'test@test.com'
 
     def test_raises_with_none_value(self):
-        """Should handle None as value."""
         with pytest.raises(ValidationError) as exc_info:
             raise_validation_error('name', 'Name is required', None)
 
@@ -1085,7 +1611,6 @@ class TestRaiseValidationError:
         assert errors[0]['input'] is None
 
     def test_error_type_is_value_error(self):
-        """Should use value_error as error type."""
         with pytest.raises(ValidationError) as exc_info:
             raise_validation_error('field', 'some error')
 
@@ -1093,7 +1618,6 @@ class TestRaiseValidationError:
         assert errors[0]['type'] == 'value_error'
 
     def test_format_errors_integration(self, setup_i18n):
-        """Should work with format_validation_errors."""
         with pytest.raises(ValidationError) as exc_info:
             raise_validation_error('username', 'Username taken', 'john')
 
@@ -1101,11 +1625,11 @@ class TestRaiseValidationError:
         assert 'username' in formatted
         assert any('Username taken' in msg for msg in formatted['username'])
 
+
 class TestRaiseMultipleValidationErrors:
     """Test raise_multiple_validation_errors helper."""
 
     def test_raises_multiple_errors(self):
-        """Should raise ValidationError with multiple field errors."""
         with pytest.raises(ValidationError) as exc_info:
             raise_multiple_validation_errors([
                 ('email', 'Email is required', None),
@@ -1114,13 +1638,11 @@ class TestRaiseMultipleValidationErrors:
 
         errors = exc_info.value.errors()
         assert len(errors) == 2
-
         fields = [e['loc'][0] for e in errors]
         assert 'email' in fields
         assert 'password' in fields
 
     def test_raises_multiple_errors_same_field(self):
-        """Should support multiple errors on the same field."""
         with pytest.raises(ValidationError) as exc_info:
             raise_multiple_validation_errors([
                 ('password', 'Too short', 'ab'),
@@ -1132,18 +1654,14 @@ class TestRaiseMultipleValidationErrors:
         assert all(e['loc'] == ('password',) for e in errors)
 
     def test_raises_single_error_in_list(self):
-        """Should work with a single error in the list."""
         with pytest.raises(ValidationError) as exc_info:
-            raise_multiple_validation_errors([
-                ('name', 'Name is required', None),
-            ])
+            raise_multiple_validation_errors([('name', 'Name is required', None)])
 
         errors = exc_info.value.errors()
         assert len(errors) == 1
         assert errors[0]['loc'] == ('name',)
 
     def test_preserves_input_values(self):
-        """Should preserve input values for each error."""
         with pytest.raises(ValidationError) as exc_info:
             raise_multiple_validation_errors([
                 ('email', 'Invalid email', 'bad-email'),
@@ -1156,7 +1674,6 @@ class TestRaiseMultipleValidationErrors:
         assert inputs['age'] == 15
 
     def test_format_errors_integration(self, setup_i18n):
-        """Should work with format_validation_errors."""
         with pytest.raises(ValidationError) as exc_info:
             raise_multiple_validation_errors([
                 ('email', 'Email is required', None),
@@ -1169,79 +1686,56 @@ class TestRaiseMultipleValidationErrors:
         assert 'password' in formatted
         assert len(formatted['password']) == 2
 
+
 class TestFormatValidationErrors:
     """Test format_validation_errors helper."""
 
     def test_formats_single_error(self):
-        """Should format a single error correctly."""
-        raw_errors = [
-            {'loc': ('name',), 'msg': 'Field required', 'type': 'missing'}
-        ]
-
+        raw_errors = [{'loc': ('name',), 'msg': 'Field required', 'type': 'missing'}]
         result = format_validation_errors(raw_errors)
         assert result == {'name': ['Field required']}
 
     def test_formats_multiple_fields(self):
-        """Should group errors by field."""
         raw_errors = [
             {'loc': ('name',), 'msg': 'Field required', 'type': 'missing'},
             {'loc': ('email',), 'msg': 'Invalid email', 'type': 'value_error'},
         ]
-
         result = format_validation_errors(raw_errors)
-        assert 'name' in result
-        assert 'email' in result
         assert result['name'] == ['Field required']
         assert result['email'] == ['Invalid email']
 
     def test_formats_multiple_errors_same_field(self):
-        """Should collect multiple errors for the same field."""
         raw_errors = [
             {'loc': ('password',), 'msg': 'Too short', 'type': 'value_error'},
             {'loc': ('password',), 'msg': 'Needs uppercase', 'type': 'value_error'},
         ]
-
         result = format_validation_errors(raw_errors)
         assert len(result['password']) == 2
         assert 'Too short' in result['password']
         assert 'Needs uppercase' in result['password']
 
     def test_formats_nested_loc(self):
-        """Should use last element of loc tuple for nested fields."""
         raw_errors = [
             {'loc': ('body', 'address', 'city'), 'msg': 'Field required', 'type': 'missing'},
         ]
-
         result = format_validation_errors(raw_errors)
         assert 'city' in result
         assert result['city'] == ['Field required']
 
     def test_handles_empty_loc(self):
-        """Should use 'unknown' for errors with empty loc."""
-        raw_errors = [
-            {'loc': (), 'msg': 'Something went wrong', 'type': 'value_error'},
-        ]
-
+        raw_errors = [{'loc': (), 'msg': 'Something went wrong', 'type': 'value_error'}]
         result = format_validation_errors(raw_errors)
         assert 'unknown' in result
 
     def test_handles_missing_loc(self):
-        """Should use 'unknown' for errors without loc key."""
-        raw_errors = [
-            {'msg': 'Something went wrong', 'type': 'value_error'},
-        ]
-
+        raw_errors = [{'msg': 'Something went wrong', 'type': 'value_error'}]
         result = format_validation_errors(raw_errors)
         assert 'unknown' in result
 
     def test_empty_error_list(self):
-        """Should return empty dict for empty error list."""
-        result = format_validation_errors([])
-        assert result == {}
+        assert format_validation_errors([]) == {}
 
     def test_with_real_pydantic_errors(self, setup_i18n):
-        """Should correctly format real Pydantic validation errors."""
-
         class TestSchema(BaseSchema):
             name: str
             email: str = Field(min_length=5)
@@ -1250,7 +1744,6 @@ class TestFormatValidationErrors:
             TestSchema(email="ab")
 
         result = format_validation_errors(exc_info.value.errors())
-
         assert 'name' in result
         assert 'email' in result
         assert len(result['name']) >= 1

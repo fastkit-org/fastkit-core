@@ -1,9 +1,47 @@
-from pydantic import BaseModel, ValidationError
+from __future__ import annotations
+
+from typing import Any, List, Dict, ClassVar
+
+from pydantic import BaseModel, ValidationError, ConfigDict, field_validator
+
 from fastkit_core.i18n import _
-from typing import List, Dict, ClassVar
 
 
 class BaseSchema(BaseModel):
+    """
+    Base schema for all FastKit schemas.
+
+    Provides:
+    - ORM mode enabled by default (from_attributes=True)
+    - Standardized error formatting with i18n support
+    - to_dict() helper with exclude_none support
+    - to_json_str() helper
+    - config_exclude_none() and config_exclude_fields() class methods
+
+    Example:
+        class UserResponse(BaseSchema):
+            id: int
+            name: str
+            # from_attributes=True is already set — no extra config needed
+
+        # Works directly with SQLAlchemy ORM objects
+        user_response = UserResponse.model_validate(user_orm_instance)
+
+        # Computed fields
+        from pydantic import computed_field
+
+        class UserResponse(BaseSchema):
+            first_name: str
+            last_name: str
+
+            @computed_field
+            @property
+            def full_name(self) -> str:
+                return f"{self.first_name} {self.last_name}"
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
     # Pydantic error type → translation key mapping
     VALIDATION_MESSAGE_MAP: ClassVar[Dict[str, str]] = {
         'missing': 'validation.required',
@@ -19,23 +57,135 @@ class BaseSchema(BaseModel):
         'string_pattern_mismatch': 'validation.string_pattern_mismatch',
     }
 
+    # ========================================================================
+    # Serialization Helpers
+    # ========================================================================
+
+    def to_dict(self, exclude_none: bool = False) -> Dict[str, Any]:
+        """
+        Convert schema to dictionary.
+
+        Args:
+            exclude_none: If True, fields with None values are excluded.
+
+        Returns:
+            Dictionary representation of the schema.
+
+        Example:
+            user = UserResponse(id=1, name="John", avatar=None)
+
+            user.to_dict()
+            # {'id': 1, 'name': 'John', 'avatar': None}
+
+            user.to_dict(exclude_none=True)
+            # {'id': 1, 'name': 'John'}
+        """
+        return self.model_dump(exclude_none=exclude_none)
+
+    def to_json_str(self, exclude_none: bool = False) -> str:
+        """
+        Serialize schema to a JSON string.
+
+        Args:
+            exclude_none: If True, fields with None values are excluded.
+
+        Returns:
+            JSON string representation.
+
+        Example:
+            user = UserResponse(id=1, name="John")
+            json_str = user.to_json_str()
+            # '{"id": 1, "name": "John"}'
+        """
+        return self.model_dump_json(exclude_none=exclude_none)
+
+    # ========================================================================
+    # Config Helpers
+    # ========================================================================
+
+    @classmethod
+    def config_exclude_none(cls) -> ConfigDict:
+        """
+        Return a ConfigDict with from_attributes=True.
+
+        Note: Pydantic v2 does not support excluding None values at the
+        ConfigDict level. To exclude None from serialization output use:
+
+            instance.to_dict(exclude_none=True)
+            instance.to_json_str(exclude_none=True)
+
+        Or at the call site:
+
+            instance.model_dump(exclude_none=True)
+
+        This method returns a plain ConfigDict(from_attributes=True) and
+        exists as a naming convention anchor — subclasses that want to
+        document intent can call it in their model_config declaration.
+
+        Example:
+            class UserResponse(BaseSchema):
+                id: int
+                name: str
+                avatar: str | None = None
+
+                model_config = BaseSchema.config_exclude_none()
+
+            # To exclude None at serialization time:
+            UserResponse(id=1, name="John", avatar=None).to_dict(exclude_none=True)
+            # {'id': 1, 'name': 'John'}
+        """
+        return ConfigDict(from_attributes=True)
+
+    @classmethod
+    def config_exclude_fields(cls, fields: list[str]) -> ConfigDict:
+        """
+        Return a ConfigDict with from_attributes=True.
+
+        Note: Pydantic v2 handles field exclusion at the field declaration
+        level, not at the ConfigDict level. To exclude specific fields from
+        all serialization output use Field(exclude=True) on each field:
+
+            field_name: type = Field(exclude=True)
+
+        The `fields` parameter is accepted for documentation purposes —
+        it signals intent to the reader — but has no runtime effect on
+        ConfigDict. The actual exclusion must be declared on each field.
+
+        Example:
+            class UserResponse(BaseSchema):
+                id: int
+                name: str
+                internal_token: str = Field(exclude=True)  # ← this does the work
+
+                model_config = BaseSchema.config_exclude_fields(['internal_token'])
+        """
+        return ConfigDict(from_attributes=True)
+
+    # ========================================================================
+    # Error Formatting
+    # ========================================================================
+
     @classmethod
     def format_errors(cls, errors: ValidationError) -> Dict[str, List[str]]:
-        """Formatting validation messages: {"field": ["message"]}"""
+        """
+        Format Pydantic validation errors into a structured dict.
 
+        Returns:
+            Dict mapping field names to lists of translated error messages.
+            Example: {"email": ["The email field is required"]}
+        """
         formatted_errors: Dict[str, List[str]] = {}
+
         for error in errors.errors():
             field_name = str(error['loc'][0])
 
             if field_name not in formatted_errors:
                 formatted_errors[field_name] = []
 
-            # Get error details
             error_type = error['type']
             error_msg = error['msg']
             error_ctx = error.get('ctx', {})
 
-            # Translate message based on error type
             translated_msg = cls._translate_error(
                 error_type=error_type,
                 field_name=field_name,
@@ -56,56 +206,91 @@ class BaseSchema(BaseModel):
             default_msg: str
     ) -> str:
         """
-        Translate a single error message.
+        Translate a single Pydantic error message using i18n keys.
 
-        Args:
-            error_type: Pydantic error type (e.g., 'string_too_short')
-            field_name: Name of the field
-            context: Error context with values (min_length, ge, etc.)
-            default_msg: Default Pydantic message (fallback)
-
-        Returns:
-            Translated error message
+        Falls back to the original Pydantic message when no translation
+        is found for the given error type.
         """
-
-        # Special handling for value_error with custom message
-        # When validators raise ValueError with custom message,
-        # Pydantic wraps it as 'value_error' with the message in default_msg
         if error_type == 'value_error':
-            # Check if message looks like it's from our custom validator
-            # (already translated by the validator itself)
-            # Pattern: "Value error, <actual message>"
             if default_msg.startswith('Value error, '):
-                # Extract the actual message (already translated)
                 return default_msg.replace('Value error, ', '')
 
-            # If it's a generic value_error, try to translate
-            # But if no translation exists, use the actual error message
             translation_key = 'validation.value_error'
             params = {'field': field_name, **context}
             translated = _(translation_key, **params)
 
-            # If translation not found, use the actual error message
             if translated == translation_key:
                 return default_msg.replace('Value error, ', '')
 
             return translated
 
-        # Get translation key for other error types
         translation_key = cls.VALIDATION_MESSAGE_MAP.get(error_type, 'validation.value_error')
-
-        # Prepare translation parameters
-        params = {
-            'field': field_name,
-            **context  # Includes min_length, ge, le, etc.
-        }
-
-        # Translate
+        params = {'field': field_name, **context}
         translated = _(translation_key, **params)
 
-        # If translation key not found, _() returns the key itself
-        # In that case, use default Pydantic message
         if translated == translation_key:
             return default_msg
 
         return translated
+
+
+class BaseCreateSchema(BaseSchema):
+    """
+    Base schema for create operations.
+
+    Conventions:
+    - Extra fields are forbidden (prevents accidental mass assignment)
+    - String fields are stripped of leading/trailing whitespace automatically
+    - from_attributes=True inherited from BaseSchema
+
+    Example:
+        class UserCreate(BaseCreateSchema):
+            name: str
+            email: str
+
+        # Whitespace is stripped automatically
+        user = UserCreate(name="  John  ", email="j@example.com")
+        user.name  # "John"
+
+        # Extra fields raise a validation error
+        UserCreate(name="John", email="j@example.com", role="admin")
+        # ValidationError: extra fields not permitted
+    """
+
+    model_config = ConfigDict(from_attributes=True, extra='forbid')
+
+    @field_validator('*', mode='before')
+    @classmethod
+    def strip_strings(cls, v: Any) -> Any:
+        """Strip leading/trailing whitespace from all string fields."""
+        if isinstance(v, str):
+            return v.strip()
+        return v
+
+
+class BaseUpdateSchema(BaseSchema):
+    """
+    Base schema for partial update operations.
+
+    Conventions:
+    - All fields are optional by convention (partial update / PATCH pattern)
+    - Extra fields are forbidden
+    - from_attributes=True inherited from BaseSchema
+
+    Subclasses should declare all fields with a default of None:
+
+        class UserUpdate(BaseUpdateSchema):
+            name: str | None = None
+            email: str | None = None
+
+    This ensures that only explicitly provided fields are included when
+    converting to a dict with model_dump(exclude_unset=True), which is
+    what BaseCrudService._to_dict() does internally.
+
+    Example:
+        data = UserUpdate(name="Jane")
+        data.model_dump(exclude_unset=True)
+        # {'name': 'Jane'}   ← email not included because it was not set
+    """
+
+    model_config = ConfigDict(from_attributes=True, extra='forbid')
