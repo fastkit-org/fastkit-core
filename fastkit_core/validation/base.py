@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import json
 from typing import Any, List, Dict, ClassVar
 
-from pydantic import BaseModel, ValidationError, ConfigDict
+from pydantic import BaseModel, ValidationError, ConfigDict, field_validator
 
 from fastkit_core.i18n import _
 
@@ -107,10 +106,21 @@ class BaseSchema(BaseModel):
     @classmethod
     def config_exclude_none(cls) -> ConfigDict:
         """
-        Return a ConfigDict that excludes None fields during serialization.
+        Return a ConfigDict with from_attributes=True.
 
-        Use this when you want a schema to always omit None values in its
-        output without calling to_dict(exclude_none=True) every time.
+        Note: Pydantic v2 does not support excluding None values at the
+        ConfigDict level. To exclude None from serialization output use:
+
+            instance.to_dict(exclude_none=True)
+            instance.to_json_str(exclude_none=True)
+
+        Or at the call site:
+
+            instance.model_dump(exclude_none=True)
+
+        This method returns a plain ConfigDict(from_attributes=True) and
+        exists as a naming convention anchor — subclasses that want to
+        document intent can call it in their model_config declaration.
 
         Example:
             class UserResponse(BaseSchema):
@@ -120,27 +130,32 @@ class BaseSchema(BaseModel):
 
                 model_config = BaseSchema.config_exclude_none()
 
-            UserResponse(id=1, name="John", avatar=None).model_dump()
+            # To exclude None at serialization time:
+            UserResponse(id=1, name="John", avatar=None).to_dict(exclude_none=True)
             # {'id': 1, 'name': 'John'}
         """
-        return ConfigDict(from_attributes=True, populate_by_name=True)
+        return ConfigDict(from_attributes=True)
 
     @classmethod
     def config_exclude_fields(cls, fields: list[str]) -> ConfigDict:
         """
-        Return a ConfigDict that excludes specific fields during serialization.
+        Return a ConfigDict with from_attributes=True.
 
-        Note: Pydantic v2 handles field exclusion at the field level via
-        Field(exclude=True). This helper documents the recommended pattern
-        and returns a base ConfigDict. For per-field exclusion, use:
+        Note: Pydantic v2 handles field exclusion at the field declaration
+        level, not at the ConfigDict level. To exclude specific fields from
+        all serialization output use Field(exclude=True) on each field:
 
             field_name: type = Field(exclude=True)
+
+        The `fields` parameter is accepted for documentation purposes —
+        it signals intent to the reader — but has no runtime effect on
+        ConfigDict. The actual exclusion must be declared on each field.
 
         Example:
             class UserResponse(BaseSchema):
                 id: int
                 name: str
-                internal_token: str = Field(exclude=True)
+                internal_token: str = Field(exclude=True)  # ← this does the work
 
                 model_config = BaseSchema.config_exclude_fields(['internal_token'])
         """
@@ -225,7 +240,7 @@ class BaseCreateSchema(BaseSchema):
 
     Conventions:
     - Extra fields are forbidden (prevents accidental mass assignment)
-    - Whitespace is stripped from string fields via validators in subclasses
+    - String fields are stripped of leading/trailing whitespace automatically
     - from_attributes=True inherited from BaseSchema
 
     Example:
@@ -233,12 +248,24 @@ class BaseCreateSchema(BaseSchema):
             name: str
             email: str
 
+        # Whitespace is stripped automatically
+        user = UserCreate(name="  John  ", email="j@example.com")
+        user.name  # "John"
+
         # Extra fields raise a validation error
         UserCreate(name="John", email="j@example.com", role="admin")
         # ValidationError: extra fields not permitted
     """
 
     model_config = ConfigDict(from_attributes=True, extra='forbid')
+
+    @field_validator('*', mode='before')
+    @classmethod
+    def strip_strings(cls, v: Any) -> Any:
+        """Strip leading/trailing whitespace from all string fields."""
+        if isinstance(v, str):
+            return v.strip()
+        return v
 
 
 class BaseUpdateSchema(BaseSchema):
