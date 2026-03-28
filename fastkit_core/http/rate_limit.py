@@ -1,5 +1,7 @@
+import time
 from typing import Literal, Callable
 from starlette.requests import Request
+from fastkit_core.http import TooManyRequestsException
 
 
 class RateLimit:
@@ -17,8 +19,8 @@ class RateLimit:
         self._prefix = f"rl:{limit}:{per}:"
         self._storage: dict[str, tuple[int, float]] = {}
 
-    @classmethod
-    def _per_to_seconds(cls, per: Literal['second', 'minute', 'hour', 'day']) -> int:
+    @staticmethod
+    def _per_to_seconds(per: Literal['second', 'minute', 'hour', 'day']) -> int:
         match per:
             case 'second':
                 return 1
@@ -47,4 +49,24 @@ class RateLimit:
         FastAPI dependency. Raises HTTP 429 if limit exceeded.
         Can be used directly with Depends() or stored as a variable.
         """
-        pass
+        key = self._get_key(request)
+        now = time.time()
+        count, window_start = self._storage.get(key, (0, now))
+
+        if now - window_start >= self._window_seconds:
+            count, window_start = 0, now
+
+        count += 1
+        self._storage[key] = (count, window_start)
+
+        if count > self.limit:
+            retry_after = int(window_start + self._window_seconds - now)
+            raise TooManyRequestsException(
+                message= f'Too many requests. Please try again in {retry_after} seconds.',
+                headers={
+                            'Retry-After': str(retry_after),
+                            'X-RateLimit-Limit': str(self.limit),
+                            'X-RateLimit-Remaining': '0',
+                            'X-RateLimit-Reset': str(int(window_start + self._window_seconds)),
+                        }
+            )
