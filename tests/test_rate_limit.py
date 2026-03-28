@@ -329,3 +329,68 @@ class TestCustomKeyFunc:
         client.get("/test", headers={"X-User-ID": "alice"})
         r = client.get("/test", headers={"X-User-ID": "alice"})
         assert r.status_code == 429
+
+# ============================================================================
+# Test IP Isolation
+# ============================================================================
+
+class TestIPIsolation:
+    """Test that different client IPs have independent counters."""
+
+    def test_different_ips_are_independent(self):
+        """Exhausting limit for one IP must not affect another."""
+        client = make_app(RateLimit(2, per='minute'))
+
+        # IP A exhausts limit
+        make_request(client, ip="1.1.1.1")
+        make_request(client, ip="1.1.1.1")
+        r = make_request(client, ip="1.1.1.1")
+        assert r.status_code == 429
+
+        # IP B is unaffected
+        r = make_request(client, ip="2.2.2.2")
+        assert r.status_code == 200
+
+    def test_same_ip_shares_counter(self):
+        """Multiple requests from the same IP share a counter."""
+        client = make_app(RateLimit(2, per='minute'))
+        make_request(client, ip="5.5.5.5")
+        make_request(client, ip="5.5.5.5")
+        r = make_request(client, ip="5.5.5.5")
+        assert r.status_code == 429
+
+
+# ============================================================================
+# Test Instance Isolation
+# ============================================================================
+
+class TestInstanceIsolation:
+    """Test that separate RateLimit instances do not share storage."""
+
+    def test_two_limiters_are_independent(self):
+        """Exhausting one limiter must not affect another."""
+        app = FastAPI()
+        register_exception_handlers(app)
+
+        limiter_a = RateLimit(2, per='minute')
+        limiter_b = RateLimit(2, per='minute')
+
+        @app.get("/a")
+        async def endpoint_a(_: None = Depends(limiter_a)):
+            return {"endpoint": "a"}
+
+        @app.get("/b")
+        async def endpoint_b(_: None = Depends(limiter_b)):
+            return {"endpoint": "b"}
+
+        client = TestClient(app, raise_server_exceptions=False)
+
+        # Exhaust /a
+        for _ in range(2):
+            client.get("/a", headers={"X-Forwarded-For": "1.2.3.4"})
+        r = client.get("/a", headers={"X-Forwarded-For": "1.2.3.4"})
+        assert r.status_code == 429
+
+        # /b should still be fully available
+        r = client.get("/b", headers={"X-Forwarded-For": "1.2.3.4"})
+        assert r.status_code == 200
