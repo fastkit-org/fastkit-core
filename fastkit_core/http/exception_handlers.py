@@ -39,7 +39,8 @@ def register_exception_handlers(app: FastAPI) -> None:
         return error_response(
             message=exc.message,
             errors=exc.errors,
-            status_code=exc.status_code
+            status_code=exc.status_code,
+            headers=exc.headers
         )
 
     @app.exception_handler(RequestValidationError)
