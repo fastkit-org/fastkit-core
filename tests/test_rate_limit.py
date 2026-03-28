@@ -125,3 +125,35 @@ class TestGetKey:
         assert l1._get_key(req) != l2._get_key(req)
 
 
+# ============================================================================
+# Test TooManyRequestsException
+# ============================================================================
+
+class TestTooManyRequestsException:
+    """Test the exception class itself."""
+
+    def test_status_code_is_429(self):
+        exc = TooManyRequestsException()
+        assert exc.status_code == 429
+
+    def test_default_message(self):
+        exc = TooManyRequestsException()
+        assert exc.message  # non-empty
+
+    def test_custom_message(self):
+        exc = TooManyRequestsException(message="Slow down!")
+        assert exc.message == "Slow down!"
+
+    def test_headers_stored(self):
+        headers = {"Retry-After": "30", "X-RateLimit-Limit": "5"}
+        exc = TooManyRequestsException(headers=headers)
+        assert exc.headers == headers
+
+    def test_no_headers_by_default(self):
+        exc = TooManyRequestsException()
+        assert exc.headers is None
+
+    def test_is_subclass_of_fastkit_exception(self):
+        from fastkit_core.http import FastKitException
+        exc = TooManyRequestsException()
+        assert isinstance(exc, FastKitException)
