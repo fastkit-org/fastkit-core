@@ -41,3 +41,8 @@ class ForbiddenException(FastKitException):
     """Not authorized."""
     def __init__(self, message: str = "Forbidden"):
         super().__init__(message, status_code=403)
+
+class TooManyRequestsException(FastKitException):
+    """Too Many requests"""
+    def __init__(self, message: str = "Too Many requests"):
+        super().__init__(message, status_code=429)
