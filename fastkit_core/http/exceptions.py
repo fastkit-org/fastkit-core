@@ -15,12 +15,14 @@ class FastKitException(Exception):
             self,
             message: str,
             status_code: int = 400,
-            errors: dict | None = None
+            errors: dict | None = None,
+            headers: dict | None = None
     ):
         self.message = message
         self.status_code = status_code
         self.errors = errors
-        super().__init__(self.message)
+        self.headers = headers
+        super().__init__(self.message, self.headers)
 
 class NotFoundException(FastKitException):
     """Resource not found."""
