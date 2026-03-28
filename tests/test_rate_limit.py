@@ -157,3 +157,75 @@ class TestTooManyRequestsException:
         from fastkit_core.http import FastKitException
         exc = TooManyRequestsException()
         assert isinstance(exc, FastKitException)
+
+# ============================================================================
+# Test RateLimit — Under / At / Over limit
+# ============================================================================
+
+class TestRateLimitThreshold:
+    """Test that the counter allows exactly `limit` requests."""
+
+    def test_requests_under_limit_pass(self):
+        """Requests 1..limit-1 should all return 200."""
+        client = make_app(RateLimit(5, per='minute'))
+        for _ in range(4):
+            r = make_request(client)
+            assert r.status_code == 200
+
+    def test_request_at_limit_passes(self):
+        """The exactly limit-th request should still return 200."""
+        client = make_app(RateLimit(5, per='minute'))
+        for _ in range(5):
+            r = make_request(client)
+        assert r.status_code == 200
+
+    def test_request_exceeding_limit_returns_429(self):
+        """The limit+1-th request should return 429."""
+        client = make_app(RateLimit(3, per='minute'))
+        for _ in range(3):
+            make_request(client)
+        r = make_request(client)
+        assert r.status_code == 429
+
+    def test_429_response_body_format(self):
+        """429 body should follow FastKit error_response format."""
+        client = make_app(RateLimit(1, per='minute'))
+        make_request(client)
+        r = make_request(client)
+
+        data = r.json()
+        assert data['success'] is False
+        assert 'message' in data
+        assert 'too many' in data['message'].lower()
+
+    def test_429_has_retry_after_header(self):
+        """429 response must carry Retry-After header."""
+        client = make_app(RateLimit(1, per='minute'))
+        make_request(client)
+        r = make_request(client)
+
+        assert 'retry-after' in r.headers
+
+    def test_429_has_ratelimit_headers(self):
+        """429 response must carry X-RateLimit-* headers."""
+        client = make_app(RateLimit(1, per='minute'))
+        make_request(client)
+        r = make_request(client)
+
+        assert 'x-ratelimit-limit' in r.headers
+        assert 'x-ratelimit-remaining' in r.headers
+        assert 'x-ratelimit-reset' in r.headers
+
+    def test_ratelimit_limit_header_value(self):
+        """X-RateLimit-Limit should equal the configured limit."""
+        client = make_app(RateLimit(7, per='minute'))
+        for _ in range(8):
+            r = make_request(client)
+        assert r.headers['x-ratelimit-limit'] == '7'
+
+    def test_ratelimit_remaining_is_zero_on_429(self):
+        """X-RateLimit-Remaining should be 0 on a 429 response."""
+        client = make_app(RateLimit(2, per='minute'))
+        for _ in range(3):
+            r = make_request(client)
+        assert r.headers['x-ratelimit-remaining'] == '0'
