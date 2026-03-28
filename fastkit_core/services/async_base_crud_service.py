@@ -5,7 +5,7 @@ Provides async business logic layer on top of async repository pattern.
 Handles validation, transactions, lifecycle hooks, and response mapping.
 """
 
-from typing import Any, Generic, TypeVar, Optional, Type, Sequence
+from typing import Any, Generic, TypeVar, Optional, Type, Sequence, Literal
 from abc import ABC
 from sqlalchemy.orm import Load
 
@@ -511,6 +511,54 @@ class AsyncBaseCrudService(
             **filters
         )
         return self._to_response_list(instances), metadata
+
+    async def cursor_paginate(
+            self,
+            per_page: int = 20,
+            cursor: str | None = None,
+            cursor_field: str = 'id',
+            direction: Literal['asc', 'desc'] = 'asc',
+            _load_relations: Sequence[Load] | None = None,
+            **filters
+    ) -> tuple[list[ResponseSchemaType] | list[ModelType], str | None]:
+        """
+        Cursor-based pagination — performant alternative to paginate() (async).
+
+        Unlike paginate(), cursor_paginate() does not require a COUNT query
+        and produces stable results when records are inserted during pagination.
+
+        Args:
+            per_page: Number of items per page
+            cursor: Opaque cursor string from previous response. None for first page.
+            cursor_field: Model field to use as cursor. Must be indexed. Defaults to 'id'.
+            direction: Sort direction — 'asc' or 'desc'. Defaults to 'asc'.
+            _load_relations: SQLAlchemy Load objects for eager loading
+            **filters: Filter conditions with operator support
+
+        Returns:
+            Tuple of (items, next_cursor).
+            next_cursor is None when there are no more pages.
+
+        Example:
+            # First page
+            users, next_cursor = await service.cursor_paginate(per_page=20)
+
+            # Next page
+            users, next_cursor = await service.cursor_paginate(
+                per_page=20,
+                cursor=next_cursor,
+                status='active'
+            )
+        """
+        instances, next_cursor = await self.repository.cursor_paginate(
+            per_page=per_page,
+            cursor=cursor,
+            cursor_field=cursor_field,
+            direction=direction,
+            _load_relations=_load_relations,
+            **filters
+        )
+        return self._to_response_list(instances), next_cursor
 
     async def exists(self, **filters) -> bool:
         """
