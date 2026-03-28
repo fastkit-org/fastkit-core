@@ -276,3 +276,56 @@ class TestWindowReset:
             r = make_request(client)
             assert r.status_code == 200
 
+# ============================================================================
+# Test Custom key_func
+# ============================================================================
+
+class TestCustomKeyFunc:
+    """Test per-user rate limiting via custom key_func."""
+
+    def test_different_users_have_independent_counters(self):
+        """Two different user keys should not share the counter."""
+        app = FastAPI()
+        register_exception_handlers(app)
+
+        limiter = RateLimit(
+            2, per='minute',
+            key_func=lambda req: req.headers.get('X-User-ID', 'anonymous')
+        )
+
+        @app.get("/test")
+        async def endpoint(_: None = Depends(limiter)):
+            return {"ok": True}
+
+        client = TestClient(app, raise_server_exceptions=False)
+
+        # User 1 exhausts their limit
+        for _ in range(2):
+            client.get("/test", headers={"X-User-ID": "user-1"})
+        r = client.get("/test", headers={"X-User-ID": "user-1"})
+        assert r.status_code == 429
+
+        # User 2 should still be allowed
+        r = client.get("/test", headers={"X-User-ID": "user-2"})
+        assert r.status_code == 200
+
+    def test_same_user_accumulates_across_requests(self):
+        """Requests with the same key should share the counter."""
+        app = FastAPI()
+        register_exception_handlers(app)
+
+        limiter = RateLimit(
+            2, per='minute',
+            key_func=lambda req: req.headers.get('X-User-ID', 'anon')
+        )
+
+        @app.get("/test")
+        async def endpoint(_: None = Depends(limiter)):
+            return {"ok": True}
+
+        client = TestClient(app, raise_server_exceptions=False)
+
+        client.get("/test", headers={"X-User-ID": "alice"})
+        client.get("/test", headers={"X-User-ID": "alice"})
+        r = client.get("/test", headers={"X-User-ID": "alice"})
+        assert r.status_code == 429
