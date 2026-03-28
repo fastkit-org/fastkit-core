@@ -6,7 +6,11 @@ Provides common CRUD operations and query helpers.
 
 from __future__ import annotations
 
-from typing import Any, Generic, Type, TypeVar, Sequence
+from typing import Any, Generic, Type, TypeVar, Sequence, Literal
+
+import base64
+import json
+from datetime import datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, Load
@@ -150,6 +154,14 @@ class Repository(Generic[T]):
                     query = query.order_by(getattr(self.model, field))
 
         return query
+
+    def _encode_cursor(self, value: Any) -> str:
+        if isinstance(value, datetime):
+            value = value.isoformat()
+        return base64.urlsafe_b64encode(json.dumps(value).encode()).decode()
+
+    def _decode_cursor(self, cursor: str) -> Any:
+        return json.loads(base64.urlsafe_b64decode(cursor.encode()).decode())
 
     def query(self):
         """Get query builder for complex queries."""
@@ -697,6 +709,39 @@ class Repository(Generic[T]):
         }
 
         return items, metadata
+
+    def cursor_paginate(
+            self,
+            per_page: int = 20,
+            cursor: str | None = None,
+            cursor_field: str = 'id',
+            direction: Literal['asc', 'desc'] = 'asc',
+            _load_relations: Sequence[Load] | None = None,
+            **filters
+    ) -> tuple[list[T], str | None]:
+
+        if cursor is not None:
+            cursor_value = self._decode_cursor(cursor)
+            if direction == 'asc':
+                filters[f'{cursor_field}__gt'] = cursor_value
+            elif direction == 'desc':
+                filters[f'{cursor_field}__lt'] = cursor_value
+
+        order = f'-{cursor_field}' if direction == 'desc' else cursor_field
+        items = self.filter(
+            _limit=per_page + 1,
+            _order_by=order,
+            _load_relations=_load_relations,
+            **filters
+        )
+
+        next_cursor = None
+        if len(items) > per_page:
+            items = items[:per_page]
+            next_cursor = self._encode_cursor(getattr(items[-1], cursor_field))
+
+        return items, next_cursor
+
 
     # ========================================================================
     # UTILITY
