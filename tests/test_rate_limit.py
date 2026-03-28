@@ -394,3 +394,78 @@ class TestInstanceIsolation:
         # /b should still be fully available
         r = client.get("/b", headers={"X-Forwarded-For": "1.2.3.4"})
         assert r.status_code == 200
+
+
+# ============================================================================
+# Test Router-Level Usage
+# ============================================================================
+
+class TestRouterLevelUsage:
+    """Test that RateLimit applied at router level covers all routes."""
+
+    def test_limit_applies_to_all_router_endpoints(self):
+        """Router-level dependency should rate-limit all endpoints."""
+        app = FastAPI()
+        register_exception_handlers(app)
+
+        limiter = RateLimit(3, per='minute')
+        router = APIRouter(dependencies=[Depends(limiter)])
+
+        @router.get("/one")
+        async def one():
+            return {"route": "one"}
+
+        @router.get("/two")
+        async def two():
+            return {"route": "two"}
+
+        app.include_router(router)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        ip_headers = {"X-Forwarded-For": "9.9.9.9"}
+
+        # 1st request to /one
+        r = client.get("/one", headers=ip_headers)
+        assert r.status_code == 200
+
+        # 2nd request to /two — same limiter, same IP
+        r = client.get("/two", headers=ip_headers)
+        assert r.status_code == 200
+
+        # 3rd request to /one — still within limit
+        r = client.get("/one", headers=ip_headers)
+        assert r.status_code == 200
+
+        # 4th request — limit exceeded
+        r = client.get("/two", headers=ip_headers)
+        assert r.status_code == 429
+
+    def test_router_limit_does_not_affect_other_routes(self):
+        """Rate limit on a router must not spill over to routes outside it."""
+        app = FastAPI()
+        register_exception_handlers(app)
+
+        limiter = RateLimit(1, per='minute')
+        router = APIRouter(dependencies=[Depends(limiter)])
+
+        @router.get("/limited")
+        async def limited():
+            return {"limited": True}
+
+        @app.get("/unlimited")
+        async def unlimited():
+            return {"unlimited": True}
+
+        app.include_router(router)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        ip_headers = {"X-Forwarded-For": "8.8.8.8"}
+
+        # Exhaust the router limit
+        client.get("/limited", headers=ip_headers)
+        r = client.get("/limited", headers=ip_headers)
+        assert r.status_code == 429
+
+        # Unrelated route must still work
+        r = client.get("/unlimited", headers=ip_headers)
+        assert r.status_code == 200
