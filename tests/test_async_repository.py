@@ -1537,3 +1537,171 @@ class TestAsyncEagerLoading:
         # Third call without relations again
         user3 = await user_repo.get(user.id)
         assert user3 is not None
+
+
+# ============================================================================
+# Test CURSOR PAGINATION
+# ============================================================================
+
+class TestAsyncCursorPagination:
+    """Test async cursor-based pagination functionality."""
+
+    @pytest.mark.asyncio
+    async def test_cursor_paginate_first_page_no_cursor(self, user_repo):
+        """First page request with no cursor should return items and a next_cursor."""
+        await user_repo.create_many([
+            {'name': f'User{i:02d}', 'email': f'user{i}@example.com', 'age': 20 + i}
+            for i in range(10)
+        ])
+
+        items, next_cursor = await user_repo.cursor_paginate(per_page=4)
+
+        assert len(items) == 4
+        assert next_cursor is not None
+
+    @pytest.mark.asyncio
+    async def test_cursor_paginate_second_page(self, user_repo):
+        """Passing cursor from first page should return the next batch of items."""
+        await user_repo.create_many([
+            {'name': f'User{i:02d}', 'email': f'user{i}@example.com', 'age': 20 + i}
+            for i in range(10)
+        ])
+
+        items_p1, cursor_p1 = await user_repo.cursor_paginate(per_page=4, cursor_field='id', direction='asc')
+        items_p2, cursor_p2 = await user_repo.cursor_paginate(per_page=4, cursor_field='id', direction='asc', cursor=cursor_p1)
+
+        assert len(items_p2) == 4
+        last_id_p1 = items_p1[-1].id
+        assert all(u.id > last_id_p1 for u in items_p2)
+
+    @pytest.mark.asyncio
+    async def test_cursor_paginate_last_page_returns_none_cursor(self, user_repo):
+        """next_cursor must be None when there are no more records after the current page."""
+        await user_repo.create_many([
+            {'name': f'User{i}', 'email': f'user{i}@example.com'}
+            for i in range(5)
+        ])
+
+        items_p1, cursor_p1 = await user_repo.cursor_paginate(per_page=3)
+        items_p2, cursor_p2 = await user_repo.cursor_paginate(per_page=3, cursor=cursor_p1)
+
+        assert len(items_p2) == 2
+        assert cursor_p2 is None
+
+    @pytest.mark.asyncio
+    async def test_cursor_paginate_empty_table_returns_none_cursor(self, user_repo):
+        """Empty table should return empty list and None cursor."""
+        items, next_cursor = await user_repo.cursor_paginate(per_page=10)
+
+        assert items == []
+        assert next_cursor is None
+
+    @pytest.mark.asyncio
+    async def test_cursor_paginate_all_results_fit_one_page(self, user_repo):
+        """When total records <= per_page the cursor should be None on the first call."""
+        await user_repo.create_many([
+            {'name': f'User{i}', 'email': f'user{i}@example.com'}
+            for i in range(3)
+        ])
+
+        items, next_cursor = await user_repo.cursor_paginate(per_page=10)
+
+        assert len(items) == 3
+        assert next_cursor is None
+
+    @pytest.mark.asyncio
+    async def test_cursor_paginate_with_filters(self, user_repo):
+        """Filter operators should work together with cursor pagination."""
+        await user_repo.create_many([
+            {
+                'name': f'User{i:02d}',
+                'email': f'user{i}@example.com',
+                'age': 20 + i,
+                'is_active': i % 2 == 0,
+            }
+            for i in range(10)
+        ])
+
+        items, next_cursor = await user_repo.cursor_paginate(per_page=3, is_active=True)
+
+        assert len(items) == 3
+        assert all(u.is_active for u in items)
+
+    @pytest.mark.asyncio
+    async def test_cursor_paginate_direction_asc(self, user_repo):
+        """ASC direction should return records ordered from lowest to highest cursor field."""
+        await user_repo.create_many([
+            {'name': f'User{i}', 'email': f'user{i}@example.com', 'age': 20 + i}
+            for i in range(5)
+        ])
+
+        items, _ = await user_repo.cursor_paginate(per_page=5, cursor_field='age', direction='asc')
+
+        ages = [u.age for u in items]
+        assert ages == sorted(ages)
+
+    @pytest.mark.asyncio
+    async def test_cursor_paginate_direction_desc(self, user_repo):
+        """DESC direction should return records ordered from highest to lowest cursor field."""
+        await user_repo.create_many([
+            {'name': f'User{i}', 'email': f'user{i}@example.com', 'age': 20 + i}
+            for i in range(5)
+        ])
+
+        items, _ = await user_repo.cursor_paginate(per_page=5, cursor_field='age', direction='desc')
+
+        ages = [u.age for u in items]
+        assert ages == sorted(ages, reverse=True)
+
+    @pytest.mark.asyncio
+    async def test_cursor_paginate_cursor_field_age(self, user_repo):
+        """cursor_field other than 'id' should work as the pagination pointer."""
+        await user_repo.create_many([
+            {'name': f'User{i}', 'email': f'user{i}@example.com', 'age': 10 + i}
+            for i in range(6)
+        ])
+
+        items_p1, cursor_p1 = await user_repo.cursor_paginate(per_page=3, cursor_field='age', direction='asc')
+        items_p2, cursor_p2 = await user_repo.cursor_paginate(per_page=3, cursor_field='age', direction='asc', cursor=cursor_p1)
+
+        last_age_p1 = items_p1[-1].age
+        assert all(u.age > last_age_p1 for u in items_p2)
+        assert cursor_p2 is None
+
+    @pytest.mark.asyncio
+    async def test_cursor_paginate_no_duplicates_across_pages(self, user_repo):
+        """No record should appear on more than one page."""
+        await user_repo.create_many([
+            {'name': f'User{i}', 'email': f'user{i}@example.com'}
+            for i in range(9)
+        ])
+
+        seen_ids: set = set()
+        cursor = None
+        while True:
+            items, cursor = await user_repo.cursor_paginate(per_page=3, cursor=cursor)
+            for item in items:
+                assert item.id not in seen_ids, f"Duplicate id={item.id} found"
+                seen_ids.add(item.id)
+            if cursor is None:
+                break
+
+        assert len(seen_ids) == 9
+
+    @pytest.mark.asyncio
+    async def test_cursor_paginate_with_soft_delete_model(self, post_repo):
+        """Soft-deleted records must be excluded from cursor pagination."""
+        posts = await post_repo.create_many([
+            {'title': f'Post{i}', 'content': 'Content', 'user_id': 1}
+            for i in range(5)
+        ])
+
+        # Soft delete every other post
+        await post_repo.delete(posts[1].id)
+        await post_repo.delete(posts[3].id)
+
+        items, _ = await post_repo.cursor_paginate(per_page=10)
+
+        assert len(items) == 3
+        deleted_ids = {posts[1].id, posts[3].id}
+        assert not any(p.id in deleted_ids for p in items)
