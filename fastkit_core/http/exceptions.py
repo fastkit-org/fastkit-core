@@ -22,7 +22,7 @@ class FastKitException(Exception):
         self.status_code = status_code
         self.errors = errors
         self.headers = headers
-        super().__init__(self.message, self.headers)
+        super().__init__(self.message)
 
 class NotFoundException(FastKitException):
     """Resource not found."""
@@ -46,5 +46,8 @@ class ForbiddenException(FastKitException):
 
 class TooManyRequestsException(FastKitException):
     """Too Many requests"""
-    def __init__(self, message: str = "Too Many requests"):
-        super().__init__(message, status_code=429)
+    def __init__(self,
+                 message: str = "Too Many requests",
+                 headers: dict | None = None
+                 ):
+        super().__init__(message, headers=headers, status_code=429)
