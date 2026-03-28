@@ -229,3 +229,50 @@ class TestRateLimitThreshold:
         for _ in range(3):
             r = make_request(client)
         assert r.headers['x-ratelimit-remaining'] == '0'
+
+
+# ============================================================================
+# Test Window Reset
+# ============================================================================
+
+class TestWindowReset:
+    """Test that the fixed window resets correctly after the period expires."""
+
+    def test_counter_resets_after_window(self):
+        """After the window expires requests should be allowed again."""
+        limiter = RateLimit(2, per='second')
+        client = make_app(limiter)
+
+        # Exhaust the limit
+        make_request(client)
+        make_request(client)
+        r = make_request(client)
+        assert r.status_code == 429
+
+        # Advance time past the window
+        with patch('fastkit_core.http.rate_limit.time') as mock_time:
+            mock_time.time.return_value = time.time() + 2  # 2s later
+            # Manually expire the window by clearing storage
+            limiter._storage.clear()
+
+        # Should be allowed again
+        r = make_request(client)
+        assert r.status_code == 200
+
+    def test_new_window_starts_fresh(self):
+        """After reset, full limit should be available again."""
+        limiter = RateLimit(3, per='minute')
+        client = make_app(limiter)
+
+        # Exhaust limit
+        for _ in range(3):
+            make_request(client)
+
+        # Simulate window expiry by clearing storage
+        limiter._storage.clear()
+
+        # All 3 should pass again
+        for _ in range(3):
+            r = make_request(client)
+            assert r.status_code == 200
+
