@@ -273,3 +273,36 @@ class TestReadinessNoDb:
         client = TestClient(app)
         r = client.get('/health/ready-check')
         assert r.status_code == 200
+
+
+# ============================================================================
+# Test Readiness Endpoint — Sync DB Checks
+# ============================================================================
+
+class TestReadinessSyncDb:
+    """GET /health/ready with include_db=True, is_db_async=False."""
+
+    def test_200_when_all_connections_healthy(self):
+        with patch(_DB_SYNC_PATH, return_value=ALL_HEALTHY_DB):
+            client = make_client({'include_db': True, 'is_db_async': False})
+            r = client.get('/health/ready')
+        assert r.status_code == 200
+
+    def test_503_when_one_connection_fails(self):
+        with patch(_DB_SYNC_PATH, return_value=ONE_FAILED_DB):
+            client = make_client({'include_db': True, 'is_db_async': False})
+            r = client.get('/health/ready')
+        assert r.status_code == 503
+
+    def test_db_check_appears_in_checks(self):
+        with patch(_DB_SYNC_PATH, return_value=ALL_HEALTHY_DB):
+            client = make_client({'include_db': True, 'is_db_async': False})
+            data = client.get('/health/ready').json()
+        names = [c['name'] for c in data['checks']]
+        assert 'database:default' in names
+
+    def test_include_db_false_skips_sync_db(self):
+        with patch(_DB_SYNC_PATH, return_value=ALL_FAILED_DB) as mock:
+            client = make_client({'include_db': False, 'is_db_async': False})
+            client.get('/health/ready')
+        mock.assert_not_called()
