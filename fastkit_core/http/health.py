@@ -1,14 +1,19 @@
-from typing import Literal, List
+from typing import Literal, List, Optional
 
-from fastapi import APIRouter
-from pydantic import BaseModel
+from fastapi import APIRouter, Response, status
+from pydantic import BaseModel, Field
 from fastkit_core.database import health_check_all, health_check_all_async
 
 class HealthCheck(BaseModel):
     name: str
     status: Literal['ok', 'error', 'degraded']
-    detail: str | None = None
-    latency_ms: int | None = None
+    detail: Optional[str] = None
+    latency_ms: Optional[int] = None
+
+class HealthResponse(BaseModel):
+    status: str
+    version: Optional[str] = None
+    checks: List[HealthCheck] = Field(default_factory=list)
 
 def check_databases() -> List[HealthCheck]:
     results = []
