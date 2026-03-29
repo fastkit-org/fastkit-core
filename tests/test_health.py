@@ -406,3 +406,45 @@ class TestReadinessCombined:
         assert 'redis' in names
         assert 'stripe' in names
         assert 'database:default' in names
+
+# ============================================================================
+# Test Router Factory
+# ============================================================================
+
+class TestCreateHealthRouter:
+    """Test the factory function itself."""
+
+    def test_returns_api_router(self):
+        from fastapi import APIRouter
+        router = create_health_router(include_db=False)
+        assert isinstance(router, APIRouter)
+
+    def test_default_prefix_mount(self):
+        """Router mounts correctly at /health prefix."""
+        app = FastAPI()
+        app.include_router(create_health_router(include_db=False), prefix='/health')
+        client = TestClient(app)
+        r = client.get('/health/')
+        assert r.status_code == 200
+
+    def test_different_prefix(self):
+        app = FastAPI()
+        app.include_router(create_health_router(include_db=False), prefix='/status')
+        client = TestClient(app)
+        assert client.get('/status/').status_code == 200
+        assert client.get('/health/').status_code == 404
+
+    def test_multiple_routers_independent(self):
+        """Two health routers with different configs must be independent."""
+        app = FastAPI()
+        app.include_router(
+            create_health_router(include_db=False, liveness_path='/live'),
+            prefix='/health'
+        )
+        app.include_router(
+            create_health_router(include_db=False, liveness_path='/ping'),
+            prefix='/status'
+        )
+        client = TestClient(app)
+        assert client.get('/health/live').status_code == 200
+        assert client.get('/status/ping').status_code == 200
