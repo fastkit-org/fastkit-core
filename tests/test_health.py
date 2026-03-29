@@ -175,3 +175,101 @@ class TestLiveness:
         client = TestClient(app)
         r = client.get('/health/live')
         assert r.status_code == 200
+
+# ============================================================================
+# Test Readiness Endpoint — No DB, Custom Checks Only
+# ============================================================================
+
+class TestReadinessNoDb:
+    """GET /health/ready with include_db=False — only custom checks run."""
+
+    def test_returns_200_with_no_checks(self):
+        client = make_client({'include_db': False})
+        r = client.get('/health/ready')
+        assert r.status_code == 200
+
+    def test_body_ok_with_no_checks(self):
+        client = make_client({'include_db': False})
+        data = client.get('/health/ready').json()
+        assert data['status'] == 'ok'
+        assert data['checks'] == []
+
+    def test_returns_200_when_all_custom_checks_pass(self):
+        client = make_client({
+            'include_db': False,
+            'checks': [ok_check('redis'), ok_check('stripe')],
+        })
+        r = client.get('/health/ready')
+        assert r.status_code == 200
+
+    def test_body_contains_check_results(self):
+        client = make_client({
+            'include_db': False,
+            'checks': [ok_check('redis')],
+        })
+        data = client.get('/health/ready').json()
+        assert len(data['checks']) == 1
+        assert data['checks'][0]['name'] == 'redis'
+        assert data['checks'][0]['status'] == 'ok'
+
+    def test_returns_503_when_one_check_fails(self):
+        client = make_client({
+            'include_db': False,
+            'checks': [ok_check('redis'), error_check('stripe')],
+        })
+        r = client.get('/health/ready')
+        assert r.status_code == 503
+
+    def test_body_status_error_on_503(self):
+        client = make_client({
+            'include_db': False,
+            'checks': [error_check('stripe')],
+        })
+        data = client.get('/health/ready').json()
+        assert data['status'] == 'error'
+
+    def test_returns_503_when_all_checks_fail(self):
+        client = make_client({
+            'include_db': False,
+            'checks': [error_check('redis'), error_check('stripe')],
+        })
+        r = client.get('/health/ready')
+        assert r.status_code == 503
+
+    def test_degraded_does_not_cause_503(self):
+        """degraded status should not trigger 503 — only 'error' does."""
+        client = make_client({
+            'include_db': False,
+            'checks': [ok_check('redis'), degraded_check('cache')],
+        })
+        r = client.get('/health/ready')
+        assert r.status_code == 200
+
+    def test_failed_check_detail_in_response(self):
+        client = make_client({
+            'include_db': False,
+            'checks': [error_check('stripe', detail='API key invalid')],
+        })
+        data = client.get('/health/ready').json()
+        failed = next(c for c in data['checks'] if c['name'] == 'stripe')
+        assert failed['detail'] == 'API key invalid'
+
+    def test_version_present_in_readiness(self):
+        client = make_client({'include_db': False})
+        data = client.get('/health/ready').json()
+        assert data.get('version') is not None
+
+    def test_version_absent_when_disabled(self):
+        client = make_client({'include_db': False, 'include_version': False})
+        data = client.get('/health/ready').json()
+        assert data.get('version') is None
+
+    def test_custom_readiness_path(self):
+        app = FastAPI()
+        app.include_router(
+            create_health_router(include_db=False, readiness_path='/ready-check'),
+            prefix='/health'
+        )
+        client = TestClient(app)
+        r = client.get('/health/ready-check')
+        assert r.status_code == 200
