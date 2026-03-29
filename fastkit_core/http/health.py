@@ -1,5 +1,6 @@
 from typing import Literal, List, Optional
-
+import asyncio
+import time
 from fastapi import APIRouter, Response, status
 from pydantic import BaseModel, Field
 from fastkit_core.database import health_check_all, health_check_all_async
@@ -19,7 +20,7 @@ def check_databases() -> List[HealthCheck]:
     results = []
     for name, items in health_check_all().items():
         results.append(HealthCheck(
-            name=name,
+            name = f"database:{name}",
             status = 'error' if 'error' in items else 'ok',
             detail = items.__str__()
         ))
@@ -29,8 +30,9 @@ async def check_async_databases() -> List[HealthCheck]:
     results = []
     for name, items in await health_check_all_async().items():
         results.append(HealthCheck(
-            name=name,
+            name = f"database:{name}",
             status = 'error' if 'error' in items else 'ok',
             detail = items.__str__()
         ))
     return results
+
