@@ -19,3 +19,13 @@ def check_databases() -> List[HealthCheck]:
             detail = items.__str__()
         ))
     return results
+
+async def check_async_databases() -> List[HealthCheck]:
+    results = []
+    for name, items in await health_check_all_async().items():
+        results.append(HealthCheck(
+            name=name,
+            status = 'error' if 'error' in items else 'ok',
+            detail = items.__str__()
+        ))
+    return results
