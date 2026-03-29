@@ -131,3 +131,47 @@ class TestHealthResponseModel:
     def test_with_version(self):
         hr = HealthResponse(status='ok', version='1.2.3')
         assert hr.version == '1.2.3'
+
+# ============================================================================
+# Test Liveness Endpoint
+# ============================================================================
+
+class TestLiveness:
+    """GET /health — liveness probe, always 200."""
+
+    def test_returns_200(self):
+        client = make_client({'include_db': False})
+        r = client.get('/health/')
+        assert r.status_code == 200
+
+    def test_body_status_ok(self):
+        client = make_client({'include_db': False})
+        data = client.get('/health/').json()
+        assert data['status'] == 'ok'
+
+    def test_no_checks_in_liveness(self):
+        """Liveness must not run any checks — just confirm process is alive."""
+        client = make_client({'include_db': False})
+        data = client.get('/health/').json()
+        assert data.get('checks', []) == []
+
+    def test_version_present_by_default(self):
+        client = make_client({'include_db': False})
+        data = client.get('/health/').json()
+        assert 'version' in data
+        assert data['version'] is not None
+
+    def test_version_absent_when_disabled(self):
+        client = make_client({'include_db': False, 'include_version': False})
+        data = client.get('/health/').json()
+        assert data.get('version') is None
+
+    def test_custom_liveness_path(self):
+        app = FastAPI()
+        app.include_router(
+            create_health_router(include_db=False, liveness_path='/live'),
+            prefix='/health'
+        )
+        client = TestClient(app)
+        r = client.get('/health/live')
+        assert r.status_code == 200
