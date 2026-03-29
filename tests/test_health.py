@@ -351,3 +351,58 @@ class TestReadinessAsyncDb:
             r = client.get('/health/ready')
         async_mock.assert_not_called()
         assert r.status_code == 200
+
+# ============================================================================
+# Test Combined — Custom Checks + DB
+# ============================================================================
+
+class TestReadinessCombined:
+    """Custom checks and DB checks together."""
+
+    def test_200_when_both_custom_and_db_pass(self):
+        async_mock = AsyncMock(return_value=ALL_HEALTHY_DB)
+        with patch(_DB_ASYNC_PATH, async_mock):
+            client = make_client({
+                'include_db': True,
+                'is_db_async': True,
+                'checks': [ok_check('redis')],
+            })
+            data = client.get('/health/ready').json()
+        assert data['status'] == 'ok'
+        assert len(data['checks']) == 2  # redis + database:default
+
+    def test_503_when_custom_fails_but_db_passes(self):
+        async_mock = AsyncMock(return_value=ALL_HEALTHY_DB)
+        with patch(_DB_ASYNC_PATH, async_mock):
+            client = make_client({
+                'include_db': True,
+                'is_db_async': True,
+                'checks': [error_check('stripe')],
+            })
+            r = client.get('/health/ready')
+        assert r.status_code == 503
+
+    def test_503_when_db_fails_but_custom_passes(self):
+        async_mock = AsyncMock(return_value=ALL_FAILED_DB)
+        with patch(_DB_ASYNC_PATH, async_mock):
+            client = make_client({
+                'include_db': True,
+                'is_db_async': True,
+                'checks': [ok_check('redis')],
+            })
+            r = client.get('/health/ready')
+        assert r.status_code == 503
+
+    def test_all_checks_present_in_body(self):
+        async_mock = AsyncMock(return_value=ALL_HEALTHY_DB)
+        with patch(_DB_ASYNC_PATH, async_mock):
+            client = make_client({
+                'include_db': True,
+                'is_db_async': True,
+                'checks': [ok_check('redis'), ok_check('stripe')],
+            })
+            data = client.get('/health/ready').json()
+        names = [c['name'] for c in data['checks']]
+        assert 'redis' in names
+        assert 'stripe' in names
+        assert 'database:default' in names
