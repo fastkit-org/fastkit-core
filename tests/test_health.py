@@ -108,3 +108,26 @@ class TestHealthCheckModel:
         assert data['status'] == 'ok'
         assert data['latency_ms'] == 5
 
+# ============================================================================
+# Test HealthResponse Model
+# ============================================================================
+
+class TestHealthResponseModel:
+    """Test the HealthResponse Pydantic model."""
+
+    def test_default_checks_empty(self):
+        hr = HealthResponse(status='ok')
+        assert hr.checks == []
+
+    def test_version_optional(self):
+        hr = HealthResponse(status='ok')
+        assert hr.version is None
+
+    def test_with_checks(self):
+        checks = [HealthCheck(name='db', status='ok')]
+        hr = HealthResponse(status='ok', checks=checks)
+        assert len(hr.checks) == 1
+
+    def test_with_version(self):
+        hr = HealthResponse(status='ok', version='1.2.3')
+        assert hr.version == '1.2.3'
