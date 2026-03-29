@@ -306,3 +306,48 @@ class TestReadinessSyncDb:
             client = make_client({'include_db': False, 'is_db_async': False})
             client.get('/health/ready')
         mock.assert_not_called()
+
+# ============================================================================
+# Test Readiness Endpoint — Async DB Checks
+# ============================================================================
+
+class TestReadinessAsyncDb:
+    """GET /health/ready with include_db=True, is_db_async=True (default)."""
+
+    def test_200_when_all_connections_healthy(self):
+        async_mock = AsyncMock(return_value=ALL_HEALTHY_DB)
+        with patch(_DB_ASYNC_PATH, async_mock):
+            client = make_client({'include_db': True, 'is_db_async': True})
+            r = client.get('/health/ready')
+        assert r.status_code == 200
+
+    def test_503_when_one_connection_fails(self):
+        async_mock = AsyncMock(return_value=ONE_FAILED_DB)
+        with patch(_DB_ASYNC_PATH, async_mock):
+            client = make_client({'include_db': True, 'is_db_async': True})
+            r = client.get('/health/ready')
+        assert r.status_code == 503
+
+    def test_db_check_status_ok_in_body(self):
+        async_mock = AsyncMock(return_value=ALL_HEALTHY_DB)
+        with patch(_DB_ASYNC_PATH, async_mock):
+            client = make_client({'include_db': True, 'is_db_async': True})
+            data = client.get('/health/ready').json()
+        db_check = next(c for c in data['checks'] if c['name'] == 'database:default')
+        assert db_check['status'] == 'ok'
+
+    def test_db_check_status_error_in_body(self):
+        async_mock = AsyncMock(return_value=ONE_FAILED_DB)
+        with patch(_DB_ASYNC_PATH, async_mock):
+            client = make_client({'include_db': True, 'is_db_async': True})
+            data = client.get('/health/ready').json()
+        db_check = next(c for c in data['checks'] if c['name'] == 'database:default')
+        assert db_check['status'] == 'error'
+
+    def test_include_db_false_skips_async_db(self):
+        async_mock = AsyncMock(return_value=ALL_FAILED_DB)
+        with patch(_DB_ASYNC_PATH, async_mock):
+            client = make_client({'include_db': False, 'is_db_async': True})
+            r = client.get('/health/ready')
+        async_mock.assert_not_called()
+        assert r.status_code == 200
