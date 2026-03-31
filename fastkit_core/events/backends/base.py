@@ -5,7 +5,13 @@ from typing import Any, Callable
 class BaseSignalBackend(ABC):
 
     @abstractmethod
-    async def send(self, signal_name: str, payload: Any, **kwargs) -> None:
+    async def send(self, signal_name: str, payload: Any, **kwargs) -> list[Exception]:
+        """
+        Send signal to all connected receivers.
+
+        Receiver exceptions are caught and returned — never propagated to the sender.
+        Returns list of exceptions from failed receivers, empty list if all succeeded.
+        """
         pass
 
     @abstractmethod
