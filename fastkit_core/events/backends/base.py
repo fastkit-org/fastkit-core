@@ -11,3 +11,7 @@ class BaseSignalBackend(ABC):
     @abstractmethod
     def connect(self, signal_name: str, receiver: Callable) -> None:
         pass
+
+    @abstractmethod
+    def disconnect(self, signal_name: str, receiver: Callable) -> None:
+        pass
