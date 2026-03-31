@@ -21,3 +21,8 @@ class BaseSignalBackend(ABC):
     @abstractmethod
     def disconnect(self, signal_name: str, receiver: Callable) -> None:
         pass
+
+    @abstractmethod
+    def receivers(self, signal_name: str) -> list[Callable]:
+        """Return all receivers connected to this signal."""
+        pass
