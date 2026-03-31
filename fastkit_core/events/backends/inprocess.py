@@ -1,8 +1,11 @@
 import asyncio
 from collections import defaultdict
 from typing import Any, Callable
+import logging
 
 from fastkit_core.events.backends.base import BaseSignalBackend
+
+logger = logging.getLogger(__name__)
 
 class InProcessBackend(BaseSignalBackend):
 
@@ -18,6 +21,13 @@ class InProcessBackend(BaseSignalBackend):
                 else:
                     receiver(payload, **kwargs)
             except Exception as e:
+                logger.error(
+                    "Signal '%s' receiver '%s' raised an exception: %s",
+                    signal_name,
+                    getattr(receiver, '__name__', repr(receiver)),
+                    e,
+                    exc_info=True
+                )
                 errors.append(e)
 
         return errors
