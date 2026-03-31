@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Callable
 
 
 class BaseSignalBackend(ABC):
@@ -8,3 +8,6 @@ class BaseSignalBackend(ABC):
     async def send(self, signal_name: str, payload: Any, **kwargs) -> None:
         pass
 
+    @abstractmethod
+    def connect(self, signal_name: str, receiver: Callable) -> None:
+        pass
