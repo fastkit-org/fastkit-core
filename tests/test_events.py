@@ -313,3 +313,29 @@ class TestSignalConnect:
         def handler(p, **kw): pass
         s.connect(handler)
         assert handler in s.receivers
+
+
+class TestSignalDisconnect:
+    """Test Signal.disconnect()."""
+
+    def test_disconnect_removes_receiver(self):
+        s = Signal('evt')
+        async def handler(p, **kw): pass
+        s.connect(handler)
+        s.disconnect(handler)
+        assert handler not in s.receivers
+
+    def test_disconnect_non_existent_does_not_raise(self):
+        s = Signal('evt')
+        async def handler(p, **kw): pass
+        s.disconnect(handler)  # never connected — should not raise
+
+    def test_disconnect_only_removes_target(self):
+        s = Signal('evt')
+        async def h1(p, **kw): pass
+        async def h2(p, **kw): pass
+        s.connect(h1)
+        s.connect(h2)
+        s.disconnect(h1)
+        assert h1 not in s.receivers
+        assert h2 in s.receivers
