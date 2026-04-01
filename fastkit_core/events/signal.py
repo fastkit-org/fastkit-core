@@ -21,3 +21,6 @@ class Signal:
     def connect(self, receiver: Callable) -> Callable:
         self._backend.connect(self.name, receiver)
         return receiver
+
+    def disconnect(self, receiver: Callable) -> None:
+        self._backend.disconnect(self.name, receiver)
