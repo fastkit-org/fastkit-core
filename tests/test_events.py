@@ -615,3 +615,155 @@ class TestPayloadWarning:
             await s.send(42)
         user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
         assert '0.5.0' in str(user_warnings[0].message)
+
+# ============================================================================
+# Test Multiple Signals — isolation
+# ============================================================================
+
+class TestMultipleSignals:
+    """Signals with different names must be completely independent."""
+
+    @pytest.mark.asyncio
+    async def test_signals_do_not_share_receivers(self):
+        s1 = Signal('user.created')
+        s2 = Signal('user.deleted')
+        calls = []
+
+        @s1.connect
+        async def handler(p, **kw): calls.append('created')
+
+        await s2.send({})
+        assert calls == []
+
+    @pytest.mark.asyncio
+    async def test_sending_one_signal_does_not_trigger_another(self):
+        s1 = Signal('order.placed')
+        s2 = Signal('order.cancelled')
+        s2_calls = []
+
+        @s2.connect
+        async def handler(p, **kw): s2_calls.append(True)
+
+        await s1.send({'order_id': 1})
+        assert s2_calls == []
+
+    @pytest.mark.asyncio
+    async def test_same_receiver_can_be_on_multiple_signals(self):
+        s1 = Signal('a')
+        s2 = Signal('b')
+        calls = []
+
+        async def shared_handler(p, **kw): calls.append(p)
+
+        s1.connect(shared_handler)
+        s2.connect(shared_handler)
+
+        await s1.send({'from': 'a'})
+        await s2.send({'from': 'b'})
+
+        assert len(calls) == 2
+
+
+# ============================================================================
+# Test Conditional Emit
+# ============================================================================
+
+class TestConditionalEmit:
+    """Signal is sent only when a condition is met."""
+
+    @pytest.mark.asyncio
+    async def test_signal_sent_when_condition_true(self):
+        s = Signal('user.promoted')
+        calls = []
+
+        @s.connect
+        async def handler(p, **kw): calls.append(p)
+
+        user = {'id': 1, 'role': 'admin'}
+        if user['role'] == 'admin':
+            await s.send({'id': user['id']})
+
+        assert len(calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_signal_not_sent_when_condition_false(self):
+        s = Signal('user.promoted')
+        calls = []
+
+        @s.connect
+        async def handler(p, **kw): calls.append(p)
+
+        user = {'id': 1, 'role': 'user'}
+        if user['role'] == 'admin':
+            await s.send({'id': user['id']})
+
+        assert len(calls) == 0
+
+
+# ============================================================================
+# Test Integration — Signal used inside a service-like class
+# ============================================================================
+
+class TestIntegration:
+    """Simulate real-world usage inside a service layer."""
+
+    @pytest.mark.asyncio
+    async def test_signal_in_service_after_create(self):
+        """Simulate after_create hook emitting a signal."""
+        user_created = Signal('user.created')
+        notifications = []
+        billing_accounts = []
+
+        @user_created.connect
+        async def send_welcome(payload, **kwargs):
+            notifications.append(payload['email'])
+
+        @user_created.connect
+        async def create_billing(payload, **kwargs):
+            billing_accounts.append(payload['id'])
+
+        # Simulate service.after_create
+        user = {'id': 42, 'email': 'alice@example.com'}
+        await user_created.send({'id': user['id'], 'email': user['email']})
+
+        assert 'alice@example.com' in notifications
+        assert 42 in billing_accounts
+
+    @pytest.mark.asyncio
+    async def test_failing_notification_does_not_block_billing(self):
+        """A broken notification module must not prevent billing from running."""
+        user_created = Signal('user.created')
+        billing_calls = []
+
+        @user_created.connect
+        async def broken_notification(payload, **kwargs):
+            raise ConnectionError("Email server down")
+
+        @user_created.connect
+        async def billing(payload, **kwargs):
+            billing_calls.append(payload['id'])
+
+        errors = await user_created.send({'id': 7, 'email': 'bob@example.com'})
+
+        assert len(errors) == 1
+        assert isinstance(errors[0], ConnectionError)
+        assert 7 in billing_calls
+
+    @pytest.mark.asyncio
+    async def test_connected_to_useful_in_tests(self):
+        """connected_to is the recommended pattern for test isolation."""
+        order_placed = Signal('order.placed')
+        audit_log = []
+
+        async def audit(payload, **kwargs):
+            audit_log.append(payload)
+
+        # In a test, temporarily connect without polluting other tests
+        with order_placed.connected_to(audit):
+            await order_placed.send({'order_id': 99})
+
+        assert len(audit_log) == 1
+
+        # After context — no more logging
+        await order_placed.send({'order_id': 100})
+        assert len(audit_log) == 1
