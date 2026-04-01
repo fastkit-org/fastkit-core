@@ -41,6 +41,10 @@ class Signal:
         finally:
             self.disconnect(receiver)
 
+    @property
+    def receivers(self) -> list[Callable]:
+        return self._backend.receivers(self.name)
+
     @staticmethod
     def _warn_if_payload_not_serializable(payload: Any) -> None:
         if payload is None:
