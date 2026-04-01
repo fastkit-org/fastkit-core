@@ -45,6 +45,9 @@ class Signal:
     def receivers(self) -> list[Callable]:
         return self._backend.receivers(self.name)
 
+    def __bool__(self) -> bool:
+        return len(self.receivers) > 0
+
     @staticmethod
     def _warn_if_payload_not_serializable(payload: Any) -> None:
         if payload is None:
