@@ -497,3 +497,40 @@ class TestSignalConnectedTo:
 
         await s.send({'n': 2})
         assert len(permanent_calls) == 2
+
+class TestSignalBoolAndReceivers:
+    """Test Signal.__bool__ and Signal.receivers property."""
+
+    def test_bool_false_when_no_receivers(self):
+        s = Signal('evt')
+        assert bool(s) is False
+
+    def test_bool_true_when_has_receivers(self):
+        s = Signal('evt')
+
+        @s.connect
+        async def handler(p, **kw): pass
+
+        assert bool(s) is True
+
+    def test_bool_false_after_all_disconnected(self):
+        s = Signal('evt')
+
+        async def handler(p, **kw): pass
+
+        s.connect(handler)
+        s.disconnect(handler)
+        assert bool(s) is False
+
+    def test_receivers_returns_list(self):
+        s = Signal('evt')
+        assert isinstance(s.receivers, list)
+
+    def test_receivers_copy_cannot_mutate_internal_state(self):
+        s = Signal('evt')
+
+        @s.connect
+        async def handler(p, **kw): pass
+
+        s.receivers.clear()
+        assert len(s.receivers) == 1
