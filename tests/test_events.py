@@ -271,3 +271,45 @@ class TestSignalInit:
         assert 'Signal' in r
 
 
+class TestSignalConnect:
+    """Test Signal.connect() — method and decorator usage."""
+
+    @pytest.mark.asyncio
+    async def test_connect_method_registers_receiver(self):
+        s = Signal('evt')
+        async def handler(p, **kw): pass
+        s.connect(handler)
+        assert handler in s.receivers
+
+    @pytest.mark.asyncio
+    async def test_connect_as_decorator_registers_receiver(self):
+        s = Signal('evt')
+
+        @s.connect
+        async def handler(p, **kw): pass
+
+        assert handler in s.receivers
+
+    def test_connect_decorator_returns_original_function(self):
+        """Decorator must not replace the function — it must return it unchanged."""
+        s = Signal('evt')
+
+        @s.connect
+        async def handler(p, **kw): pass
+
+        # handler should still be callable and be the same object
+        assert callable(handler)
+        assert handler.__name__ == 'handler'
+
+    def test_connect_does_not_add_duplicate(self):
+        s = Signal('evt')
+        async def handler(p, **kw): pass
+        s.connect(handler)
+        s.connect(handler)
+        assert s.receivers.count(handler) == 1
+
+    def test_connect_sync_receiver(self):
+        s = Signal('evt')
+        def handler(p, **kw): pass
+        s.connect(handler)
+        assert handler in s.receivers
