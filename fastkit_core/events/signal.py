@@ -1,4 +1,7 @@
-from typing import Callable
+from typing import Callable, Any
+import warnings
+import dataclasses
+from pydantic import BaseModel
 
 from fastkit_core.events.backends.base import BaseSignalBackend
 from fastkit_core.events.backends.inprocess import InProcessBackend
@@ -24,3 +27,21 @@ class Signal:
 
     def disconnect(self, receiver: Callable) -> None:
         self._backend.disconnect(self.name, receiver)
+
+    async def send(self, payload: Any = None, **kwargs) -> list[Exception]:
+        self._warn_if_payload_not_serializable(payload)
+        return await self._backend.send(self.name, payload, **kwargs)
+
+    @staticmethod
+    def _warn_if_payload_not_serializable(payload: Any) -> None:
+        if payload is None:
+            return
+        if isinstance(payload, (dict, BaseModel)) or dataclasses.is_dataclass(payload):
+            return
+        warnings.warn(
+            f"Signal payload of type '{type(payload).__name__}' may not be "
+            "serializable to a message broker. Use dict, dataclass, or Pydantic model "
+            "for forward compatibility with 0.5.0 broker backends.",
+            UserWarning,
+            stacklevel=3
+        )
