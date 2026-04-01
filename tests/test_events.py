@@ -244,3 +244,30 @@ class TestInProcessBackend:
         assert errors == []
 
 
+# ============================================================================
+# Test Signal — public API
+# ============================================================================
+
+class TestSignalInit:
+    """Test Signal initialization and shared backend."""
+
+    def test_signal_has_name(self):
+        s = Signal('user.created')
+        assert s.name == 'user.created'
+
+    def test_two_signals_share_same_backend(self):
+        s1 = Signal('a')
+        s2 = Signal('b')
+        assert s1._backend is s2._backend
+
+    def test_signal_starts_with_no_receivers(self):
+        s = Signal('evt')
+        assert s.receivers == []
+
+    def test_signal_repr(self):
+        s = Signal('user.created')
+        r = repr(s)
+        assert 'user.created' in r
+        assert 'Signal' in r
+
+
