@@ -80,3 +80,167 @@ class TestBaseSignalBackend:
         backend = Minimal()
         assert backend is not None
 
+# ============================================================================
+# Test InProcessBackend directly
+# ============================================================================
+
+class TestInProcessBackend:
+    """Unit tests for InProcessBackend in isolation."""
+
+    def setup_method(self):
+        self.backend = InProcessBackend()
+
+    # --- connect ---
+
+    def test_connect_adds_receiver(self):
+        async def handler(p, **kw): pass
+        self.backend.connect('evt', handler)
+        assert handler in self.backend.receivers('evt')
+
+    def test_connect_does_not_add_duplicates(self):
+        async def handler(p, **kw): pass
+        self.backend.connect('evt', handler)
+        self.backend.connect('evt', handler)
+        assert self.backend.receivers('evt').count(handler) == 1
+
+    def test_connect_multiple_receivers(self):
+        async def h1(p, **kw): pass
+        async def h2(p, **kw): pass
+        self.backend.connect('evt', h1)
+        self.backend.connect('evt', h2)
+        assert len(self.backend.receivers('evt')) == 2
+
+    def test_connect_different_signals_are_independent(self):
+        async def h(p, **kw): pass
+        self.backend.connect('a', h)
+        assert h not in self.backend.receivers('b')
+
+    # --- disconnect ---
+
+    def test_disconnect_removes_receiver(self):
+        async def handler(p, **kw): pass
+        self.backend.connect('evt', handler)
+        self.backend.disconnect('evt', handler)
+        assert handler not in self.backend.receivers('evt')
+
+    def test_disconnect_non_existent_does_not_raise(self):
+        async def handler(p, **kw): pass
+        # Should not raise even if receiver was never connected
+        self.backend.disconnect('evt', handler)
+
+    def test_disconnect_only_removes_target_receiver(self):
+        async def h1(p, **kw): pass
+        async def h2(p, **kw): pass
+        self.backend.connect('evt', h1)
+        self.backend.connect('evt', h2)
+        self.backend.disconnect('evt', h1)
+        assert h1 not in self.backend.receivers('evt')
+        assert h2 in self.backend.receivers('evt')
+
+    # --- receivers ---
+
+    def test_receivers_returns_empty_list_for_unknown_signal(self):
+        assert self.backend.receivers('nonexistent') == []
+
+    def test_receivers_returns_copy_not_reference(self):
+        """Mutating the returned list must not affect internal state."""
+        async def handler(p, **kw): pass
+        self.backend.connect('evt', handler)
+        copy = self.backend.receivers('evt')
+        copy.clear()
+        assert len(self.backend.receivers('evt')) == 1
+
+    # --- send: async receivers ---
+
+    @pytest.mark.asyncio
+    async def test_send_calls_async_receiver(self):
+        received = []
+
+        async def handler(payload, **kwargs):
+            received.append(payload)
+
+        self.backend.connect('evt', handler)
+        await self.backend.send('evt', {'id': 1})
+        assert received == [{'id': 1}]
+
+    @pytest.mark.asyncio
+    async def test_send_calls_sync_receiver(self):
+        received = []
+
+        def handler(payload, **kwargs):
+            received.append(payload)
+
+        self.backend.connect('evt', handler)
+        await self.backend.send('evt', {'x': 42})
+        assert received == [{'x': 42}]
+
+    @pytest.mark.asyncio
+    async def test_send_calls_multiple_receivers(self):
+        calls = []
+
+        async def h1(p, **kw): calls.append('h1')
+        async def h2(p, **kw): calls.append('h2')
+
+        self.backend.connect('evt', h1)
+        self.backend.connect('evt', h2)
+        await self.backend.send('evt', {})
+        assert 'h1' in calls
+        assert 'h2' in calls
+
+    @pytest.mark.asyncio
+    async def test_send_passes_kwargs_to_receiver(self):
+        received_kwargs = {}
+
+        async def handler(payload, **kwargs):
+            received_kwargs.update(kwargs)
+
+        self.backend.connect('evt', handler)
+        await self.backend.send('evt', {}, extra='value')
+        assert received_kwargs.get('extra') == 'value'
+
+    @pytest.mark.asyncio
+    async def test_send_to_unknown_signal_returns_empty_errors(self):
+        errors = await self.backend.send('nonexistent', {})
+        assert errors == []
+
+    # --- error isolation ---
+
+    @pytest.mark.asyncio
+    async def test_failing_receiver_does_not_propagate_exception(self):
+        async def bad(p, **kw): raise ValueError("boom")
+        self.backend.connect('evt', bad)
+        # Must not raise
+        errors = await self.backend.send('evt', {})
+        assert len(errors) == 1
+        assert isinstance(errors[0], ValueError)
+
+    @pytest.mark.asyncio
+    async def test_failing_receiver_does_not_stop_other_receivers(self):
+        calls = []
+
+        async def bad(p, **kw): raise RuntimeError("fail")
+        async def good(p, **kw): calls.append('good')
+
+        self.backend.connect('evt', bad)
+        self.backend.connect('evt', good)
+        await self.backend.send('evt', {})
+        assert 'good' in calls
+
+    @pytest.mark.asyncio
+    async def test_all_errors_accumulated_and_returned(self):
+        async def bad1(p, **kw): raise ValueError("err1")
+        async def bad2(p, **kw): raise TypeError("err2")
+
+        self.backend.connect('evt', bad1)
+        self.backend.connect('evt', bad2)
+        errors = await self.backend.send('evt', {})
+        assert len(errors) == 2
+
+    @pytest.mark.asyncio
+    async def test_successful_send_returns_empty_list(self):
+        async def good(p, **kw): pass
+        self.backend.connect('evt', good)
+        errors = await self.backend.send('evt', {})
+        assert errors == []
+
+
