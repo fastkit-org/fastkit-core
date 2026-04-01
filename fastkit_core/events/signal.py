@@ -2,6 +2,7 @@ from typing import Callable, Any
 import warnings
 import dataclasses
 from pydantic import BaseModel
+from contextlib import contextmanager
 
 from fastkit_core.events.backends.base import BaseSignalBackend
 from fastkit_core.events.backends.inprocess import InProcessBackend
@@ -31,6 +32,14 @@ class Signal:
     async def send(self, payload: Any = None, **kwargs) -> list[Exception]:
         self._warn_if_payload_not_serializable(payload)
         return await self._backend.send(self.name, payload, **kwargs)
+
+    @contextmanager
+    def connected_to(self, receiver: Callable):
+        self.connect(receiver)
+        try:
+            yield
+        finally:
+            self.disconnect(receiver)
 
     @staticmethod
     def _warn_if_payload_not_serializable(payload: Any) -> None:
