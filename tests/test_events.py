@@ -442,3 +442,58 @@ class TestSignalSend:
 
         await s.send({'n': 1})
         assert received == [{'n': 1}]
+
+class TestSignalConnectedTo:
+    """Test Signal.connected_to() context manager."""
+
+    @pytest.mark.asyncio
+    async def test_receiver_active_inside_context(self):
+        s = Signal('evt')
+        calls = []
+
+        async def handler(p, **kw): calls.append(p)
+
+        with s.connected_to(handler):
+            await s.send({'x': 1})
+
+        assert calls == [{'x': 1}]
+
+    @pytest.mark.asyncio
+    async def test_receiver_disconnected_after_context(self):
+        s = Signal('evt')
+        calls = []
+
+        async def handler(p, **kw): calls.append(p)
+
+        with s.connected_to(handler):
+            pass
+
+        await s.send({'x': 1})
+        assert calls == []
+
+    @pytest.mark.asyncio
+    async def test_receiver_disconnected_even_if_exception_raised(self):
+        s = Signal('evt')
+        async def handler(p, **kw): pass
+
+        with pytest.raises(RuntimeError):
+            with s.connected_to(handler):
+                raise RuntimeError("test error")
+
+        assert handler not in s.receivers
+
+    @pytest.mark.asyncio
+    async def test_connected_to_does_not_affect_other_receivers(self):
+        s = Signal('evt')
+        permanent_calls = []
+
+        @s.connect
+        async def permanent(p, **kw): permanent_calls.append(p)
+
+        async def temporary(p, **kw): pass
+
+        with s.connected_to(temporary):
+            await s.send({'n': 1})
+
+        await s.send({'n': 2})
+        assert len(permanent_calls) == 2
