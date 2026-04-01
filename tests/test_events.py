@@ -1,0 +1,769 @@
+"""
+Comprehensive tests for FastKit Core Event / Signal System.
+
+Tests Signal, InProcessBackend, and BaseSignalBackend:
+- Signal — connect, disconnect, send, connected_to, receivers, __bool__, __repr__
+- InProcessBackend — async receivers, sync receivers, error isolation,
+                     no duplicates, disconnect non-existent
+- Payload warning — dict, Pydantic model, dataclass pass; plain object warns
+- Conditional emit — signal sent only when condition is met
+- Multiple signals — independent, no cross-contamination
+- Decorator usage — @signal.connect registers and returns receiver
+- Error isolation — failing receiver does not stop others
+- shared backend — all Signal instances share the same backend
+"""
+
+import dataclasses
+import warnings
+import pytest
+from pydantic import BaseModel
+
+from fastkit_core.events import Signal
+from fastkit_core.events.backends.inprocess import InProcessBackend
+from fastkit_core.events.backends.base import BaseSignalBackend
+import fastkit_core.events.signal as signal_module
+
+
+# ============================================================================
+# Fixtures
+# ============================================================================
+
+@pytest.fixture(autouse=True)
+def reset_backend():
+    """
+    Reset the shared backend singleton before every test.
+    Without this, receivers registered in one test bleed into the next.
+    """
+    signal_module._backend_instance = None
+    yield
+    signal_module._backend_instance = None
+
+
+# ============================================================================
+# Test BaseSignalBackend — abstract interface
+# ============================================================================
+
+class TestBaseSignalBackend:
+    """Verify the abstract contract cannot be instantiated directly."""
+
+    def test_cannot_instantiate_directly(self):
+        """BaseSignalBackend is abstract — direct instantiation must fail."""
+        with pytest.raises(TypeError):
+            BaseSignalBackend()
+
+    def test_concrete_subclass_must_implement_all_methods(self):
+        """A subclass missing any abstract method cannot be instantiated."""
+
+        class Incomplete(BaseSignalBackend):
+            async def send(self, signal_name, payload, **kwargs):
+                return []
+            def connect(self, signal_name, receiver):
+                pass
+            # disconnect and receivers intentionally missing
+
+        with pytest.raises(TypeError):
+            Incomplete()
+
+    def test_full_subclass_can_be_instantiated(self):
+        """A fully implemented subclass must be instantiable."""
+
+        class Minimal(BaseSignalBackend):
+            async def send(self, signal_name, payload, **kwargs):
+                return []
+            def connect(self, signal_name, receiver):
+                pass
+            def disconnect(self, signal_name, receiver):
+                pass
+            def receivers(self, signal_name):
+                return []
+
+        backend = Minimal()
+        assert backend is not None
+
+# ============================================================================
+# Test InProcessBackend directly
+# ============================================================================
+
+class TestInProcessBackend:
+    """Unit tests for InProcessBackend in isolation."""
+
+    def setup_method(self):
+        self.backend = InProcessBackend()
+
+    # --- connect ---
+
+    def test_connect_adds_receiver(self):
+        async def handler(p, **kw): pass
+        self.backend.connect('evt', handler)
+        assert handler in self.backend.receivers('evt')
+
+    def test_connect_does_not_add_duplicates(self):
+        async def handler(p, **kw): pass
+        self.backend.connect('evt', handler)
+        self.backend.connect('evt', handler)
+        assert self.backend.receivers('evt').count(handler) == 1
+
+    def test_connect_multiple_receivers(self):
+        async def h1(p, **kw): pass
+        async def h2(p, **kw): pass
+        self.backend.connect('evt', h1)
+        self.backend.connect('evt', h2)
+        assert len(self.backend.receivers('evt')) == 2
+
+    def test_connect_different_signals_are_independent(self):
+        async def h(p, **kw): pass
+        self.backend.connect('a', h)
+        assert h not in self.backend.receivers('b')
+
+    # --- disconnect ---
+
+    def test_disconnect_removes_receiver(self):
+        async def handler(p, **kw): pass
+        self.backend.connect('evt', handler)
+        self.backend.disconnect('evt', handler)
+        assert handler not in self.backend.receivers('evt')
+
+    def test_disconnect_non_existent_does_not_raise(self):
+        async def handler(p, **kw): pass
+        # Should not raise even if receiver was never connected
+        self.backend.disconnect('evt', handler)
+
+    def test_disconnect_only_removes_target_receiver(self):
+        async def h1(p, **kw): pass
+        async def h2(p, **kw): pass
+        self.backend.connect('evt', h1)
+        self.backend.connect('evt', h2)
+        self.backend.disconnect('evt', h1)
+        assert h1 not in self.backend.receivers('evt')
+        assert h2 in self.backend.receivers('evt')
+
+    # --- receivers ---
+
+    def test_receivers_returns_empty_list_for_unknown_signal(self):
+        assert self.backend.receivers('nonexistent') == []
+
+    def test_receivers_returns_copy_not_reference(self):
+        """Mutating the returned list must not affect internal state."""
+        async def handler(p, **kw): pass
+        self.backend.connect('evt', handler)
+        copy = self.backend.receivers('evt')
+        copy.clear()
+        assert len(self.backend.receivers('evt')) == 1
+
+    # --- send: async receivers ---
+
+    @pytest.mark.asyncio
+    async def test_send_calls_async_receiver(self):
+        received = []
+
+        async def handler(payload, **kwargs):
+            received.append(payload)
+
+        self.backend.connect('evt', handler)
+        await self.backend.send('evt', {'id': 1})
+        assert received == [{'id': 1}]
+
+    @pytest.mark.asyncio
+    async def test_send_calls_sync_receiver(self):
+        received = []
+
+        def handler(payload, **kwargs):
+            received.append(payload)
+
+        self.backend.connect('evt', handler)
+        await self.backend.send('evt', {'x': 42})
+        assert received == [{'x': 42}]
+
+    @pytest.mark.asyncio
+    async def test_send_calls_multiple_receivers(self):
+        calls = []
+
+        async def h1(p, **kw): calls.append('h1')
+        async def h2(p, **kw): calls.append('h2')
+
+        self.backend.connect('evt', h1)
+        self.backend.connect('evt', h2)
+        await self.backend.send('evt', {})
+        assert 'h1' in calls
+        assert 'h2' in calls
+
+    @pytest.mark.asyncio
+    async def test_send_passes_kwargs_to_receiver(self):
+        received_kwargs = {}
+
+        async def handler(payload, **kwargs):
+            received_kwargs.update(kwargs)
+
+        self.backend.connect('evt', handler)
+        await self.backend.send('evt', {}, extra='value')
+        assert received_kwargs.get('extra') == 'value'
+
+    @pytest.mark.asyncio
+    async def test_send_to_unknown_signal_returns_empty_errors(self):
+        errors = await self.backend.send('nonexistent', {})
+        assert errors == []
+
+    # --- error isolation ---
+
+    @pytest.mark.asyncio
+    async def test_failing_receiver_does_not_propagate_exception(self):
+        async def bad(p, **kw): raise ValueError("boom")
+        self.backend.connect('evt', bad)
+        # Must not raise
+        errors = await self.backend.send('evt', {})
+        assert len(errors) == 1
+        assert isinstance(errors[0], ValueError)
+
+    @pytest.mark.asyncio
+    async def test_failing_receiver_does_not_stop_other_receivers(self):
+        calls = []
+
+        async def bad(p, **kw): raise RuntimeError("fail")
+        async def good(p, **kw): calls.append('good')
+
+        self.backend.connect('evt', bad)
+        self.backend.connect('evt', good)
+        await self.backend.send('evt', {})
+        assert 'good' in calls
+
+    @pytest.mark.asyncio
+    async def test_all_errors_accumulated_and_returned(self):
+        async def bad1(p, **kw): raise ValueError("err1")
+        async def bad2(p, **kw): raise TypeError("err2")
+
+        self.backend.connect('evt', bad1)
+        self.backend.connect('evt', bad2)
+        errors = await self.backend.send('evt', {})
+        assert len(errors) == 2
+
+    @pytest.mark.asyncio
+    async def test_successful_send_returns_empty_list(self):
+        async def good(p, **kw): pass
+        self.backend.connect('evt', good)
+        errors = await self.backend.send('evt', {})
+        assert errors == []
+
+
+# ============================================================================
+# Test Signal — public API
+# ============================================================================
+
+class TestSignalInit:
+    """Test Signal initialization and shared backend."""
+
+    def test_signal_has_name(self):
+        s = Signal('user.created')
+        assert s.name == 'user.created'
+
+    def test_two_signals_share_same_backend(self):
+        s1 = Signal('a')
+        s2 = Signal('b')
+        assert s1._backend is s2._backend
+
+    def test_signal_starts_with_no_receivers(self):
+        s = Signal('evt')
+        assert s.receivers == []
+
+    def test_signal_repr(self):
+        s = Signal('user.created')
+        r = repr(s)
+        assert 'user.created' in r
+        assert 'Signal' in r
+
+
+class TestSignalConnect:
+    """Test Signal.connect() — method and decorator usage."""
+
+    @pytest.mark.asyncio
+    async def test_connect_method_registers_receiver(self):
+        s = Signal('evt')
+        async def handler(p, **kw): pass
+        s.connect(handler)
+        assert handler in s.receivers
+
+    @pytest.mark.asyncio
+    async def test_connect_as_decorator_registers_receiver(self):
+        s = Signal('evt')
+
+        @s.connect
+        async def handler(p, **kw): pass
+
+        assert handler in s.receivers
+
+    def test_connect_decorator_returns_original_function(self):
+        """Decorator must not replace the function — it must return it unchanged."""
+        s = Signal('evt')
+
+        @s.connect
+        async def handler(p, **kw): pass
+
+        # handler should still be callable and be the same object
+        assert callable(handler)
+        assert handler.__name__ == 'handler'
+
+    def test_connect_does_not_add_duplicate(self):
+        s = Signal('evt')
+        async def handler(p, **kw): pass
+        s.connect(handler)
+        s.connect(handler)
+        assert s.receivers.count(handler) == 1
+
+    def test_connect_sync_receiver(self):
+        s = Signal('evt')
+        def handler(p, **kw): pass
+        s.connect(handler)
+        assert handler in s.receivers
+
+
+class TestSignalDisconnect:
+    """Test Signal.disconnect()."""
+
+    def test_disconnect_removes_receiver(self):
+        s = Signal('evt')
+        async def handler(p, **kw): pass
+        s.connect(handler)
+        s.disconnect(handler)
+        assert handler not in s.receivers
+
+    def test_disconnect_non_existent_does_not_raise(self):
+        s = Signal('evt')
+        async def handler(p, **kw): pass
+        s.disconnect(handler)  # never connected — should not raise
+
+    def test_disconnect_only_removes_target(self):
+        s = Signal('evt')
+        async def h1(p, **kw): pass
+        async def h2(p, **kw): pass
+        s.connect(h1)
+        s.connect(h2)
+        s.disconnect(h1)
+        assert h1 not in s.receivers
+        assert h2 in s.receivers
+
+class TestSignalSend:
+    """Test Signal.send() — delivery and error isolation."""
+
+    @pytest.mark.asyncio
+    async def test_send_delivers_payload_to_receiver(self):
+        s = Signal('evt')
+        received = []
+
+        @s.connect
+        async def handler(payload, **kwargs):
+            received.append(payload)
+
+        await s.send({'key': 'value'})
+        assert received == [{'key': 'value'}]
+
+    @pytest.mark.asyncio
+    async def test_send_with_no_receivers_returns_empty_list(self):
+        s = Signal('evt')
+        errors = await s.send({'x': 1})
+        assert errors == []
+
+    @pytest.mark.asyncio
+    async def test_send_returns_empty_list_on_success(self):
+        s = Signal('evt')
+
+        @s.connect
+        async def handler(p, **kw): pass
+
+        errors = await s.send({'x': 1})
+        assert errors == []
+
+    @pytest.mark.asyncio
+    async def test_send_returns_errors_from_failing_receivers(self):
+        s = Signal('evt')
+
+        @s.connect
+        async def bad(p, **kw): raise ValueError("fail")
+
+        errors = await s.send({})
+        assert len(errors) == 1
+        assert isinstance(errors[0], ValueError)
+
+    @pytest.mark.asyncio
+    async def test_send_does_not_propagate_receiver_exception(self):
+        s = Signal('evt')
+
+        @s.connect
+        async def bad(p, **kw): raise RuntimeError("boom")
+
+        # Must not raise
+        await s.send({})
+
+    @pytest.mark.asyncio
+    async def test_send_continues_after_failing_receiver(self):
+        s = Signal('evt')
+        calls = []
+
+        @s.connect
+        async def bad(p, **kw): raise ValueError("fail")
+
+        @s.connect
+        async def good(p, **kw): calls.append('good')
+
+        await s.send({})
+        assert 'good' in calls
+
+    @pytest.mark.asyncio
+    async def test_send_with_none_payload(self):
+        s = Signal('evt')
+        received = []
+
+        @s.connect
+        async def handler(payload, **kwargs):
+            received.append(payload)
+
+        await s.send(None)
+        assert received == [None]
+
+    @pytest.mark.asyncio
+    async def test_send_passes_kwargs(self):
+        s = Signal('evt')
+        captured = {}
+
+        @s.connect
+        async def handler(payload, **kwargs):
+            captured.update(kwargs)
+
+        await s.send({}, source='test', version=2)
+        assert captured['source'] == 'test'
+        assert captured['version'] == 2
+
+    @pytest.mark.asyncio
+    async def test_send_calls_sync_receiver(self):
+        s = Signal('evt')
+        received = []
+
+        @s.connect
+        def handler(payload, **kwargs):
+            received.append(payload)
+
+        await s.send({'n': 1})
+        assert received == [{'n': 1}]
+
+class TestSignalConnectedTo:
+    """Test Signal.connected_to() context manager."""
+
+    @pytest.mark.asyncio
+    async def test_receiver_active_inside_context(self):
+        s = Signal('evt')
+        calls = []
+
+        async def handler(p, **kw): calls.append(p)
+
+        with s.connected_to(handler):
+            await s.send({'x': 1})
+
+        assert calls == [{'x': 1}]
+
+    @pytest.mark.asyncio
+    async def test_receiver_disconnected_after_context(self):
+        s = Signal('evt')
+        calls = []
+
+        async def handler(p, **kw): calls.append(p)
+
+        with s.connected_to(handler):
+            pass
+
+        await s.send({'x': 1})
+        assert calls == []
+
+    @pytest.mark.asyncio
+    async def test_receiver_disconnected_even_if_exception_raised(self):
+        s = Signal('evt')
+        async def handler(p, **kw): pass
+
+        with pytest.raises(RuntimeError):
+            with s.connected_to(handler):
+                raise RuntimeError("test error")
+
+        assert handler not in s.receivers
+
+    @pytest.mark.asyncio
+    async def test_connected_to_does_not_affect_other_receivers(self):
+        s = Signal('evt')
+        permanent_calls = []
+
+        @s.connect
+        async def permanent(p, **kw): permanent_calls.append(p)
+
+        async def temporary(p, **kw): pass
+
+        with s.connected_to(temporary):
+            await s.send({'n': 1})
+
+        await s.send({'n': 2})
+        assert len(permanent_calls) == 2
+
+class TestSignalBoolAndReceivers:
+    """Test Signal.__bool__ and Signal.receivers property."""
+
+    def test_bool_false_when_no_receivers(self):
+        s = Signal('evt')
+        assert bool(s) is False
+
+    def test_bool_true_when_has_receivers(self):
+        s = Signal('evt')
+
+        @s.connect
+        async def handler(p, **kw): pass
+
+        assert bool(s) is True
+
+    def test_bool_false_after_all_disconnected(self):
+        s = Signal('evt')
+
+        async def handler(p, **kw): pass
+
+        s.connect(handler)
+        s.disconnect(handler)
+        assert bool(s) is False
+
+    def test_receivers_returns_list(self):
+        s = Signal('evt')
+        assert isinstance(s.receivers, list)
+
+    def test_receivers_copy_cannot_mutate_internal_state(self):
+        s = Signal('evt')
+
+        @s.connect
+        async def handler(p, **kw): pass
+
+        s.receivers.clear()
+        assert len(s.receivers) == 1
+
+# ============================================================================
+# Test Payload Warning
+# ============================================================================
+
+class TestPayloadWarning:
+    """Test that non-serializable payloads emit a UserWarning."""
+
+    @pytest.mark.asyncio
+    async def test_dict_payload_no_warning(self):
+        s = Signal('evt')
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            await s.send({'key': 'value'})
+        user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
+        assert len(user_warnings) == 0
+
+    @pytest.mark.asyncio
+    async def test_pydantic_model_payload_no_warning(self):
+        class MyModel(BaseModel):
+            id: int
+
+        s = Signal('evt')
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            await s.send(MyModel(id=1))
+        user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
+        assert len(user_warnings) == 0
+
+    @pytest.mark.asyncio
+    async def test_dataclass_payload_no_warning(self):
+        @dataclasses.dataclass
+        class MyEvent:
+            id: int
+
+        s = Signal('evt')
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            await s.send(MyEvent(id=1))
+        user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
+        assert len(user_warnings) == 0
+
+    @pytest.mark.asyncio
+    async def test_none_payload_no_warning(self):
+        s = Signal('evt')
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            await s.send(None)
+        user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
+        assert len(user_warnings) == 0
+
+    @pytest.mark.asyncio
+    async def test_plain_object_payload_emits_warning(self):
+        class NotSerializable:
+            pass
+
+        s = Signal('evt')
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            await s.send(NotSerializable())
+        user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
+        assert len(user_warnings) == 1
+        assert 'NotSerializable' in str(user_warnings[0].message)
+
+    @pytest.mark.asyncio
+    async def test_string_payload_emits_warning(self):
+        s = Signal('evt')
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            await s.send("plain string")
+        user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
+        assert len(user_warnings) == 1
+
+    @pytest.mark.asyncio
+    async def test_warning_message_mentions_0_5_0(self):
+        s = Signal('evt')
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            await s.send(42)
+        user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
+        assert '0.5.0' in str(user_warnings[0].message)
+
+# ============================================================================
+# Test Multiple Signals — isolation
+# ============================================================================
+
+class TestMultipleSignals:
+    """Signals with different names must be completely independent."""
+
+    @pytest.mark.asyncio
+    async def test_signals_do_not_share_receivers(self):
+        s1 = Signal('user.created')
+        s2 = Signal('user.deleted')
+        calls = []
+
+        @s1.connect
+        async def handler(p, **kw): calls.append('created')
+
+        await s2.send({})
+        assert calls == []
+
+    @pytest.mark.asyncio
+    async def test_sending_one_signal_does_not_trigger_another(self):
+        s1 = Signal('order.placed')
+        s2 = Signal('order.cancelled')
+        s2_calls = []
+
+        @s2.connect
+        async def handler(p, **kw): s2_calls.append(True)
+
+        await s1.send({'order_id': 1})
+        assert s2_calls == []
+
+    @pytest.mark.asyncio
+    async def test_same_receiver_can_be_on_multiple_signals(self):
+        s1 = Signal('a')
+        s2 = Signal('b')
+        calls = []
+
+        async def shared_handler(p, **kw): calls.append(p)
+
+        s1.connect(shared_handler)
+        s2.connect(shared_handler)
+
+        await s1.send({'from': 'a'})
+        await s2.send({'from': 'b'})
+
+        assert len(calls) == 2
+
+
+# ============================================================================
+# Test Conditional Emit
+# ============================================================================
+
+class TestConditionalEmit:
+    """Signal is sent only when a condition is met."""
+
+    @pytest.mark.asyncio
+    async def test_signal_sent_when_condition_true(self):
+        s = Signal('user.promoted')
+        calls = []
+
+        @s.connect
+        async def handler(p, **kw): calls.append(p)
+
+        user = {'id': 1, 'role': 'admin'}
+        if user['role'] == 'admin':
+            await s.send({'id': user['id']})
+
+        assert len(calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_signal_not_sent_when_condition_false(self):
+        s = Signal('user.promoted')
+        calls = []
+
+        @s.connect
+        async def handler(p, **kw): calls.append(p)
+
+        user = {'id': 1, 'role': 'user'}
+        if user['role'] == 'admin':
+            await s.send({'id': user['id']})
+
+        assert len(calls) == 0
+
+
+# ============================================================================
+# Test Integration — Signal used inside a service-like class
+# ============================================================================
+
+class TestIntegration:
+    """Simulate real-world usage inside a service layer."""
+
+    @pytest.mark.asyncio
+    async def test_signal_in_service_after_create(self):
+        """Simulate after_create hook emitting a signal."""
+        user_created = Signal('user.created')
+        notifications = []
+        billing_accounts = []
+
+        @user_created.connect
+        async def send_welcome(payload, **kwargs):
+            notifications.append(payload['email'])
+
+        @user_created.connect
+        async def create_billing(payload, **kwargs):
+            billing_accounts.append(payload['id'])
+
+        # Simulate service.after_create
+        user = {'id': 42, 'email': 'alice@example.com'}
+        await user_created.send({'id': user['id'], 'email': user['email']})
+
+        assert 'alice@example.com' in notifications
+        assert 42 in billing_accounts
+
+    @pytest.mark.asyncio
+    async def test_failing_notification_does_not_block_billing(self):
+        """A broken notification module must not prevent billing from running."""
+        user_created = Signal('user.created')
+        billing_calls = []
+
+        @user_created.connect
+        async def broken_notification(payload, **kwargs):
+            raise ConnectionError("Email server down")
+
+        @user_created.connect
+        async def billing(payload, **kwargs):
+            billing_calls.append(payload['id'])
+
+        errors = await user_created.send({'id': 7, 'email': 'bob@example.com'})
+
+        assert len(errors) == 1
+        assert isinstance(errors[0], ConnectionError)
+        assert 7 in billing_calls
+
+    @pytest.mark.asyncio
+    async def test_connected_to_useful_in_tests(self):
+        """connected_to is the recommended pattern for test isolation."""
+        order_placed = Signal('order.placed')
+        audit_log = []
+
+        async def audit(payload, **kwargs):
+            audit_log.append(payload)
+
+        # In a test, temporarily connect without polluting other tests
+        with order_placed.connected_to(audit):
+            await order_placed.send({'order_id': 99})
+
+        assert len(audit_log) == 1
+
+        # After context — no more logging
+        await order_placed.send({'order_id': 100})
+        assert len(audit_log) == 1
