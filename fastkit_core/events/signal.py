@@ -1,4 +1,4 @@
-from typing import Callable, Any
+from typing import Callable, Any, Generator
 import warnings
 import dataclasses
 from pydantic import BaseModel
@@ -7,9 +7,9 @@ from contextlib import contextmanager
 from fastkit_core.events.backends.base import BaseSignalBackend
 from fastkit_core.events.backends.inprocess import InProcessBackend
 
+_backend_instance: BaseSignalBackend | None = None
 
 class Signal:
-    _backend_instance: BaseSignalBackend | None = None
 
     @staticmethod
     def _get_backend() -> BaseSignalBackend:
@@ -34,7 +34,7 @@ class Signal:
         return await self._backend.send(self.name, payload, **kwargs)
 
     @contextmanager
-    def connected_to(self, receiver: Callable):
+    def connected_to(self, receiver: Callable) -> Generator[None, None, None]:
         self.connect(receiver)
         try:
             yield
@@ -47,6 +47,9 @@ class Signal:
 
     def __bool__(self) -> bool:
         return len(self.receivers) > 0
+
+    def __repr__(self) -> str:
+        return f"Signal(name={self.name!r}, receivers={len(self.receivers)})"
 
     @staticmethod
     def _warn_if_payload_not_serializable(payload: Any) -> None:
