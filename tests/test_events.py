@@ -339,3 +339,106 @@ class TestSignalDisconnect:
         s.disconnect(h1)
         assert h1 not in s.receivers
         assert h2 in s.receivers
+
+class TestSignalSend:
+    """Test Signal.send() — delivery and error isolation."""
+
+    @pytest.mark.asyncio
+    async def test_send_delivers_payload_to_receiver(self):
+        s = Signal('evt')
+        received = []
+
+        @s.connect
+        async def handler(payload, **kwargs):
+            received.append(payload)
+
+        await s.send({'key': 'value'})
+        assert received == [{'key': 'value'}]
+
+    @pytest.mark.asyncio
+    async def test_send_with_no_receivers_returns_empty_list(self):
+        s = Signal('evt')
+        errors = await s.send({'x': 1})
+        assert errors == []
+
+    @pytest.mark.asyncio
+    async def test_send_returns_empty_list_on_success(self):
+        s = Signal('evt')
+
+        @s.connect
+        async def handler(p, **kw): pass
+
+        errors = await s.send({'x': 1})
+        assert errors == []
+
+    @pytest.mark.asyncio
+    async def test_send_returns_errors_from_failing_receivers(self):
+        s = Signal('evt')
+
+        @s.connect
+        async def bad(p, **kw): raise ValueError("fail")
+
+        errors = await s.send({})
+        assert len(errors) == 1
+        assert isinstance(errors[0], ValueError)
+
+    @pytest.mark.asyncio
+    async def test_send_does_not_propagate_receiver_exception(self):
+        s = Signal('evt')
+
+        @s.connect
+        async def bad(p, **kw): raise RuntimeError("boom")
+
+        # Must not raise
+        await s.send({})
+
+    @pytest.mark.asyncio
+    async def test_send_continues_after_failing_receiver(self):
+        s = Signal('evt')
+        calls = []
+
+        @s.connect
+        async def bad(p, **kw): raise ValueError("fail")
+
+        @s.connect
+        async def good(p, **kw): calls.append('good')
+
+        await s.send({})
+        assert 'good' in calls
+
+    @pytest.mark.asyncio
+    async def test_send_with_none_payload(self):
+        s = Signal('evt')
+        received = []
+
+        @s.connect
+        async def handler(payload, **kwargs):
+            received.append(payload)
+
+        await s.send(None)
+        assert received == [None]
+
+    @pytest.mark.asyncio
+    async def test_send_passes_kwargs(self):
+        s = Signal('evt')
+        captured = {}
+
+        @s.connect
+        async def handler(payload, **kwargs):
+            captured.update(kwargs)
+
+        await s.send({}, source='test', version=2)
+        assert captured['source'] == 'test'
+        assert captured['version'] == 2
+
+    @pytest.mark.asyncio
+    async def test_send_calls_sync_receiver(self):
+        s = Signal('evt')
+        received = []
+
+        @s.connect
+        def handler(payload, **kwargs):
+            received.append(payload)
+
+        await s.send({'n': 1})
+        assert received == [{'n': 1}]
