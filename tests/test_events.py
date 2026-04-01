@@ -534,3 +534,84 @@ class TestSignalBoolAndReceivers:
 
         s.receivers.clear()
         assert len(s.receivers) == 1
+
+# ============================================================================
+# Test Payload Warning
+# ============================================================================
+
+class TestPayloadWarning:
+    """Test that non-serializable payloads emit a UserWarning."""
+
+    @pytest.mark.asyncio
+    async def test_dict_payload_no_warning(self):
+        s = Signal('evt')
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            await s.send({'key': 'value'})
+        user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
+        assert len(user_warnings) == 0
+
+    @pytest.mark.asyncio
+    async def test_pydantic_model_payload_no_warning(self):
+        class MyModel(BaseModel):
+            id: int
+
+        s = Signal('evt')
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            await s.send(MyModel(id=1))
+        user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
+        assert len(user_warnings) == 0
+
+    @pytest.mark.asyncio
+    async def test_dataclass_payload_no_warning(self):
+        @dataclasses.dataclass
+        class MyEvent:
+            id: int
+
+        s = Signal('evt')
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            await s.send(MyEvent(id=1))
+        user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
+        assert len(user_warnings) == 0
+
+    @pytest.mark.asyncio
+    async def test_none_payload_no_warning(self):
+        s = Signal('evt')
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            await s.send(None)
+        user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
+        assert len(user_warnings) == 0
+
+    @pytest.mark.asyncio
+    async def test_plain_object_payload_emits_warning(self):
+        class NotSerializable:
+            pass
+
+        s = Signal('evt')
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            await s.send(NotSerializable())
+        user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
+        assert len(user_warnings) == 1
+        assert 'NotSerializable' in str(user_warnings[0].message)
+
+    @pytest.mark.asyncio
+    async def test_string_payload_emits_warning(self):
+        s = Signal('evt')
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            await s.send("plain string")
+        user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
+        assert len(user_warnings) == 1
+
+    @pytest.mark.asyncio
+    async def test_warning_message_mentions_0_5_0(self):
+        s = Signal('evt')
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            await s.send(42)
+        user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
+        assert '0.5.0' in str(user_warnings[0].message)
