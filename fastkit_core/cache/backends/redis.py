@@ -26,3 +26,11 @@ class RedisBackend(AbstractCacheBackend):
 
     async def delete(self, key: str) -> None:
         self._storage.delete(key)
+
+    async def invalidate(self, pattern: str) -> None:
+        keys_to_delete = [
+            key for key in self._storage.keys(pattern)
+        ]
+
+        for key in keys_to_delete:
+            self._storage.delete(key)
