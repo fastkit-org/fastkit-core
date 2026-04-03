@@ -1,5 +1,6 @@
 import time
 from typing import Any
+import fnmatch
 
 from fastkit_core.cache.backends.base import AbstractCacheBackend
 
@@ -29,3 +30,11 @@ class InMemoryBackend(AbstractCacheBackend):
 
     async def delete(self, key: str) -> None:
         self._store.pop(key)
+
+    async def invalidate(self, pattern: str) -> None:
+        keys_to_delete = [
+            key for key in self._store if fnmatch.fnmatch(key, pattern)
+        ]
+
+        for key in keys_to_delete:
+            del self._store[key]
