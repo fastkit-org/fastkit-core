@@ -41,3 +41,6 @@ class InMemoryBackend(AbstractCacheBackend):
 
     async def has(self, key: str) -> bool:
         return await self.get(key) is not None
+
+    async def clear(self) -> None:
+        self._store.clear()
