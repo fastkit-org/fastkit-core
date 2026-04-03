@@ -34,3 +34,6 @@ class RedisBackend(AbstractCacheBackend):
 
         for key in keys_to_delete:
             self._storage.delete(key)
+
+    async def has(self, key: str) -> bool:
+        return self._storage.exists(key)
