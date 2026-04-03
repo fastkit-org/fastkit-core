@@ -1,6 +1,6 @@
+import fnmatch
 import time
 from typing import Any
-import fnmatch
 
 from fastkit_core.cache.backends.base import AbstractCacheBackend
 
@@ -8,7 +8,7 @@ class InMemoryBackend(AbstractCacheBackend):
 
     def __init__(self, default_ttl: int | None = 300):
         self._default_ttl = default_ttl
-        self._store: dict[str, type[Any, float | None]] = {}
+        self._store: dict[str, tuple[Any, float | None]] = {}
 
     async def get(self, key: str) -> Any | None:
         entry = self._store.get(key)
@@ -29,7 +29,7 @@ class InMemoryBackend(AbstractCacheBackend):
         self._store[key] = (data, expires_at)
 
     async def delete(self, key: str) -> None:
-        self._store.pop(key)
+        self._store.pop(key, None)
 
     async def invalidate(self, pattern: str) -> None:
         keys_to_delete = [
