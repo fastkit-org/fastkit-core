@@ -38,3 +38,6 @@ class InMemoryBackend(AbstractCacheBackend):
 
         for key in keys_to_delete:
             del self._store[key]
+
+    async def has(self, key: str) -> bool:
+        return await self.get(key) is not None
