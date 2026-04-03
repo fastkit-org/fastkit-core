@@ -1,3 +1,4 @@
+import time
 from typing import Any
 
 import redis
@@ -13,7 +14,12 @@ class RedisBackend(AbstractCacheBackend):
                  default_ttl: int | None = 300
                 ):
         self._storage = redis.Redis(host=host, port=port, db=db)
-        self.default_ttl = default_ttl
+        self._default_ttl = default_ttl
 
     async def get(self, key: str) -> Any | None:
         return self._storage.get(key)
+
+    async def set(self, key: str, data: Any, ttl: int | None = None) -> None:
+        effective_ttl = ttl if ttl is not None else self._default_ttl
+        expires_at = time.time() + effective_ttl if effective_ttl is not None else None
+        self._storage.set(key, data, ex=expires_at)
