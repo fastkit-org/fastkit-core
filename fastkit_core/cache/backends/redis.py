@@ -1,3 +1,5 @@
+from typing import Any
+
 import redis
 
 from fastkit_core.cache.backends.base import AbstractCacheBackend
@@ -13,3 +15,5 @@ class RedisBackend(AbstractCacheBackend):
         self._storage = redis.Redis(host=host, port=port, db=db)
         self.default_ttl = default_ttl
 
+    async def get(self, key: str) -> Any | None:
+        return self._storage.get(key)
