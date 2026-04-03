@@ -37,3 +37,6 @@ class RedisBackend(AbstractCacheBackend):
 
     async def has(self, key: str) -> bool:
         return self._storage.exists(key)
+
+    async def clear(self) -> None:
+        self._storage.flushdb()
