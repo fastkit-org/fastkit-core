@@ -23,3 +23,6 @@ class RedisBackend(AbstractCacheBackend):
         effective_ttl = ttl if ttl is not None else self._default_ttl
         expires_at = time.time() + effective_ttl if effective_ttl is not None else None
         self._storage.set(key, data, ex=expires_at)
+
+    async def delete(self, key: str) -> None:
+        self._storage.delete(key)
