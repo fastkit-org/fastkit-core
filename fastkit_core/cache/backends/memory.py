@@ -21,3 +21,8 @@ class InMemoryBackend(AbstractCacheBackend):
             return None
 
         return value
+
+    async def set(self, key: str, data: Any, ttl: int | None = None) -> None:
+        effective_ttl = ttl if ttl is not None else self._default_ttl
+        expires_at = time.time() + effective_ttl if effective_ttl is not None else None
+        self._store[key] = (data, expires_at)
