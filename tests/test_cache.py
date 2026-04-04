@@ -380,3 +380,35 @@ class TestCacheManagerDelegation:
     async def test_clear_delegates_to_backend(self, manager, mock_backend):
         await manager.clear()
         mock_backend.clear.assert_awaited_once()
+
+# ============================================================================
+# Test Singleton — setup_cache / get_cache / reset_cache
+# ============================================================================
+
+class TestSingleton:
+    """Test the module-level singleton lifecycle."""
+
+    def test_get_cache_raises_before_setup(self):
+        with pytest.raises(RuntimeError, match='setup_cache'):
+            get_cache()
+
+    def test_setup_cache_initializes_singleton(self):
+        setup_cache(make_config())
+        instance = get_cache()
+        assert isinstance(instance, CacheManager)
+
+    def test_get_cache_returns_same_instance(self):
+        setup_cache(make_config())
+        assert get_cache() is get_cache()
+
+    def test_reset_cache_clears_singleton(self):
+        setup_cache(make_config())
+        reset_cache()
+        with pytest.raises(RuntimeError):
+            get_cache()
+
+    def test_setup_cache_can_be_called_again_after_reset(self):
+        setup_cache(make_config())
+        reset_cache()
+        setup_cache(make_config())
+        assert get_cache() is not None
