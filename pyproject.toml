@@ -289,4 +289,5 @@ dev = [
     "wheel>=0.45.1",
     "aiomysql>=0.2.0",
     "psycopg2-binary>=2.9.10",
+    "redis>=5.0.0,<6.0.0",
 ]
