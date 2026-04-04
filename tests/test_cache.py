@@ -227,3 +227,47 @@ class TestInMemoryBackendTTL:
         _, expires_at = memory_backend_with_ttl._store['key']
         # expires_at should be around now + 9999, not now + 60
         assert expires_at > time.time() + 9000
+
+# ============================================================================
+# Test InMemoryBackend — Invalidate
+# ============================================================================
+
+class TestInMemoryBackendInvalidate:
+    """Test pattern-based invalidation with wildcard support."""
+
+    @pytest.mark.asyncio
+    async def test_invalidate_exact_key(self, memory_backend):
+        await memory_backend.set('users:1', 'Alice')
+        await memory_backend.invalidate('users:1')
+        assert await memory_backend.get('users:1') is None
+
+    @pytest.mark.asyncio
+    async def test_invalidate_wildcard_pattern(self, memory_backend):
+        await memory_backend.set('users:1', 'Alice')
+        await memory_backend.set('users:2', 'Bob')
+        await memory_backend.set('posts:1', 'Post')
+        await memory_backend.invalidate('users:*')
+        assert await memory_backend.get('users:1') is None
+        assert await memory_backend.get('users:2') is None
+        assert await memory_backend.get('posts:1') == 'Post'
+
+    @pytest.mark.asyncio
+    async def test_invalidate_no_match_does_not_raise(self, memory_backend):
+        await memory_backend.set('key', 'value')
+        await memory_backend.invalidate('nonexistent:*')  # should not raise
+        assert await memory_backend.get('key') == 'value'
+
+    @pytest.mark.asyncio
+    async def test_invalidate_all_with_star(self, memory_backend):
+        await memory_backend.set('a', 1)
+        await memory_backend.set('b', 2)
+        await memory_backend.invalidate('*')
+        assert await memory_backend.get('a') is None
+        assert await memory_backend.get('b') is None
+
+    @pytest.mark.asyncio
+    async def test_invalidate_does_not_remove_non_matching(self, memory_backend):
+        await memory_backend.set('users:1', 'Alice')
+        await memory_backend.set('orders:1', 'Order')
+        await memory_backend.invalidate('users:*')
+        assert await memory_backend.get('orders:1') == 'Order'
