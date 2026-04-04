@@ -42,3 +42,6 @@ class CacheManager(AbstractCacheBackend):
 
     async  def delete(self, key: str) -> None:
         return await self._backand_instance.delete(key=key)
+
+    async def invalidate(self, pattern: str) -> None:
+        return await self._backand_instance.invalidate(pattern=pattern)
