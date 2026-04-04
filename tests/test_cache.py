@@ -323,3 +323,60 @@ class TestCacheManagerConfigValidation:
         with patch('fastkit_core.cache.backends.redis.Redis'):
             manager = CacheManager(config)
         assert isinstance(manager._backend_instance, RedisBackend)
+
+# ============================================================================
+# Test CacheManager — Delegation
+# ============================================================================
+
+class TestCacheManagerDelegation:
+    """Test that CacheManager correctly delegates to its backend."""
+
+    @pytest.fixture
+    def mock_backend(self):
+        backend = MagicMock(spec=AbstractCacheBackend)
+        backend.get = AsyncMock(return_value='cached')
+        backend.set = AsyncMock()
+        backend.delete = AsyncMock()
+        backend.invalidate = AsyncMock()
+        backend.has = AsyncMock(return_value=True)
+        backend.clear = AsyncMock()
+        return backend
+
+    @pytest.fixture
+    def manager(self, mock_backend):
+        config = make_config()
+        m = CacheManager(config)
+        m._backend_instance = mock_backend
+        return m
+
+    @pytest.mark.asyncio
+    async def test_get_delegates_to_backend(self, manager, mock_backend):
+        result = await manager.get('key')
+        mock_backend.get.assert_awaited_once_with(key='key')
+        assert result == 'cached'
+
+    @pytest.mark.asyncio
+    async def test_set_delegates_to_backend(self, manager, mock_backend):
+        await manager.set('key', 'value', ttl=60)
+        mock_backend.set.assert_awaited_once_with(key='key', data='value', ttl=60)
+
+    @pytest.mark.asyncio
+    async def test_delete_delegates_to_backend(self, manager, mock_backend):
+        await manager.delete('key')
+        mock_backend.delete.assert_awaited_once_with(key='key')
+
+    @pytest.mark.asyncio
+    async def test_invalidate_delegates_to_backend(self, manager, mock_backend):
+        await manager.invalidate('users:*')
+        mock_backend.invalidate.assert_awaited_once_with(pattern='users:*')
+
+    @pytest.mark.asyncio
+    async def test_has_delegates_to_backend(self, manager, mock_backend):
+        result = await manager.has('key')
+        mock_backend.has.assert_awaited_once_with(key='key')
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_clear_delegates_to_backend(self, manager, mock_backend):
+        await manager.clear()
+        mock_backend.clear.assert_awaited_once()
