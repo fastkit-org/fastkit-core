@@ -48,3 +48,6 @@ class CacheManager(AbstractCacheBackend):
 
     async def has(self, key: str) -> bool:
         return await self._backand_instance.has(key=key)
+
+    async def clear(self) -> None:
+        return await self._backand_instance.clear()
