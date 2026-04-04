@@ -104,4 +104,67 @@ class TestAbstractCacheBackend:
         backend = Complete()
         assert backend is not None
 
+# ============================================================================
+# Test InMemoryBackend — Basic Operations
+# ============================================================================
+
+class TestInMemoryBackendBasic:
+    """Test basic CRUD operations without TTL."""
+
+    @pytest.mark.asyncio
+    async def test_set_and_get(self, memory_backend):
+        await memory_backend.set('key', 'value')
+        assert await memory_backend.get('key') == 'value'
+
+    @pytest.mark.asyncio
+    async def test_get_nonexistent_returns_none(self, memory_backend):
+        assert await memory_backend.get('nonexistent') is None
+
+    @pytest.mark.asyncio
+    async def test_set_overwrites_existing(self, memory_backend):
+        await memory_backend.set('key', 'first')
+        await memory_backend.set('key', 'second')
+        assert await memory_backend.get('key') == 'second'
+
+    @pytest.mark.asyncio
+    async def test_delete_removes_key(self, memory_backend):
+        await memory_backend.set('key', 'value')
+        await memory_backend.delete('key')
+        assert await memory_backend.get('key') is None
+
+    @pytest.mark.asyncio
+    async def test_delete_nonexistent_does_not_raise(self, memory_backend):
+        await memory_backend.delete('nonexistent')  # should not raise
+
+    @pytest.mark.asyncio
+    async def test_has_returns_true_for_existing_key(self, memory_backend):
+        await memory_backend.set('key', 'value')
+        assert await memory_backend.has('key') is True
+
+    @pytest.mark.asyncio
+    async def test_has_returns_false_for_nonexistent_key(self, memory_backend):
+        assert await memory_backend.has('nonexistent') is False
+
+    @pytest.mark.asyncio
+    async def test_clear_removes_all_keys(self, memory_backend):
+        await memory_backend.set('a', 1)
+        await memory_backend.set('b', 2)
+        await memory_backend.set('c', 3)
+        await memory_backend.clear()
+        assert await memory_backend.get('a') is None
+        assert await memory_backend.get('b') is None
+        assert await memory_backend.get('c') is None
+
+    @pytest.mark.asyncio
+    async def test_stores_various_data_types(self, memory_backend):
+        await memory_backend.set('list', [1, 2, 3])
+        await memory_backend.set('dict', {'a': 1})
+        await memory_backend.set('int', 42)
+        await memory_backend.set('none', None)
+
+        assert await memory_backend.get('list') == [1, 2, 3]
+        assert await memory_backend.get('dict') == {'a': 1}
+        assert await memory_backend.get('int') == 42
+        # None stored as value — has() should return False, get() returns None
+        assert await memory_backend.get('none') is None
 
