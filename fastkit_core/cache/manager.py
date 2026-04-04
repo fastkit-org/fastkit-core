@@ -45,3 +45,6 @@ class CacheManager(AbstractCacheBackend):
 
     async def invalidate(self, pattern: str) -> None:
         return await self._backand_instance.invalidate(pattern=pattern)
+
+    async def has(self, key: str) -> bool:
+        return await self._backand_instance.has(key=key)
