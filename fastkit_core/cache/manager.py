@@ -37,3 +37,5 @@ class CacheManager(AbstractCacheBackend):
     async def get(self, key: str) -> Any | None:
         return await self._backand_instance.get(key)
 
+    async def set(self, key: str, data: Any, ttl: int | None = None) -> None:
+        return await self._backand_instance.set(key=key, data=data, ttl=ttl)
