@@ -605,3 +605,87 @@ class TestCachedDecorator:
 
         with pytest.raises(RuntimeError, match='setup_cache'):
             await fn()
+
+# ============================================================================
+# Test Integration
+# ============================================================================
+
+class TestCacheIntegration:
+    """End-to-end integration scenarios."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        setup_cache(make_config(driver='memory', ttl=300))
+
+    @pytest.mark.asyncio
+    async def test_service_layer_pattern(self):
+        """Simulate typical service layer cache usage."""
+        db_calls = 0
+
+        async def fetch_from_db():
+            nonlocal db_calls
+            db_calls += 1
+            return [{'id': 1}, {'id': 2}]
+
+        # First call — cache miss
+        cached_val = await cache.get('users:all')
+        if cached_val is None:
+            result = await fetch_from_db()
+            await cache.set('users:all', result, ttl=300)
+        else:
+            result = cached_val
+
+        # Second call — cache hit
+        cached_val = await cache.get('users:all')
+        if cached_val is None:
+            result = await fetch_from_db()
+            await cache.set('users:all', result, ttl=300)
+        else:
+            result = cached_val
+
+        assert db_calls == 1
+        assert result == [{'id': 1}, {'id': 2}]
+
+    @pytest.mark.asyncio
+    async def test_invalidate_after_create(self):
+        """Simulate cache invalidation after a write operation."""
+        await cache.set('users:all', [{'id': 1}], ttl=300)
+        await cache.set('users:1', {'id': 1}, ttl=300)
+
+        # After creating a new user — invalidate user list
+        await cache.invalidate('users:*')
+
+        assert await cache.get('users:all') is None
+        assert await cache.get('users:1') is None
+
+    @pytest.mark.asyncio
+    async def test_cached_decorator_in_service_context(self):
+        """@cached decorator used in a service method."""
+        db_calls = 0
+
+        @cached(ttl=300, key=lambda user_id: f'user:{user_id}')
+        async def get_user(user_id: int):
+            nonlocal db_calls
+            db_calls += 1
+            return {'id': user_id, 'name': 'Alice'}
+
+        result1 = await get_user(1)
+        result2 = await get_user(1)
+        result3 = await get_user(2)
+
+        assert db_calls == 2  # user 1 cached, user 2 new
+        assert result1 == result2
+        assert result3['id'] == 2
+
+    @pytest.mark.asyncio
+    async def test_clear_resets_all_cache(self):
+        """clear() should remove everything."""
+        await cache.set('a', 1)
+        await cache.set('b', 2)
+        await cache.set('c', 3)
+
+        await cache.clear()
+
+        assert await cache.get('a') is None
+        assert await cache.get('b') is None
+        assert await cache.get('c') is None
