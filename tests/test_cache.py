@@ -271,3 +271,55 @@ class TestInMemoryBackendInvalidate:
         await memory_backend.set('orders:1', 'Order')
         await memory_backend.invalidate('users:*')
         assert await memory_backend.get('orders:1') == 'Order'
+
+# ============================================================================
+# Test CacheManager — Config Validation
+# ============================================================================
+
+class TestCacheManagerConfigValidation:
+    """Test _make_backend_instance config validation."""
+
+    def test_raises_when_config_missing(self):
+        config = MagicMock()
+        config.get.return_value = None
+        with pytest.raises(ValueError, match='cache.DEFAULT'):
+            CacheManager(config)
+
+    def test_raises_when_driver_missing(self):
+        config = MagicMock()
+        config.get.return_value = {'ttl': 300}  # no driver
+        with pytest.raises(ValueError):
+            CacheManager(config)
+
+    def test_raises_when_driver_invalid(self):
+        config = MagicMock()
+        config.get.return_value = {'driver': 'sqlite'}  # unsupported
+        with pytest.raises(ValueError):
+            CacheManager(config)
+
+    def test_raises_when_redis_missing_host(self):
+        config = make_redis_config(host=None)
+        with pytest.raises(ValueError, match='host'):
+            CacheManager(config)
+
+    def test_raises_when_redis_missing_port(self):
+        config = make_redis_config(port=None)
+        with pytest.raises(ValueError, match='port'):
+            CacheManager(config)
+
+    def test_memory_driver_creates_in_memory_backend(self):
+        config = make_config(driver='memory', ttl=60)
+        manager = CacheManager(config)
+        assert isinstance(manager._backend_instance, InMemoryBackend)
+
+    def test_memory_backend_receives_ttl_from_config(self):
+        config = make_config(driver='memory', ttl=120)
+        manager = CacheManager(config)
+        assert manager._backend_instance._default_ttl == 120
+
+    def test_redis_driver_creates_redis_backend(self):
+        from fastkit_core.cache.backends.redis import RedisBackend
+        config = make_redis_config()
+        with patch('fastkit_core.cache.backends.redis.Redis'):
+            manager = CacheManager(config)
+        assert isinstance(manager._backend_instance, RedisBackend)
