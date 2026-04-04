@@ -57,3 +57,16 @@ class CacheManager(AbstractCacheBackend):
 
     async def clear(self) -> None:
         return await self._backend_instance.clear()
+
+_cache_instance: CacheManager | None = None
+
+def setup_cache(config: ConfigManager) -> None:
+    global _cache_instance
+    _cache_instance = CacheManager(config)
+
+def get_cache() -> CacheManager:
+    if _cache_instance is None:
+        raise RuntimeError("Cache not initialized. Call setup_cache() first.")
+    return _cache_instance
+
+cache = get_cache
