@@ -168,3 +168,62 @@ class TestInMemoryBackendBasic:
         # None stored as value — has() should return False, get() returns None
         assert await memory_backend.get('none') is None
 
+# ============================================================================
+# Test InMemoryBackend — TTL
+# ============================================================================
+
+class TestInMemoryBackendTTL:
+    """Test TTL behaviour — expiry, lazy cleanup, default TTL."""
+
+    @pytest.mark.asyncio
+    async def test_entry_accessible_before_ttl_expires(self, memory_backend):
+        await memory_backend.set('key', 'value', ttl=60)
+        assert await memory_backend.get('key') == 'value'
+
+    @pytest.mark.asyncio
+    async def test_entry_expired_after_ttl(self, memory_backend):
+        """Simulate time passage by patching time.time."""
+        await memory_backend.set('key', 'value', ttl=10)
+
+        with patch('fastkit_core.cache.backends.memory.time') as mock_time:
+            mock_time.time.return_value = time.time() + 11
+            assert await memory_backend.get('key') is None
+
+    @pytest.mark.asyncio
+    async def test_expired_entry_removed_lazily_on_get(self, memory_backend):
+        """Expired entry should be removed from store during get()."""
+        await memory_backend.set('key', 'value', ttl=10)
+
+        with patch('fastkit_core.cache.backends.memory.time') as mock_time:
+            mock_time.time.return_value = time.time() + 11
+            await memory_backend.get('key')
+
+        # After patching ends, real time is back — entry should be gone
+        assert 'key' not in memory_backend._store
+
+    @pytest.mark.asyncio
+    async def test_has_returns_false_for_expired_entry(self, memory_backend):
+        await memory_backend.set('key', 'value', ttl=10)
+
+        with patch('fastkit_core.cache.backends.memory.time') as mock_time:
+            mock_time.time.return_value = time.time() + 11
+            assert await memory_backend.has('key') is False
+
+    @pytest.mark.asyncio
+    async def test_uses_default_ttl_when_none_provided(self, memory_backend_with_ttl):
+        await memory_backend_with_ttl.set('key', 'value')  # no explicit ttl
+        _, expires_at = memory_backend_with_ttl._store['key']
+        assert expires_at is not None
+
+    @pytest.mark.asyncio
+    async def test_no_expiry_when_default_ttl_is_none(self, memory_backend):
+        await memory_backend.set('key', 'value')  # default_ttl=None
+        _, expires_at = memory_backend._store['key']
+        assert expires_at is None
+
+    @pytest.mark.asyncio
+    async def test_explicit_ttl_overrides_default(self, memory_backend_with_ttl):
+        await memory_backend_with_ttl.set('key', 'value', ttl=9999)
+        _, expires_at = memory_backend_with_ttl._store['key']
+        # expires_at should be around now + 9999, not now + 60
+        assert expires_at > time.time() + 9000
