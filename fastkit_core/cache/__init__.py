@@ -2,6 +2,7 @@ from fastkit_core.cache.manager import CacheManager, reset_cache, setup_cache, g
 from fastkit_core.cache.backends.base import AbstractCacheBackend
 from fastkit_core.cache.backends.memory import InMemoryBackend
 from fastkit_core.cache.backends.redis import RedisBackend
+from fastkit_core.cache.decorators import cached
 
 __all__ = [
     'CacheManager',
@@ -11,5 +12,6 @@ __all__ = [
     'cache',
     'AbstractCacheBackend',
     'InMemoryBackend',
-    'RedisBackend'
+    'RedisBackend',
+    'cached'
 ]
