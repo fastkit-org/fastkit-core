@@ -412,3 +412,46 @@ class TestSingleton:
         reset_cache()
         setup_cache(make_config())
         assert get_cache() is not None
+
+# ============================================================================
+# Test _CacheProxy
+# ============================================================================
+
+class TestCacheProxy:
+    """Test that _CacheProxy transparently delegates to the singleton."""
+
+    def test_proxy_raises_before_setup(self):
+        proxy = _CacheProxy()
+        with pytest.raises(RuntimeError):
+            _ = proxy.get  # triggers __getattr__ → get_cache() → RuntimeError
+
+    @pytest.mark.asyncio
+    async def test_proxy_delegates_get_after_setup(self):
+        backend = InMemoryBackend(default_ttl=None)
+        await backend.set('key', 'value')
+
+        setup_cache(make_config())
+        get_cache()._backend_instance = backend
+
+        proxy = _CacheProxy()
+        result = await proxy.get('key')
+        assert result == 'value'
+
+    @pytest.mark.asyncio
+    async def test_module_level_cache_proxy_works(self):
+        """The exported `cache` object must behave as a transparent proxy."""
+        setup_cache(make_config())
+        await cache.set('x', 42, ttl=None)
+        result = await cache.get('x')
+        assert result == 42
+
+    def test_proxy_reflects_singleton_changes(self):
+        """After reset and re-setup, proxy should use new instance."""
+        setup_cache(make_config())
+        first = get_cache()
+
+        reset_cache()
+        setup_cache(make_config())
+        second = get_cache()
+
+        assert first is not second
