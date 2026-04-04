@@ -455,3 +455,153 @@ class TestCacheProxy:
         second = get_cache()
 
         assert first is not second
+
+# ============================================================================
+# Test @cached Decorator
+# ============================================================================
+
+class TestCachedDecorator:
+    """Test the @cached decorator end-to-end with InMemoryBackend."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        setup_cache(make_config(driver='memory', ttl=300))
+
+    @pytest.mark.asyncio
+    async def test_cache_miss_calls_function(self):
+        call_count = 0
+
+        @cached(ttl=60, key='test:fn')
+        async def fn():
+            nonlocal call_count
+            call_count += 1
+            return 'result'
+
+        result = await fn()
+        assert result == 'result'
+        assert call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_cache_hit_does_not_call_function_again(self):
+        call_count = 0
+
+        @cached(ttl=60, key='test:hit')
+        async def fn():
+            nonlocal call_count
+            call_count += 1
+            return 'result'
+
+        await fn()
+        await fn()
+        assert call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_cached_value_is_returned_on_hit(self):
+        @cached(ttl=60, key='test:value')
+        async def fn():
+            return {'id': 1, 'name': 'Alice'}
+
+        first = await fn()
+        second = await fn()
+        assert first == second == {'id': 1, 'name': 'Alice'}
+
+    @pytest.mark.asyncio
+    async def test_static_key(self):
+        @cached(ttl=60, key='static:key')
+        async def fn():
+            return 'data'
+
+        await fn()
+        cached_val = await get_cache().get('static:key')
+        assert cached_val == 'data'
+
+    @pytest.mark.asyncio
+    async def test_lambda_key_single_arg(self):
+        @cached(ttl=60, key=lambda user_id: f'user:{user_id}')
+        async def get_user(user_id: int):
+            return {'id': user_id}
+
+        await get_user(42)
+        cached_val = await get_cache().get('user:42')
+        assert cached_val == {'id': 42}
+
+    @pytest.mark.asyncio
+    async def test_lambda_key_multiple_args(self):
+        @cached(ttl=60, key=lambda uid, org: f'user:{uid}:org:{org}')
+        async def get_user(uid: int, org: int):
+            return {'uid': uid, 'org': org}
+
+        await get_user(1, 99)
+        cached_val = await get_cache().get('user:1:org:99')
+        assert cached_val == {'uid': 1, 'org': 99}
+
+    @pytest.mark.asyncio
+    async def test_different_args_produce_different_cache_entries(self):
+        call_count = 0
+
+        @cached(ttl=60, key=lambda uid: f'user:{uid}')
+        async def get_user(uid: int):
+            nonlocal call_count
+            call_count += 1
+            return {'id': uid}
+
+        await get_user(1)
+        await get_user(2)
+        assert call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_cached_stores_value_with_correct_ttl(self):
+        @cached(ttl=120, key='ttl:test')
+        async def fn():
+            return 'value'
+
+        await fn()
+        _, expires_at = get_cache()._backend_instance._store['ttl:test']
+        assert expires_at is not None
+        assert expires_at > time.time() + 100
+
+    @pytest.mark.asyncio
+    async def test_cache_miss_after_expiry(self):
+        call_count = 0
+
+        @cached(ttl=10, key='expiry:test')
+        async def fn():
+            nonlocal call_count
+            call_count += 1
+            return 'value'
+
+        await fn()
+        assert call_count == 1
+
+        with patch('fastkit_core.cache.backends.memory.time') as mock_time:
+            mock_time.time.return_value = time.time() + 11
+            await fn()
+
+        assert call_count == 2
+
+    def test_raises_for_sync_function(self):
+        with pytest.raises(TypeError, match='async'):
+            @cached(ttl=60, key='sync:test')
+            def sync_fn():
+                return 'value'
+
+    @pytest.mark.asyncio
+    async def test_wraps_preserves_function_metadata(self):
+        @cached(ttl=60, key='meta:test')
+        async def my_function():
+            """My docstring."""
+            return 'value'
+
+        assert my_function.__name__ == 'my_function'
+        assert my_function.__doc__ == 'My docstring.'
+
+    @pytest.mark.asyncio
+    async def test_cached_without_setup_raises(self):
+        reset_cache()  # ensure no singleton
+
+        @cached(ttl=60, key='no:setup')
+        async def fn():
+            return 'value'
+
+        with pytest.raises(RuntimeError, match='setup_cache'):
+            await fn()
