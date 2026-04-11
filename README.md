@@ -3,7 +3,7 @@
   
   [![PyPI version](https://badge.fury.io/py/fastkit-core.svg)](https://pypi.org/project/fastkit-core/)
   [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-  [![CI](https://github.com/codevelo-pub/fastkit-core/actions/workflows/tests.yml/badge.svg)](https://github.com/codevelo-pub/fastkit-core/actions/workflows/tests.yml)
+  [![CI](https://github.com/fastkit-org/fastkit-core/actions/workflows/test_publish.yaml/badge.svg)](https://github.com/fastkit-org/fastkit-core/actions/workflows/test_publish.yaml)
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 </div>
 
@@ -440,6 +440,6 @@ FastKit Core is open-source software licensed under the [MIT License](https://op
 
 ---
 
-## Built by CodeVelo
+## Built by FastKit Org
 
-FastKit is developed and maintained by [Codevelo](https://codevelo.io) for the FastAPI community.
+FastKit is developed and maintained by [FastKit Org](https://fastkit.org) for the FastAPI community.

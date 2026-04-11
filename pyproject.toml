@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
-    {name = "Codevelo", email = "info@codevelo.io"}
+    {name = "FastKit", email = "hello@fastkit.org"}
 ]
 keywords = [
     "fastapi",
@@ -165,10 +165,10 @@ docs = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/codevelo-pub/fastkit-core/fastkit-core"
-Documentation = "https://github.com/codevelo-pub/fastkit-core"
-Repository = "https://github.com/codevelo-pub/fastkit-core"
-Issues = "https://github.com/codevelo-pub/fastkit-core/issues"
+Homepage = "https://fastkit.org"
+Documentation = "https://fastkit.org/docs/fastkit-core"
+Repository = "https://github.com/fastkit-org/fastkit-core"
+Issues = "https://github.com/fastkit-org/fastkit-core/issues"
 
 [tool.setuptools.packages.find]
 include = ["fastkit_core*"]
