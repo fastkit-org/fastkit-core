@@ -28,7 +28,7 @@ jobs:
         uses: astral-sh/setup-uv@v3
 
       - name: Install dependencies
-        run: uv sync --all-extras
+        run: uv sync --extra ci
 
       - name: Run tests
         run: uv run pytest tests/ -v --tb=short
