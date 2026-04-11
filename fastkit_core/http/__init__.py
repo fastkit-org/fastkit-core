@@ -12,7 +12,8 @@ from fastkit_core.http.exceptions import (
     NotFoundException,
     ValidationException,
     UnauthorizedException,
-    ForbiddenException
+    ForbiddenException,
+    TooManyRequestsException
 )
 from fastkit_core.http.middleware import (
     RequestIDMiddleware,
@@ -21,6 +22,10 @@ from fastkit_core.http.middleware import (
 from fastkit_core.http.exception_handlers import (
     register_exception_handlers
 )
+
+from fastkit_core.http.rate_limit import RateLimit
+
+from fastkit_core.http.health import HealthCheck, HealthResponse, create_health_router
 
 __all__ = [
     'success_response',
@@ -33,7 +38,12 @@ __all__ = [
     'ValidationException',
     'UnauthorizedException',
     'ForbiddenException',
+    'TooManyRequestsException',
     'RequestIDMiddleware',
     'LocaleMiddleware',
     'register_exception_handlers',
+    'RateLimit',
+    'HealthCheck',
+    'HealthResponse',
+    'create_health_router'
 ]

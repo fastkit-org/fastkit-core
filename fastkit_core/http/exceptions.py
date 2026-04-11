@@ -15,11 +15,13 @@ class FastKitException(Exception):
             self,
             message: str,
             status_code: int = 400,
-            errors: dict | None = None
+            errors: dict | None = None,
+            headers: dict | None = None
     ):
         self.message = message
         self.status_code = status_code
         self.errors = errors
+        self.headers = headers
         super().__init__(self.message)
 
 class NotFoundException(FastKitException):
@@ -41,3 +43,11 @@ class ForbiddenException(FastKitException):
     """Not authorized."""
     def __init__(self, message: str = "Forbidden"):
         super().__init__(message, status_code=403)
+
+class TooManyRequestsException(FastKitException):
+    """Too Many requests"""
+    def __init__(self,
+                 message: str = "Too Many requests",
+                 headers: dict | None = None
+                 ):
+        super().__init__(message, headers=headers, status_code=429)

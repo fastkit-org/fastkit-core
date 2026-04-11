@@ -959,6 +959,146 @@ class TestIntegration:
 
 
 # ============================================================================
+# Test CURSOR PAGINATION
+# ============================================================================
+
+class TestCursorPagination:
+    """Test cursor-based pagination functionality."""
+
+    def test_cursor_paginate_first_page_no_cursor(self, user_repo):
+        """First page request with no cursor should return items and a next_cursor."""
+        for i in range(10):
+            user_repo.create({'name': f'User{i:02d}', 'email': f'user{i}@example.com', 'age': 20 + i})
+
+        items, next_cursor = user_repo.cursor_paginate(per_page=4)
+
+        assert len(items) == 4
+        assert next_cursor is not None
+
+    def test_cursor_paginate_second_page(self, user_repo):
+        """Passing cursor from first page should return the next batch of items."""
+        for i in range(10):
+            user_repo.create({'name': f'User{i:02d}', 'email': f'user{i}@example.com', 'age': 20 + i})
+
+        items_p1, cursor_p1 = user_repo.cursor_paginate(per_page=4, cursor_field='id', direction='asc')
+        items_p2, cursor_p2 = user_repo.cursor_paginate(per_page=4, cursor_field='id', direction='asc', cursor=cursor_p1)
+
+        assert len(items_p2) == 4
+        # IDs on page 2 must all be greater than the last ID on page 1
+        last_id_p1 = items_p1[-1].id
+        assert all(u.id > last_id_p1 for u in items_p2)
+
+    def test_cursor_paginate_last_page_returns_none_cursor(self, user_repo):
+        """next_cursor must be None when there are no more records after the current page."""
+        for i in range(5):
+            user_repo.create({'name': f'User{i}', 'email': f'user{i}@example.com', 'age': 20})
+
+        items_p1, cursor_p1 = user_repo.cursor_paginate(per_page=3)
+        items_p2, cursor_p2 = user_repo.cursor_paginate(per_page=3, cursor=cursor_p1)
+
+        assert len(items_p2) == 2
+        assert cursor_p2 is None
+
+    def test_cursor_paginate_empty_table_returns_none_cursor(self, user_repo):
+        """Empty table should return empty list and None cursor."""
+        items, next_cursor = user_repo.cursor_paginate(per_page=10)
+
+        assert items == []
+        assert next_cursor is None
+
+    def test_cursor_paginate_all_results_fit_one_page(self, user_repo):
+        """When total records <= per_page the cursor should be None on the first call."""
+        for i in range(3):
+            user_repo.create({'name': f'User{i}', 'email': f'user{i}@example.com', 'age': 20})
+
+        items, next_cursor = user_repo.cursor_paginate(per_page=10)
+
+        assert len(items) == 3
+        assert next_cursor is None
+
+    def test_cursor_paginate_with_filters(self, user_repo):
+        """Filter operators should work together with cursor pagination."""
+        for i in range(10):
+            user_repo.create({
+                'name': f'User{i:02d}',
+                'email': f'user{i}@example.com',
+                'age': 20 + i,
+                'is_active': i % 2 == 0,  # even indices active
+            })
+
+        items, next_cursor = user_repo.cursor_paginate(per_page=3, is_active=True)
+
+        assert len(items) == 3
+        assert all(u.is_active for u in items)
+
+    def test_cursor_paginate_direction_asc(self, user_repo):
+        """ASC direction should return records ordered from lowest to highest cursor field."""
+        for i in range(5):
+            user_repo.create({'name': f'User{i}', 'email': f'user{i}@example.com', 'age': 20 + i})
+
+        items, _ = user_repo.cursor_paginate(per_page=5, cursor_field='age', direction='asc')
+
+        ages = [u.age for u in items]
+        assert ages == sorted(ages)
+
+    def test_cursor_paginate_direction_desc(self, user_repo):
+        """DESC direction should return records ordered from highest to lowest cursor field."""
+        for i in range(5):
+            user_repo.create({'name': f'User{i}', 'email': f'user{i}@example.com', 'age': 20 + i})
+
+        items, _ = user_repo.cursor_paginate(per_page=5, cursor_field='age', direction='desc')
+
+        ages = [u.age for u in items]
+        assert ages == sorted(ages, reverse=True)
+
+    def test_cursor_paginate_cursor_field_age(self, user_repo):
+        """cursor_field other than 'id' should work as the pagination pointer."""
+        for i in range(6):
+            user_repo.create({'name': f'User{i}', 'email': f'user{i}@example.com', 'age': 10 + i})
+
+        items_p1, cursor_p1 = user_repo.cursor_paginate(per_page=3, cursor_field='age', direction='asc')
+        items_p2, cursor_p2 = user_repo.cursor_paginate(per_page=3, cursor_field='age', direction='asc', cursor=cursor_p1)
+
+        last_age_p1 = items_p1[-1].age
+        assert all(u.age > last_age_p1 for u in items_p2)
+        assert cursor_p2 is None
+
+    def test_cursor_paginate_no_duplicates_across_pages(self, user_repo):
+        """No record should appear on more than one page."""
+        for i in range(9):
+            user_repo.create({'name': f'User{i}', 'email': f'user{i}@example.com', 'age': 20})
+
+        seen_ids: set = set()
+        cursor = None
+        while True:
+            items, cursor = user_repo.cursor_paginate(per_page=3, cursor=cursor)
+            for item in items:
+                assert item.id not in seen_ids, f"Duplicate id={item.id} found"
+                seen_ids.add(item.id)
+            if cursor is None:
+                break
+
+        assert len(seen_ids) == 9
+
+    def test_cursor_paginate_with_soft_delete_model(self, post_repo, sample_users):
+        """Soft-deleted records must be excluded from cursor pagination."""
+        posts = post_repo.create_many([
+            {'title': f'Post{i}', 'content': 'Content', 'user_id': sample_users[0].id}
+            for i in range(5)
+        ])
+
+        # Soft delete every other post
+        post_repo.delete(posts[1].id)
+        post_repo.delete(posts[3].id)
+
+        items, _ = post_repo.cursor_paginate(per_page=10)
+
+        assert len(items) == 3
+        deleted_ids = {posts[1].id, posts[3].id}
+        assert not any(p.id in deleted_ids for p in items)
+
+
+# ============================================================================
 # Test Eager Loading (Relationship Loading) - Sync
 # ============================================================================
 

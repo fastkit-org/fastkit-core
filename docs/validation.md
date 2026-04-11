@@ -3,6 +3,10 @@
 - [Introduction](#introduction)
 - [Quick Example](#quick-example)
 - [BaseSchema](#baseschema)
+- [BaseCreateSchema](#basecreataschema)
+- [BaseUpdateSchema](#baseupdateschema)
+- [Computed Fields](#computed-fields)
+- [Serialization Helpers](#serialization-helpers)
 - [Validation Rules](#validation-rules)
 - [Validator Mixins](#validator-mixins)
 - [Translated Error Messages](#translated-error-messages)
@@ -17,64 +21,48 @@
 <a name="introduction"></a>
 ## Introduction
 
-FastKit Core's validation system is built on top of Pydantic, adding automatic 
+FastKit Core's validation system is built on top of Pydantic v2, adding automatic
 translation of error messages, reusable validator mixins, and convenient validation rules.
 
 **Key Features:**
 
-- **Pydantic-based** - Leverages Pydantic's powerful validation
-- **Translated Errors** - Automatic translation of validation messages
-- **Reusable Mixins** - Common validators (password, username, slug)
-- **Simple Rules** - Helper functions for common validations
-- **Structured Errors** - Clean error format for APIs
-- **Multi-language** - Error messages in user's language
-- **Type-safe** - Full type checking support
+- **ORM-ready by default** — `from_attributes=True` on every schema, no extra config needed
+- **Create / Update conventions** — `BaseCreateSchema` and `BaseUpdateSchema` with sensible defaults
+- **Computed fields** — `@computed_field` pattern fully supported and documented
+- **Serialization helpers** — `to_dict()` and `to_json_str()` with `exclude_none` support
+- **Translated Errors** — Automatic translation of validation messages
+- **Reusable Mixins** — Common validators (password, username, slug)
+- **Simple Rules** — Helper functions for common validations
+- **Structured Errors** — Clean error format for APIs
+- **Multi-language** — Error messages in user's language
 
 ---
 
 <a name="quick-example"></a>
 ## Quick Example
 
-**Define a schema with validation:**
 ```python
-from fastkit_core.validation import BaseSchema, min_length, PasswordValidatorMixin
+from fastkit_core.validation import BaseCreateSchema, PasswordValidatorMixin
 from pydantic import EmailStr
 
-class UserCreate(BaseSchema, PasswordValidatorMixin):
-    """User registration schema with validation."""
-    username: str = min_length(3)
+class UserCreate(BaseCreateSchema, PasswordValidatorMixin):
+    """User registration schema — extra fields forbidden, ORM-ready."""
+    username: str
     email: EmailStr
     password: str  # Validated by PasswordValidatorMixin
-    age: int | None = None
 ```
 
-**Use in FastAPI:**
 ```python
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastkit_core.http import error_response
+from pydantic import ValidationError
 
 app = FastAPI()
 
 @app.post("/users")
 def create_user(user: UserCreate):
-    # If validation fails, FastAPI automatically returns 422
-    # with structured error messages
+    # FastAPI validates automatically — returns 422 if validation fails
     return {"message": "User created"}
-
-# Or handle validation manually
-@app.post("/users/manual")
-def create_user_manual(data: dict):
-    try:
-        user = UserCreate(**data)
-        return {"message": "User created"}
-    except ValidationError as e:
-        # Format errors with translations
-        errors = UserCreate.format_errors(e)
-        return error_response(
-            message="Validation failed",
-            errors=errors,
-            status_code=422
-        )
 ```
 
 **Error response:**
@@ -84,7 +72,6 @@ def create_user_manual(data: dict):
   "message": "Validation failed",
   "errors": {
     "username": ["The username must be at least 3 characters"],
-    "email": ["The email must be a valid email address"],
     "password": [
       "Password must be at least 8 characters",
       "Password must contain at least one uppercase letter"
@@ -98,64 +85,53 @@ def create_user_manual(data: dict):
 <a name="baseschema"></a>
 ## BaseSchema
 
-`BaseSchema` is the foundation of validation in FastKit Core. It extends Pydantic's 
-`BaseModel` with automatic error translation and formatting.
+`BaseSchema` is the foundation of all FastKit schemas. It extends Pydantic's `BaseModel` with:
 
-### Basic Usage
+- `from_attributes=True` enabled by default — works directly with SQLAlchemy ORM objects
+- Standardized error formatting with i18n support
+- `to_dict()` and `to_json_str()` serialization helpers
+- `config_exclude_none()` and `config_exclude_fields()` config helpers
+
+### ORM Mode by Default
+
+Every schema that extends `BaseSchema` can be built from an SQLAlchemy ORM object
+without any extra configuration:
+
 ```python
 from fastkit_core.validation import BaseSchema
 
-class ProductCreate(BaseSchema):
+class UserResponse(BaseSchema):
+    id: int
     name: str
-    price: float
-    description: str | None = None
-    in_stock: bool = True
+    email: str
+    # from_attributes=True is already set — no model_config needed
+
+# Works directly with ORM instances
+user_response = UserResponse.model_validate(user_orm_instance)
+
+# Also works with plain dicts
+user_response = UserResponse.model_validate({"id": 1, "name": "Alice", "email": "a@x.com"})
 ```
+
+Previously you had to remember to add `model_config = ConfigDict(from_attributes=True)` on
+every response schema. With `BaseSchema` this is handled once for all subclasses.
 
 ### Error Formatting
 
-`BaseSchema` provides `format_errors()` for clean error messages:
 ```python
 from pydantic import ValidationError
-
-try:
-    product = ProductCreate(
-        name="",  # Too short
-        price=-10,  # Negative
-    )
-except ValidationError as e:
-    errors = ProductCreate.format_errors(e)
-    print(errors)
-    # {
-    #     "name": ["String should have at least 1 character"],
-    #     "price": ["Input should be greater than 0"]
-    # }
-```
-
-### Translated Errors
-
-Errors are automatically translated based on current locale:
-```python
-from fastkit_core.i18n import set_locale
-from pydantic import ValidationError
-
-# Set Spanish locale
-set_locale('es')
 
 try:
     product = ProductCreate(name="", price=-10)
 except ValidationError as e:
     errors = ProductCreate.format_errors(e)
-    # Errors in Spanish
-    # {
-    #     "name": ["El campo nombre debe tener al menos 1 carácter"],
-    #     "price": ["El valor debe ser mayor que 0"]
-    # }
+    # {'name': ['String should have at least 1 character'], 'price': ['...']}
 ```
 
 ### Validation Message Mapping
 
-`BaseSchema` maps Pydantic error types to translation keys:
+`BaseSchema` maps Pydantic error types to i18n translation keys:
+
 ```python
 VALIDATION_MESSAGE_MAP = {
     'missing': 'validation.required',
@@ -172,7 +148,8 @@ VALIDATION_MESSAGE_MAP = {
 }
 ```
 
-Create corresponding translations in `translations/en.json`:
+Create corresponding keys in `translations/en.json`:
+
 ```json
 {
   "validation": {
@@ -188,50 +165,298 @@ Create corresponding translations in `translations/en.json`:
 
 ---
 
+<a name="basecreataschema"></a>
+## BaseCreateSchema
+
+`BaseCreateSchema` extends `BaseSchema` with sensible defaults for **create operations**:
+
+- Extra fields are **forbidden** — prevents accidental mass assignment
+- Inherits `from_attributes=True` from `BaseSchema`
+
+```python
+from fastkit_core.validation import BaseCreateSchema
+
+class UserCreate(BaseCreateSchema):
+    name: str
+    email: str
+    role: str = "user"
+
+# Valid
+user = UserCreate(name="John", email="j@example.com")
+
+# Extra field — raises ValidationError
+UserCreate(name="John", email="j@example.com", is_admin=True)
+# ValidationError: extra fields not permitted
+```
+
+Use `BaseCreateSchema` instead of `BaseSchema` for all input schemas that represent
+creation of a new resource. The `extra='forbid'` behavior protects against
+unintentional data injection even when the schema is used directly with `**request.dict()`.
+
+---
+
+<a name="baseupdateschema"></a>
+## BaseUpdateSchema
+
+`BaseUpdateSchema` extends `BaseSchema` with sensible defaults for **partial update operations**:
+
+- Extra fields are **forbidden**
+- All fields should be declared as `Optional` with `None` as default (by convention)
+- Inherits `from_attributes=True` from `BaseSchema`
+
+```python
+from fastkit_core.validation import BaseUpdateSchema
+
+class UserUpdate(BaseUpdateSchema):
+    name: str | None = None
+    email: str | None = None
+    age: int | None = None
+```
+
+### Partial Update Pattern
+
+Declaring fields as `Optional` with `None` default integrates cleanly with
+`model_dump(exclude_unset=True)`, which is what `BaseCrudService._to_dict()` uses
+internally. This means only the fields the caller explicitly set will be forwarded
+to the repository:
+
+```python
+update = UserUpdate(name="Jane")
+
+# Only the field that was explicitly set
+update.model_dump(exclude_unset=True)
+# {'name': 'Jane'}   ← email and age are not included
+
+# Setting a field to None explicitly (to clear it)
+update = UserUpdate(bio=None)
+update.model_dump(exclude_unset=True)
+# {'bio': None}   ← explicitly cleared
+```
+
+### Typical CRUD Schema Set
+
+```python
+from fastkit_core.validation import BaseCreateSchema, BaseUpdateSchema, BaseSchema
+from pydantic import computed_field
+from datetime import datetime
+
+class UserCreate(BaseCreateSchema):
+    name: str
+    email: str
+    role: str = "user"
+
+class UserUpdate(BaseUpdateSchema):
+    name: str | None = None
+    email: str | None = None
+
+class UserResponse(BaseSchema):
+    id: int
+    name: str
+    email: str
+    role: str
+    created_at: datetime
+    updated_at: datetime
+    # from_attributes=True already set — no extra config needed
+```
+
+---
+
+<a name="computed-fields"></a>
+## Computed Fields
+
+Pydantic v2's `@computed_field` works out of the box on any `BaseSchema` subclass.
+Use it to add derived, read-only properties to response schemas.
+
+### Basic Usage
+
+```python
+from fastkit_core.validation import BaseSchema
+from pydantic import computed_field
+
+class UserResponse(BaseSchema):
+    first_name: str
+    last_name: str
+    avatar_path: str | None = None
+
+    @computed_field
+    @property
+    def full_name(self) -> str:
+        return f"{self.first_name} {self.last_name}"
+
+    @computed_field
+    @property
+    def avatar_url(self) -> str | None:
+        if not self.avatar_path:
+            return None
+        return f"/storage/{self.avatar_path}"
+
+user = UserResponse(first_name="Jane", last_name="Doe", avatar_path="photo.jpg")
+
+print(user.full_name)    # "Jane Doe"
+print(user.avatar_url)   # "/storage/photo.jpg"
+```
+
+### Computed Fields in Serialization
+
+Computed fields are automatically included in `to_dict()` and `to_json_str()`:
+
+```python
+data = user.to_dict()
+# {
+#   'first_name': 'Jane',
+#   'last_name': 'Doe',
+#   'avatar_path': 'photo.jpg',
+#   'full_name': 'Jane Doe',
+#   'avatar_url': '/storage/photo.jpg'
+# }
+```
+
+### With ORM Objects
+
+Computed fields work when the schema is built from an ORM object using `model_validate()`:
+
+```python
+# ORM instance
+user_orm = session.get(User, 1)
+
+# Computed fields are evaluated after the ORM data is loaded
+user_response = UserResponse.model_validate(user_orm)
+print(user_response.full_name)  # works
+```
+
+### Business Logic in Computed Fields
+
+```python
+class InvoiceResponse(BaseSchema):
+    subtotal: float
+    tax_rate: float = 0.20
+
+    @computed_field
+    @property
+    def tax_amount(self) -> float:
+        return round(self.subtotal * self.tax_rate, 2)
+
+    @computed_field
+    @property
+    def total(self) -> float:
+        return round(self.subtotal + self.tax_amount, 2)
+```
+
+---
+
+<a name="serialization-helpers"></a>
+## Serialization Helpers
+
+### to_dict()
+
+Convert a schema instance to a plain Python dictionary:
+
+```python
+user = UserResponse(id=1, name="Alice", bio=None)
+
+# Include all fields (default)
+user.to_dict()
+# {'id': 1, 'name': 'Alice', 'bio': None}
+
+# Exclude None values
+user.to_dict(exclude_none=True)
+# {'id': 1, 'name': 'Alice'}
+```
+
+### to_json_str()
+
+Serialize directly to a JSON string:
+
+```python
+user = UserResponse(id=1, name="Alice", bio=None)
+
+user.to_json_str()
+# '{"id":1,"name":"Alice","bio":null}'
+
+user.to_json_str(exclude_none=True)
+# '{"id":1,"name":"Alice"}'
+```
+
+### Config Helpers
+
+Use these class methods when you want a schema to always serialize without None values
+or always exclude specific fields:
+
+```python
+from fastkit_core.validation import BaseSchema
+from pydantic import Field
+
+# Always omit None values from serialization output
+class UserResponse(BaseSchema):
+    id: int
+    name: str
+    bio: str | None = None
+
+    model_config = BaseSchema.config_exclude_none()
+
+UserResponse(id=1, name="Alice", bio=None).model_dump()
+# {'id': 1, 'name': 'Alice'}
+
+# Exclude a specific field from all serialization
+class UserResponse(BaseSchema):
+    id: int
+    name: str
+    internal_token: str = Field(exclude=True)
+
+    model_config = BaseSchema.config_exclude_fields(['internal_token'])
+
+UserResponse(id=1, name="Alice", internal_token="secret").to_dict()
+# {'id': 1, 'name': 'Alice'}
+```
+
+---
+
 <a name="validation-rules"></a>
 ## Validation Rules
 
 FastKit Core provides convenient helper functions for common validation rules.
+These are simple wrappers around `pydantic.Field()`.
 
 ### String Length
-```python
-from fastkit_core.validation import BaseSchema, min_length, max_length, length
 
-class PostCreate(BaseSchema):
-    title: str = min_length(5)              # At least 5 characters
-    slug: str = max_length(100)             # At most 100 characters
-    excerpt: str = length(10, 200)          # Between 10-200 characters
+```python
+from fastkit_core.validation import BaseCreateSchema, min_length, max_length, length
+
+class PostCreate(BaseCreateSchema):
+    title: str = min_length(5)        # At least 5 characters
+    slug: str = max_length(100)       # At most 100 characters
+    excerpt: str = length(10, 200)    # Between 10 and 200 characters
 ```
 
 ### Numeric Ranges
-```python
-from fastkit_core.validation import BaseSchema, min_value, max_value, between
 
-class ProductCreate(BaseSchema):
-    price: float = min_value(0.01)          # At least 0.01
-    stock: int = max_value(1000)            # At most 1000
-    rating: float = between(1.0, 5.0)       # Between 1.0 and 5.0
+```python
+from fastkit_core.validation import BaseCreateSchema, min_value, max_value, between
+
+class ProductCreate(BaseCreateSchema):
+    price: float = min_value(0.01)      # At least 0.01
+    stock: int = max_value(1000)        # At most 1000
+    rating: float = between(1.0, 5.0)  # Between 1.0 and 5.0
 ```
 
 ### Pattern Matching
-```python
-from fastkit_core.validation import BaseSchema, pattern
 
-class CodeCreate(BaseSchema):
-    hex_color: str = pattern(r'^#[0-9A-Fa-f]{6}$')  # Hex color
-    phone: str = pattern(r'^\+?1?\d{9,15}$')         # Phone number
+```python
+from fastkit_core.validation import BaseCreateSchema, pattern
+
+class CodeCreate(BaseCreateSchema):
+    hex_color: str = pattern(r'^#[0-9A-Fa-f]{6}$')
+    phone: str = pattern(r'^\+?1?\d{9,15}$')
 ```
 
 ### Combining Rules
-```python
-from fastkit_core.validation import BaseSchema, length
-from pydantic import Field
 
-class UserCreate(BaseSchema):
-    # Multiple constraints
+```python
+from pydantic import Field
+from fastkit_core.validation import BaseCreateSchema, length
+
+class UserCreate(BaseCreateSchema):
     username: str = Field(min_length=3, max_length=20, pattern=r'^[a-zA-Z0-9_]+$')
-    
-    # Or use helper
     bio: str = length(10, 500)
 ```
 
@@ -240,121 +465,97 @@ class UserCreate(BaseSchema):
 <a name="validator-mixins"></a>
 ## Validator Mixins
 
-FastKit Core provides reusable validator mixins for common patterns.
+Reusable mixins for common validation patterns. Combine them with any schema class.
 
 ### PasswordValidatorMixin
 
-Standard password validation (8-16 characters, uppercase, special character):
-```python
-from fastkit_core.validation import BaseSchema, PasswordValidatorMixin
+Standard password validation (8–16 chars, uppercase, special character):
 
-class UserCreate(BaseSchema, PasswordValidatorMixin):
+```python
+from fastkit_core.validation import BaseCreateSchema, PasswordValidatorMixin
+
+class UserCreate(BaseCreateSchema, PasswordValidatorMixin):
     username: str
     email: str
-    password: str  # Automatically validated by mixin
+    password: str  # Validated automatically
 
-# Requirements:
-# - 8-16 characters
-# - At least one uppercase letter
-# - At least one special character (!@#$%^&*(),.?":{}|<>)
+# Requirements: 8–16 chars, ≥1 uppercase, ≥1 special character
 ```
 
-**Customize requirements:**
+**Customize:**
+
 ```python
-class CustomPasswordSchema(BaseSchema, PasswordValidatorMixin):
+class CustomPasswordSchema(BaseCreateSchema, PasswordValidatorMixin):
     PWD_MIN_LENGTH = 10  # Override minimum length
     PWD_MAX_LENGTH = 30  # Override maximum length
-    
+
     password: str
 ```
 
 ### StrongPasswordValidatorMixin
 
-Stronger password validation (10-20 characters, all requirements):
+Strong password validation (10–20 chars, all character classes):
+
 ```python
-from fastkit_core.validation import BaseSchema, StrongPasswordValidatorMixin
+from fastkit_core.validation import BaseCreateSchema, StrongPasswordValidatorMixin
 
-class AdminCreate(BaseSchema, StrongPasswordValidatorMixin):
+class AdminCreate(BaseCreateSchema, StrongPasswordValidatorMixin):
     username: str
-    password: str  # Requires uppercase, lowercase, digit, special char
+    password: str
 
-# Requirements:
-# - 10-20 characters
-# - At least one uppercase letter
-# - At least one lowercase letter
-# - At least one digit
-# - At least one special character
+# Requirements: 10–20 chars, ≥1 uppercase, ≥1 lowercase, ≥1 digit, ≥1 special char
 ```
 
 ### UsernameValidatorMixin
 
-Username validation (3-20 characters, alphanumeric + underscore):
+Username validation (3–20 chars, alphanumeric + underscore, cannot start with digit):
+
 ```python
-from fastkit_core.validation import BaseSchema, UsernameValidatorMixin
+from fastkit_core.validation import BaseCreateSchema, UsernameValidatorMixin
 
-class UserCreate(BaseSchema, UsernameValidatorMixin):
-    username: str  # Automatically validated
+class UserCreate(BaseCreateSchema, UsernameValidatorMixin):
+    username: str
     email: str
-
-# Requirements:
-# - 3-20 characters
-# - Alphanumeric and underscore only
-# - Cannot start with a number
 ```
 
 **Customize:**
+
 ```python
-class CustomUsernameSchema(BaseSchema, UsernameValidatorMixin):
-    USM_MIN_LENGTH = 5   # Override min length
-    USM_MAX_LENGTH = 15  # Override max length
-    
+class UserCreate(BaseCreateSchema, UsernameValidatorMixin):
+    USM_MIN_LENGTH = 5
+    USM_MAX_LENGTH = 15
     username: str
 ```
 
 ### SlugValidatorMixin
 
 URL-friendly slug validation:
+
 ```python
-from fastkit_core.validation import BaseSchema, SlugValidatorMixin
+from fastkit_core.validation import BaseCreateSchema, SlugValidatorMixin
 
-class PostCreate(BaseSchema, SlugValidatorMixin):
+class PostCreate(BaseCreateSchema, SlugValidatorMixin):
     title: str
-    slug: str  # Automatically validated
+    slug: str
 
-# Requirements:
-# - Lowercase letters, numbers, hyphens only
-# - No consecutive hyphens
-# - Cannot start/end with hyphen
+# Valid:   hello-world, fastkit-core-2024, my-awesome-post
+# Invalid: Hello-World (uppercase), hello--world (consecutive hyphens), -hello (leading hyphen)
 ```
 
-**Valid slugs:**
-- ✅ `hello-world`
-- ✅ `fastkit-core-2024`
-- ✅ `my-awesome-post`
-
-**Invalid slugs:**
-- ❌ `Hello-World` (uppercase)
-- ❌ `hello--world` (consecutive hyphens)
-- ❌ `-hello-world` (starts with hyphen)
-
 ### Combining Multiple Mixins
+
 ```python
 from fastkit_core.validation import (
-    BaseSchema,
+    BaseCreateSchema,
     UsernameValidatorMixin,
-    PasswordValidatorMixin
+    PasswordValidatorMixin,
+    SlugValidatorMixin,
 )
 
-class UserRegistration(
-    BaseSchema,
-    UsernameValidatorMixin,
-    PasswordValidatorMixin
-):
+class UserCreate(BaseCreateSchema, UsernameValidatorMixin, PasswordValidatorMixin):
     username: str
     password: str
     email: str
-    
-# Both username and password are validated!
 ```
 
 ---
@@ -362,9 +563,10 @@ class UserRegistration(
 <a name="translated-error-messages"></a>
 ## Translated Error Messages
 
-All validation errors are automatically translated based on the user's locale.
+All validation errors are automatically translated based on the current locale.
 
-### Setup Translation Files
+### Translation File Structure
+
 ```json
 // translations/en.json
 {
@@ -393,63 +595,20 @@ All validation errors are automatically translated based on the user's locale.
   }
 }
 ```
-```json
-// translations/es.json
-{
-  "validation": {
-    "required": "El campo {field} es obligatorio",
-    "string_too_short": "El {field} debe tener al menos {min_length} caracteres",
-    "string_too_long": "El {field} no debe exceder {max_length} caracteres",
-    "email": "El {field} debe ser una dirección de correo válida",
-    "password": {
-      "min_length": "La contraseña debe tener al menos {min} caracteres",
-      "uppercase": "La contraseña debe contener al menos una letra mayúscula",
-      "special_char": "La contraseña debe contener al menos un carácter especial"
-    }
-  }
-}
-```
 
-### Usage with Locale
+### Locale Middleware
+
 ```python
-from fastapi import FastAPI, Depends, Header
+from fastapi import FastAPI, Request
 from fastkit_core.i18n import set_locale
-from fastkit_core.validation import BaseSchema, PasswordValidatorMixin
-from pydantic import ValidationError
 
 app = FastAPI()
 
-async def detect_language(accept_language: str = Header(default='en')):
-    language = accept_language.split(',')[0].split('-')[0]
-    set_locale(language)
-
-class UserCreate(BaseSchema, PasswordValidatorMixin):
-    username: str
-    password: str
-
-@app.post("/users", dependencies=[Depends(detect_language)])
-def create_user(data: dict):
-    try:
-        user = UserCreate(**data)
-        return {"message": "User created"}
-    except ValidationError as e:
-        # Errors automatically translated to user's language
-        errors = UserCreate.format_errors(e)
-        return {"errors": errors}, 422
-```
-
-**Test with different languages:**
-```bash
-# English errors
-curl -X POST http://localhost:8000/users \
-  -H "Content-Type: application/json" \
-  -d '{"username": "a", "password": "weak"}'
-
-# Spanish errors
-curl -X POST http://localhost:8000/users \
-  -H "Accept-Language: es" \
-  -H "Content-Type: application/json" \
-  -d '{"username": "a", "password": "weak"}'
+@app.middleware("http")
+async def locale_middleware(request: Request, call_next):
+    locale = request.headers.get('Accept-Language', 'en')[:2]
+    set_locale(locale)
+    return await call_next(request)
 ```
 
 ---
@@ -457,106 +616,46 @@ curl -X POST http://localhost:8000/users \
 <a name="api-integration"></a>
 ## API Integration
 
-### FastAPI Integration
+### FastAPI Automatic Validation
 
-FastAPI automatically validates request data using Pydantic schemas:
 ```python
 from fastapi import FastAPI
-from fastkit_core.validation import BaseSchema, min_length
+from fastkit_core.validation import BaseCreateSchema, min_length
 
 app = FastAPI()
 
-class ProductCreate(BaseSchema):
+class ProductCreate(BaseCreateSchema):
     name: str = min_length(3)
     price: float
     stock: int
 
 @app.post("/products")
 def create_product(product: ProductCreate):
-    # FastAPI automatically validates
-    # Returns 422 with errors if validation fails
-    return {
-        "message": "Product created",
-        "product": product.model_dump()
-    }
+    # FastAPI validates automatically
+    # Returns 422 with structured errors if validation fails
+    return {"message": "Product created", "product": product.to_dict()}
 ```
 
-### Manual Validation
+### Manual Validation with Helpers
 
-For more control over error handling:
 ```python
-from fastapi import FastAPI
 from fastkit_core.http import success_response, error_response
 from pydantic import ValidationError
-
-app = FastAPI()
 
 @app.post("/products")
 def create_product(data: dict):
     try:
         product = ProductCreate(**data)
-        # Process product...
-        return success_response(
-            data=product.model_dump(),
-            message="Product created successfully"
-        )
+        return success_response(data=product.to_dict())
     except ValidationError as e:
         errors = ProductCreate.format_errors(e)
-        return error_response(
-            message="Validation failed",
-            errors=errors,
-            status_code=422
-        )
+        return error_response(message="Validation failed", errors=errors, status_code=422)
 ```
 
-### Exception Handler
+### Global Exception Handler
 
-Create a global validation error handler:
-```python
-from fastapi import FastAPI, Request
-from fastapi.exceptions import RequestValidationError
-from fastkit_core.http import error_response
-
-app = FastAPI()
-
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    """Handle validation errors globally."""
-    # Format Pydantic errors
-    errors = {}
-    for error in exc.errors():
-        field = error['loc'][-1]
-        if field not in errors:
-            errors[field] = []
-        errors[field].append(error['msg'])
-    
-    return error_response(
-        message="Validation failed",
-        errors=errors,
-        status_code=422
-    )
-```
-
-### With Dependency Injection
-```python
-from fastapi import FastAPI, Depends
-from pydantic import ValidationError
-
-app = FastAPI()
-
-async def validate_product(data: dict) -> ProductCreate:
-    """Validate product data with custom error handling."""
-    try:
-        return ProductCreate(**data)
-    except ValidationError as e:
-        errors = ProductCreate.format_errors(e)
-        # Handle errors...
-        raise HTTPException(status_code=422, detail=errors)
-
-@app.post("/products")
-def create_product(product: ProductCreate = Depends(validate_product)):
-    return {"message": "Product created"}
-```
+FastKit Core provides built-in exception handlers via `register_exception_handlers()`.
+See the [HTTP utilities documentation](http_utilities.md) for details.
 
 ---
 
@@ -565,80 +664,63 @@ def create_product(product: ProductCreate = Depends(validate_product)):
 
 ### Field Validators
 
-Create custom validation logic using Pydantic's `field_validator`:
 ```python
-from fastkit_core.validation import BaseSchema
+from fastkit_core.validation import BaseCreateSchema
 from fastkit_core.i18n import _
 from pydantic import field_validator
-import re
 
-class UserCreate(BaseSchema):
+class UserCreate(BaseCreateSchema):
     username: str
-    email: str
     bio: str
-    
+
     @field_validator('username')
     @classmethod
     def validate_username(cls, v: str) -> str:
         if len(v) < 3:
             raise ValueError(_('validation.username.min_length', min=3))
-        
         if not v.isalnum():
             raise ValueError(_('validation.username.format'))
-        
         return v
-    
+
     @field_validator('bio')
     @classmethod
-    def validate_bio(cls, v: str) -> str:
-        # Remove extra whitespace
-        v = ' '.join(v.split())
-        
-        if len(v) > 500:
-            raise ValueError(_('validation.string_too_long', 
-                             field='bio', 
-                             max_length=500))
-        
-        return v
+    def clean_bio(cls, v: str) -> str:
+        # Strip extra whitespace before storing
+        return ' '.join(v.split())
 ```
 
-### Model Validators
+### Model Validators (Cross-Field)
 
-Validate relationships between fields:
 ```python
-from fastkit_core.validation import BaseSchema
-from fastkit_core.i18n import _
+from fastkit_core.validation import BaseCreateSchema
 from pydantic import model_validator
 from datetime import date
 
-class EventCreate(BaseSchema):
+class EventCreate(BaseCreateSchema):
     title: str
     start_date: date
     end_date: date
-    
+
     @model_validator(mode='after')
-    def validate_dates(self):
-        """Ensure end_date is after start_date."""
+    def validate_date_range(self):
         if self.end_date < self.start_date:
-            raise ValueError(_('validation.end_date_before_start'))
+            raise ValueError('End date must be after start date')
         return self
 ```
 
 ### Custom Validator Mixin
 
-Create reusable custom validators:
 ```python
-from fastkit_core.validation import BaseSchema
+from fastkit_core.validation import BaseCreateSchema
 from fastkit_core.i18n import _
 from pydantic import field_validator
 from typing import ClassVar
 import re
 
 class PhoneValidatorMixin:
-    """Phone number validation mixin."""
     PHONE_PATTERN: ClassVar[str] = r'^\+?1?\d{9,15}$'
     VALIDATION_MSG_PHONE_KEY: ClassVar[str] = 'validation.phone.format'
-    
+
     @field_validator('phone')
     @classmethod
     def validate_phone(cls, v: str) -> str:
@@ -646,10 +728,9 @@ class PhoneValidatorMixin:
             raise ValueError(_(cls.VALIDATION_MSG_PHONE_KEY))
         return v
 
-# Usage
-class UserCreate(BaseSchema, PhoneValidatorMixin):
+class UserCreate(BaseCreateSchema, PhoneValidatorMixin):
     name: str
-    phone: str  # Automatically validated
+    phone: str
 ```
 
 ---
@@ -657,64 +738,55 @@ class UserCreate(BaseSchema, PhoneValidatorMixin):
 <a name="error-helpers"></a>
 ## Error Helpers
 
-FastKit Core provides helper functions in `fastkit_core.validation.errors` for programmatically 
-raising and formatting validation errors. These are useful when you need to throw validation 
-errors outside of Pydantic schemas — for example, in services, repositories, or exception handlers.
+Helper functions for raising and formatting validation errors programmatically —
+useful in services, repositories, and exception handlers.
 
 ### raise_validation_error
 
 Raise a `ValidationError` for a single field:
-```python
-from fastkit_core.validation.errors import raise_validation_error
 
-# In a service or repository
+```python
+from fastkit_core.validation import raise_validation_error
+
 def create_user(email: str):
     if user_exists(email):
         raise_validation_error('email', 'Email already exists', email)
 ```
 
-Parameters:
-
-- `field` (str) — The field name that failed validation
-- `message` (str) — The error message
-- `value` (Any, optional) — The input value that caused the error (defaults to `None`)
+Parameters: `field: str`, `message: str`, `value: Any = None`
 
 ### raise_multiple_validation_errors
 
-Raise a `ValidationError` with multiple field errors at once. Useful when validating 
-a whole form or running multiple business-rule checks before returning all errors together:
-```python
-from fastkit_core.validation.errors import raise_multiple_validation_errors
+Raise a `ValidationError` with multiple field errors at once:
 
-# Validate multiple business rules at once
+```python
+from fastkit_core.validation import raise_multiple_validation_errors
+
 def create_transfer(from_account: str, to_account: str, amount: float):
     errors = []
-    
+
     if not account_exists(from_account):
         errors.append(('from_account', 'Account not found', from_account))
-    
+
     if not account_exists(to_account):
         errors.append(('to_account', 'Account not found', to_account))
-    
+
     if amount <= 0:
         errors.append(('amount', 'Amount must be positive', amount))
-    
+
     if errors:
         raise_multiple_validation_errors(errors)
 ```
 
-Parameters:
-
-- `errors` (list[tuple[str, str, Any]]) — A list of `(field, message, value)` tuples
+Parameters: `errors: list[tuple[str, str, Any]]` — list of `(field, message, value)` tuples.
 
 ### format_validation_errors
 
-Parse a raw Pydantic/FastAPI error list into a clean `{field: [messages]}` dictionary. 
-This is the same format used throughout FastKit's error responses:
-```python
-from fastkit_core.validation.errors import format_validation_errors
+Parse a raw Pydantic/FastAPI error list into `{field: [messages]}` format:
 
-# From a Pydantic ValidationError
+```python
+from fastkit_core.validation import format_validation_errors
+
 try:
     schema = UserCreate(**data)
 except ValidationError as e:
@@ -722,75 +794,65 @@ except ValidationError as e:
     # {'email': ['Field required'], 'password': ['Too short', 'Needs uppercase']}
 ```
 
-This function is also used internally by FastKit's exception handlers to ensure consistent 
-error formatting across both `RequestValidationError` (FastAPI) and `ValidationError` (Pydantic):
-```python
-from fastapi import Request
-from fastapi.exceptions import RequestValidationError
-from fastkit_core.validation.errors import format_validation_errors
-from fastkit_core.http.responses import error_response
-
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    return error_response(
-        message="Validation failed",
-        errors=format_validation_errors(exc.errors()),
-        status_code=422
-    )
-```
-
-Parameters:
-
-- `errors` (list[dict]) — Raw error list from `ValidationError.errors()` or `RequestValidationError.errors()`
-
-Returns:
-
-- `dict[str, list[str]]` — Dictionary mapping field names to lists of error messages. For nested fields (e.g. `('body', 'address', 'city')`), the last element is used as the field name. Errors without a `loc` are grouped under `'unknown'`.
+Used internally by FastKit's exception handlers to ensure consistent formatting
+across both `RequestValidationError` (FastAPI) and `ValidationError` (Pydantic).
+For nested field locations (e.g. `('body', 'address', 'city')`), the last element
+is used as the field name. Errors without a location are grouped under `'unknown'`.
 
 ---
 
 <a name="best-practices"></a>
 ## Best Practices
 
-### 1. Use Descriptive Schema Names
+### 1. Use the Right Base Class for Each Schema
 
 ✅ **Good:**
 ```python
-class UserCreateSchema(BaseSchema):
-    ...
+from fastkit_core.validation import BaseCreateSchema, BaseUpdateSchema, BaseSchema
 
-class UserUpdateSchema(BaseSchema):
-    ...
+class UserCreate(BaseCreateSchema):    # input — extra fields forbidden
+    name: str
+    email: str
 
-class UserResponseSchema(BaseSchema):
-    ...
+class UserUpdate(BaseUpdateSchema):    # partial input — extra fields forbidden
+    name: str | None = None
+    email: str | None = None
+
+class UserResponse(BaseSchema):        # output — ORM-ready
+    id: int
+    name: str
+    email: str
 ```
 
 ❌ **Bad:**
 ```python
-class User(BaseSchema):  # Too generic
-    ...
+class UserCreate(BaseModel):     # Missing from_attributes, missing extra='forbid'
+    name: str
+    email: str
 
-class UserSchema(BaseSchema):  # What operation?
-    ...
+class UserResponse(BaseModel):   # Must remember model_config on every response schema
+    id: int
+    name: str
+    model_config = ConfigDict(from_attributes=True)  # Easy to forget
 ```
 
 ### 2. Separate Schemas by Operation
+
 ```python
-class ProductCreate(BaseSchema):
-    """Schema for creating products."""
+class ProductCreate(BaseCreateSchema):
+    """Schema for creating products — required fields only."""
     name: str
     price: float
     stock: int
 
-class ProductUpdate(BaseSchema):
-    """Schema for updating products."""
+class ProductUpdate(BaseUpdateSchema):
+    """Schema for updating products — all fields optional."""
     name: str | None = None
     price: float | None = None
     stock: int | None = None
 
 class ProductResponse(BaseSchema):
-    """Schema for product responses."""
+    """Schema for product responses — includes computed fields."""
     id: int
     name: str
     price: float
@@ -798,11 +860,42 @@ class ProductResponse(BaseSchema):
     created_at: datetime
 ```
 
-### 3. Use Mixins for Reusable Validation
+### 3. Use Computed Fields for Derived Properties
 
 ✅ **Good:**
 ```python
-class UserCreate(BaseSchema, UsernameValidatorMixin, PasswordValidatorMixin):
+from pydantic import computed_field
+
+class UserResponse(BaseSchema):
+    first_name: str
+    last_name: str
+
+    @computed_field
+    @property
+    def full_name(self) -> str:
+        return f"{self.first_name} {self.last_name}"
+
+# full_name is automatically included in to_dict() and to_json_str()
+user_response.to_dict()
+# {'first_name': 'Alice', 'last_name': 'Smith', 'full_name': 'Alice Smith'}
+```
+
+❌ **Bad:**
+```python
+# Manually constructing derived fields in every endpoint
+@app.get("/users/{id}")
+def get_user(id: int):
+    user = repo.get(id)
+    data = user.to_dict()
+    data['full_name'] = f"{user.first_name} {user.last_name}"  # Easy to forget
+    return data
+```
+
+### 4. Use Mixins for Reusable Validation
+
+✅ **Good:**
+```python
+class UserCreate(BaseCreateSchema, UsernameValidatorMixin, PasswordValidatorMixin):
     username: str
     password: str
     email: str
@@ -810,20 +903,45 @@ class UserCreate(BaseSchema, UsernameValidatorMixin, PasswordValidatorMixin):
 
 ❌ **Bad:**
 ```python
-class UserCreate(BaseSchema):
+class UserCreate(BaseCreateSchema):
     username: str
     password: str
-    
+
     @field_validator('username')
     @classmethod
     def validate_username(cls, v):
         # Duplicate validation logic in every schema
+        if len(v) < 3:
+            raise ValueError("Too short")
         ...
 ```
 
-### 4. Provide Translated Error Messages
+### 5. Use to_dict() in API Responses
+
+✅ **Good:**
+```python
+@app.get("/users/{id}")
+def get_user(id: int):
+    user = repo.get(id)
+    response = UserResponse.model_validate(user)
+
+    # Exclude None fields from API response
+    return success_response(data=response.to_dict(exclude_none=True))
+```
+
+❌ **Bad:**
+```python
+@app.get("/users/{id}")
+def get_user(id: int):
+    user = repo.get(id)
+    # model_dump() everywhere instead of the helper
+    return {"data": UserResponse.model_validate(user).model_dump(exclude_none=True)}
+```
+
+### 6. Provide Translated Error Messages
 
 Always create translations for custom validators:
+
 ```python
 # validators.py
 @field_validator('code')
@@ -844,32 +962,13 @@ def validate_code(cls, v: str) -> str:
 }
 ```
 
-### 5. Use Helpers for Common Rules
+### 7. Document Schema Fields
 
-✅ **Good:**
-```python
-from fastkit_core.validation import min_length, between
-
-class ProductCreate(BaseSchema):
-    name: str = min_length(3)
-    rating: float = between(1.0, 5.0)
-```
-
-❌ **Bad:**
 ```python
 from pydantic import Field
+from fastkit_core.validation import BaseCreateSchema
 
-class ProductCreate(BaseSchema):
-    name: str = Field(min_length=3)  # More verbose
-    rating: float = Field(ge=1.0, le=5.0)
-```
-
-### 6. Document Schema Fields
-```python
-from fastkit_core.validation import BaseSchema
-from pydantic import Field
-
-class UserCreate(BaseSchema):
+class UserCreate(BaseCreateSchema):
     username: str = Field(
         min_length=3,
         max_length=20,
@@ -879,7 +978,8 @@ class UserCreate(BaseSchema):
     age: int = Field(ge=13, le=120, description="User's age")
 ```
 
-### 7. Test Validation Logic
+### 8. Test Validation Logic
+
 ```python
 def test_user_validation():
     """Test user schema validation."""
@@ -890,7 +990,7 @@ def test_user_validation():
         password="SecurePass1!"
     )
     assert user.username == "alice"
-    
+
     # Invalid username
     with pytest.raises(ValidationError) as exc:
         UserCreate(
@@ -898,9 +998,18 @@ def test_user_validation():
             email="alice@example.com",
             password="SecurePass1!"
         )
-    
+
     errors = UserCreate.format_errors(exc.value)
     assert "username" in errors
+
+    # Extra field — forbidden by BaseCreateSchema
+    with pytest.raises(ValidationError):
+        UserCreate(
+            username="alice",
+            email="alice@example.com",
+            password="SecurePass1!",
+            role="admin"  # Not allowed
+        )
 ```
 
 ---
@@ -909,254 +1018,169 @@ def test_user_validation():
 ## API Reference
 
 ### BaseSchema
-```python
-class BaseSchema(BaseModel):
-    """Base schema with translation support."""
-    
-    VALIDATION_MESSAGE_MAP: ClassVar[Dict[str, str]]
-    
-    @classmethod
-    def format_errors(cls, errors: ValidationError) -> Dict[str, List[str]]:
-        """
-        Format validation errors with translations.
-        
-        Args:
-            errors: Pydantic ValidationError
-            
-        Returns:
-            Dictionary mapping field names to error messages
-            
-        Example:
-            {
-                "username": ["Username must be at least 3 characters"],
-                "email": ["Invalid email format"]
-            }
-        """
+
+```
+class BaseSchema(BaseModel)
+
+model_config: ConfigDict(from_attributes=True)
+
+# Class methods
+format_errors(errors: ValidationError) -> dict[str, list[str]]
+config_exclude_none() -> ConfigDict
+config_exclude_fields(fields: list[str]) -> ConfigDict
+
+# Instance methods
+to_dict(exclude_none: bool = False) -> dict[str, Any]
+to_json_str(exclude_none: bool = False) -> str
 ```
 
----
+`from_attributes=True` is set on `BaseSchema` and inherited by all subclasses.
+There is no need to redeclare `model_config` on response schemas.
+
+### BaseCreateSchema
+
+```
+class BaseCreateSchema(BaseSchema)
+
+model_config: ConfigDict(from_attributes=True, extra='forbid')
+```
+
+Use for create input schemas. Extra fields raise `ValidationError` with type `extra_forbidden`.
+
+### BaseUpdateSchema
+
+```
+class BaseUpdateSchema(BaseSchema)
+
+model_config: ConfigDict(from_attributes=True, extra='forbid')
+```
+
+Use for update input schemas. By convention all fields should be `Optional` with `None`
+default to support partial updates via `model_dump(exclude_unset=True)`.
 
 ### Validation Rules
 
-**`min_length(length: int)`**
-
-Minimum string length constraint.
-```python
-name: str = min_length(3)
 ```
-
-**`max_length(length: int)`**
-
-Maximum string length constraint.
-```python
-name: str = max_length(100)
+min_length(length: int)            → Field(min_length=length)
+max_length(length: int)            → Field(max_length=length)
+length(min_len: int, max_len: int) → Field(min_length=..., max_length=...)
+min_value(value: int | float)      → Field(ge=value)
+max_value(value: int | float)      → Field(le=value)
+between(min_val, max_val)          → Field(ge=min_val, le=max_val)
+pattern(regex: str)                → Field(pattern=regex)
 ```
-
-**`length(min_len: int, max_len: int)`**
-
-String length range constraint.
-```python
-bio: str = length(10, 500)
-```
-
-**`min_value(value: int | float)`**
-
-Minimum numeric value constraint.
-```python
-price: float = min_value(0.01)
-```
-
-**`max_value(value: int | float)`**
-
-Maximum numeric value constraint.
-```python
-stock: int = max_value(1000)
-```
-
-**`between(min_val: int | float, max_val: int | float)`**
-
-Numeric range constraint.
-```python
-rating: float = between(1.0, 5.0)
-```
-
-**`pattern(regex: str)`**
-
-Regular expression pattern constraint.
-```python
-hex_color: str = pattern(r'^#[0-9A-Fa-f]{6}$')
-```
-
----
 
 ### Validator Mixins
 
-**`PasswordValidatorMixin`**
-
-Standard password validation (8-16 chars, uppercase, special char).
-```python
-class UserCreate(BaseSchema, PasswordValidatorMixin):
-    password: str
-
-# Customizable:
-PWD_MIN_LENGTH: ClassVar[int] = 8
-PWD_MAX_LENGTH: ClassVar[int] = 16
 ```
+PasswordValidatorMixin
+    PWD_MIN_LENGTH: ClassVar[int] = 8
+    PWD_MAX_LENGTH: ClassVar[int] = 16
+    Validates: field named 'password'
 
-**`StrongPasswordValidatorMixin`**
+StrongPasswordValidatorMixin
+    PWD_MIN_LENGTH: ClassVar[int] = 10
+    PWD_MAX_LENGTH: ClassVar[int] = 20
+    Validates: field named 'password' (uppercase + lowercase + digit + special)
 
-Strong password validation (10-20 chars, all requirements).
-```python
-class AdminCreate(BaseSchema, StrongPasswordValidatorMixin):
-    password: str
+UsernameValidatorMixin
+    USM_MIN_LENGTH: ClassVar[int] = 3
+    USM_MAX_LENGTH: ClassVar[int] = 20
+    Validates: field named 'username'
 
-# Customizable:
-PWD_MIN_LENGTH: ClassVar[int] = 10
-PWD_MAX_LENGTH: ClassVar[int] = 20
+SlugValidatorMixin
+    Validates: field named 'slug'
 ```
-
-**`UsernameValidatorMixin`**
-
-Username validation (3-20 chars, alphanumeric + underscore).
-```python
-class UserCreate(BaseSchema, UsernameValidatorMixin):
-    username: str
-
-# Customizable:
-USM_MIN_LENGTH: ClassVar[int] = 3
-USM_MAX_LENGTH: ClassVar[int] = 20
-```
-
-**`SlugValidatorMixin`**
-
-URL-friendly slug validation.
-```python
-class PostCreate(BaseSchema, SlugValidatorMixin):
-    slug: str
-```
-
----
 
 ### Error Helpers
 
-**`raise_validation_error(field: str, message: str, value: Any = None) -> None`**
-
-Raise a `ValidationError` for a single field.
-```python
-raise_validation_error('email', 'Email already exists', 'test@test.com')
 ```
-
-**`raise_multiple_validation_errors(errors: list[tuple[str, str, Any]]) -> None`**
-
-Raise a `ValidationError` with multiple field errors.
-```python
-raise_multiple_validation_errors([
-    ('email', 'Email is required', None),
-    ('password', 'Password too short', 'abc'),
-])
-```
-
-**`format_validation_errors(errors: list[dict]) -> dict[str, list[str]]`**
-
-Parse raw Pydantic/FastAPI error list into `{field: [messages]}` format.
-```python
-formatted = format_validation_errors(exc.errors())
-# {'name': ['Field required'], 'email': ['Invalid email']}
+raise_validation_error(field: str, message: str, value: Any = None) -> None
+raise_multiple_validation_errors(errors: list[tuple[str, str, Any]]) -> None
+format_validation_errors(errors: list[dict]) -> dict[str, list[str]]
 ```
 
 ---
 
 ## Complete Example
+
 ```python
 # schemas.py
 from fastkit_core.validation import (
     BaseSchema,
+    BaseCreateSchema,
+    BaseUpdateSchema,
     UsernameValidatorMixin,
     PasswordValidatorMixin,
-    min_length
+    min_length,
+    between,
 )
-from pydantic import EmailStr, Field
+from pydantic import EmailStr, Field, computed_field
+from datetime import datetime
 
-class UserCreate(BaseSchema, UsernameValidatorMixin, PasswordValidatorMixin):
-    """User registration schema."""
+class UserCreate(BaseCreateSchema, UsernameValidatorMixin, PasswordValidatorMixin):
+    """Create schema — extra fields forbidden."""
     username: str
     email: EmailStr
     password: str
     full_name: str = min_length(2)
-    age: int = Field(ge=13, le=120)
+    age: int = between(13, 120)
 
-class UserUpdate(BaseSchema):
-    """User update schema."""
+class UserUpdate(BaseUpdateSchema):
+    """Update schema — partial updates, extra fields forbidden."""
     full_name: str | None = None
     age: int | None = Field(None, ge=13, le=120)
 
 class UserResponse(BaseSchema):
-    """User response schema."""
+    """Response schema — ORM-ready, computed fields supported."""
     id: int
     username: str
     email: str
-    full_name: str
-    
-    model_config = {"from_attributes": True}
+    first_name: str
+    last_name: str
+    age: int
+    created_at: datetime
+
+    @computed_field
+    @property
+    def full_name(self) -> str:
+        return f"{self.first_name} {self.last_name}"
 ```
+
 ```python
 # main.py
 from fastapi import FastAPI, Depends, Header
 from fastkit_core.http import success_response, error_response
 from fastkit_core.i18n import set_locale
 from pydantic import ValidationError
-from schemas import UserCreate, UserResponse
 
 app = FastAPI()
 
 async def detect_language(accept_language: str = Header(default='en')):
-    language = accept_language.split(',')[0].split('-')[0]
-    set_locale(language)
+    set_locale(accept_language[:2])
 
 @app.post("/users", dependencies=[Depends(detect_language)])
 def create_user(data: dict):
     try:
         user = UserCreate(**data)
-        # Create user in database...
-        return success_response(
-            data={"id": 1, "username": user.username},
-            message="User created successfully"
-        )
+        # ... save to database
+        return success_response(data={"id": 1}, status_code=201)
     except ValidationError as e:
         errors = UserCreate.format_errors(e)
-        return error_response(
-            message="Validation failed",
-            errors=errors,
-            status_code=422
-        )
-```
-```json
-// translations/en.json
-{
-  "validation": {
-    "required": "The {field} field is required",
-    "string_too_short": "The {field} must be at least {min_length} characters",
-    "email": "The {field} must be a valid email address",
-    "greater_than_equal": "The {field} must be at least {ge}",
-    "password": {
-      "min_length": "Password must be at least {min} characters",
-      "uppercase": "Password must contain at least one uppercase letter",
-      "special_char": "Password must contain at least one special character"
-    },
-    "username": {
-      "min_length": "Username must be at least {min} characters",
-      "format": "Username must contain only letters, numbers, and underscores"
-    }
-  }
-}
+        return error_response(message="Validation failed", errors=errors, status_code=422)
+
+@app.get("/users/{user_id}")
+def get_user(user_id: int):
+    user_orm = db.get(User, user_id)
+    # from_attributes=True — no extra config needed
+    response = UserResponse.model_validate(user_orm)
+    return success_response(data=response.to_dict(exclude_none=True))
 ```
 
 ---
 
 ## Next Steps
 
-Now that you understand validation, explore:
-
-- **[Translations](translations.md)** - Learn how validation uses translations
-- **[HTTP](http_utilities.md)** - Standardized error responses
-- **[Services](services.md)** - Use validation in service layer
+- **[Translations](translations.md)** — Configure i18n for validation messages
+- **[HTTP](http_utilities.md)** — Standardized error responses and exception handlers
+- **[Services](services.md)** — Use validation schemas in the service layer

@@ -1,4 +1,4 @@
-from fastkit_core.validation.base import BaseSchema
+from fastkit_core.validation.base import BaseSchema, BaseCreateSchema, BaseUpdateSchema
 from fastkit_core.validation.rules import (
     min_length,
     max_length,
@@ -14,7 +14,6 @@ from fastkit_core.validation.validators import (
     UsernameValidatorMixin,
     SlugValidatorMixin
 )
-
 from fastkit_core.validation.errors import (
     raise_validation_error,
     raise_multiple_validation_errors,
@@ -23,6 +22,8 @@ from fastkit_core.validation.errors import (
 
 __all__ = [
     'BaseSchema',
+    'BaseCreateSchema',
+    'BaseUpdateSchema',
     'min_length',
     'max_length',
     'length',
@@ -36,5 +37,5 @@ __all__ = [
     'SlugValidatorMixin',
     'raise_multiple_validation_errors',
     'raise_validation_error',
-    'format_validation_errors'
+    'format_validation_errors',
 ]

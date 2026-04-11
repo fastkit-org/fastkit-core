@@ -1139,3 +1139,147 @@ class TestAsyncEdgeCases:
         users = await service.filter(name="Nonexistent")
 
         assert users == []
+
+
+# ============================================================================
+# Test CURSOR PAGINATION
+# ============================================================================
+
+class TestAsyncCursorPagination:
+    """Test async cursor-based pagination at the service layer."""
+
+    @pytest.mark.asyncio
+    async def test_cursor_paginate_first_page_no_cursor(self, service):
+        """First page with no cursor should return items and a next_cursor."""
+        for i in range(10):
+            await service.create(UserCreate(name=f'User{i:02d}', email=f'user{i}@example.com'))
+
+        items, next_cursor = await service.cursor_paginate(per_page=4)
+
+        assert len(items) == 4
+        assert next_cursor is not None
+
+    @pytest.mark.asyncio
+    async def test_cursor_paginate_second_page(self, service):
+        """Passing cursor from first page should return the next batch."""
+        for i in range(10):
+            await service.create(UserCreate(name=f'User{i:02d}', email=f'user{i}@example.com'))
+
+        items_p1, cursor_p1 = await service.cursor_paginate(per_page=4, cursor_field='id', direction='asc')
+        items_p2, cursor_p2 = await service.cursor_paginate(per_page=4, cursor_field='id', direction='asc', cursor=cursor_p1)
+
+        assert len(items_p2) == 4
+        last_id_p1 = items_p1[-1].id
+        assert all(u.id > last_id_p1 for u in items_p2)
+
+    @pytest.mark.asyncio
+    async def test_cursor_paginate_last_page_returns_none_cursor(self, service):
+        """next_cursor must be None when there are no more records."""
+        for i in range(5):
+            await service.create(UserCreate(name=f'User{i}', email=f'user{i}@example.com'))
+
+        items_p1, cursor_p1 = await service.cursor_paginate(per_page=3)
+        items_p2, cursor_p2 = await service.cursor_paginate(per_page=3, cursor=cursor_p1)
+
+        assert len(items_p2) == 2
+        assert cursor_p2 is None
+
+    @pytest.mark.asyncio
+    async def test_cursor_paginate_empty_table(self, service):
+        """Empty table should return empty list and None cursor."""
+        items, next_cursor = await service.cursor_paginate(per_page=10)
+
+        assert items == []
+        assert next_cursor is None
+
+    @pytest.mark.asyncio
+    async def test_cursor_paginate_all_fit_one_page(self, service):
+        """When per_page >= total records, cursor should be None on first call."""
+        for i in range(3):
+            await service.create(UserCreate(name=f'User{i}', email=f'user{i}@example.com'))
+
+        items, next_cursor = await service.cursor_paginate(per_page=10)
+
+        assert len(items) == 3
+        assert next_cursor is None
+
+    @pytest.mark.asyncio
+    async def test_cursor_paginate_with_filters(self, service):
+        """Django-style filters should work with cursor pagination."""
+        for i in range(8):
+            await service.create(UserCreate(
+                name=f'User{i:02d}',
+                email=f'user{i}@example.com',
+                age=20 + i,
+                status='active' if i % 2 == 0 else 'inactive',
+            ))
+
+        items, next_cursor = await service.cursor_paginate(per_page=3, status='active')
+
+        assert len(items) == 3
+        assert all(u.status == 'active' for u in items)
+
+    @pytest.mark.asyncio
+    async def test_cursor_paginate_direction_asc(self, service):
+        """ASC direction should order from lowest to highest cursor field value."""
+        for i in range(5):
+            await service.create(UserCreate(name=f'User{i}', email=f'user{i}@example.com', age=20 + i))
+
+        items, _ = await service.cursor_paginate(per_page=5, cursor_field='age', direction='asc')
+
+        ages = [u.age for u in items]
+        assert ages == sorted(ages)
+
+    @pytest.mark.asyncio
+    async def test_cursor_paginate_direction_desc(self, service):
+        """DESC direction should order from highest to lowest cursor field value."""
+        for i in range(5):
+            await service.create(UserCreate(name=f'User{i}', email=f'user{i}@example.com', age=20 + i))
+
+        items, _ = await service.cursor_paginate(per_page=5, cursor_field='age', direction='desc')
+
+        ages = [u.age for u in items]
+        assert ages == sorted(ages, reverse=True)
+
+    @pytest.mark.asyncio
+    async def test_cursor_paginate_no_duplicates_across_pages(self, service):
+        """No record should appear on more than one page."""
+        for i in range(9):
+            await service.create(UserCreate(name=f'User{i}', email=f'user{i}@example.com'))
+
+        seen_ids: set = set()
+        cursor = None
+        while True:
+            items, cursor = await service.cursor_paginate(per_page=3, cursor=cursor)
+            for item in items:
+                assert item.id not in seen_ids, f"Duplicate id={item.id} found"
+                seen_ids.add(item.id)
+            if cursor is None:
+                break
+
+        assert len(seen_ids) == 9
+
+    @pytest.mark.asyncio
+    async def test_cursor_paginate_returns_response_schema(self, service_with_response):
+        """When response_schema is set, items should be response schema instances."""
+        for i in range(5):
+            await service_with_response.create(UserCreate(name=f'User{i}', email=f'user{i}@example.com'))
+
+        items, next_cursor = await service_with_response.cursor_paginate(per_page=3)
+
+        assert len(items) == 3
+        assert all(isinstance(u, UserResponse) for u in items)
+        assert next_cursor is not None
+
+    @pytest.mark.asyncio
+    async def test_cursor_paginate_response_schema_last_page(self, service_with_response):
+        """Response schema mapping should work on the last page too."""
+        for i in range(4):
+            await service_with_response.create(UserCreate(name=f'User{i}', email=f'user{i}@example.com'))
+
+        items_p1, cursor_p1 = await service_with_response.cursor_paginate(per_page=3)
+        items_p2, cursor_p2 = await service_with_response.cursor_paginate(per_page=3, cursor=cursor_p1)
+
+        assert len(items_p2) == 1
+        assert isinstance(items_p2[0], UserResponse)
+        assert cursor_p2 is None

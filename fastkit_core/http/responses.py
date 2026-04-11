@@ -37,7 +37,8 @@ def success_response(
 def error_response(
         message: str,
         errors: dict | None = None,
-        status_code: int = 400
+        status_code: int = 400,
+        headers: dict | None = None
 ) -> JSONResponse:
     """
     Standard error response format.
@@ -46,6 +47,7 @@ def error_response(
         message: Error message
         errors: Optional error details (e.g., validation errors)
         status_code: HTTP status code (default: 400)
+        headers: Dictionary of headers
 
     Returns:
         JSONResponse with format:
@@ -63,7 +65,7 @@ def error_response(
     if errors:
         content['errors'] = errors
 
-    return JSONResponse(content=content, status_code=status_code)
+    return JSONResponse(content=content, status_code=status_code, headers=headers)
 
 
 def paginated_response(

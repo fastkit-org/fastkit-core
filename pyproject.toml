@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
-    {name = "Codevelo", email = "info@codevelo.io"}
+    {name = "FastKit", email = "hello@fastkit.org"}
 ]
 keywords = [
     "fastapi",
@@ -111,6 +111,11 @@ oracle-async = [
     "oracledb>=2.5.0",
 ]
 
+# Caching
+redis = [
+    "redis>=5.0.0,<6.0.0",
+]
+
 # ============================================================================
 # Convenience groups for all sync/async drivers
 # ============================================================================
@@ -122,6 +127,7 @@ all-sync = [
     "pyodbc>=5.2.0",
     "cx-Oracle>=8.3.0",
     "cryptography>=44.0.0",
+    "redis>=5.0.0,<6.0.0",
 ]
 
 # All asynchronous database drivers
@@ -131,6 +137,7 @@ all-async = [
     "aioodbc>=0.5.0",
     "oracledb>=2.5.0",
     "cryptography>=44.0.0",
+    "redis>=5.0.0,<6.0.0",
 ]
 
 # All database drivers (sync + async)
@@ -147,6 +154,8 @@ all-drivers = [
     "oracledb>=2.5.0",
     # Common
     "cryptography>=44.0.0",
+    # Caching
+    "redis>=5.0.0,<6.0.0",
 ]
 
 docs = [
@@ -155,11 +164,24 @@ docs = [
     "mkdocstrings[python]>=0.27.0",
 ]
 
+# CI — only what tests actually need, no system-level database drivers
+ci = [
+    "pytest>=8.3.0",
+    "pytest-cov>=6.0.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-mock>=3.15.1",
+    "httpx>=0.28.0",
+    "pydantic[email]>=2.10.0",
+    "aiosqlite>=0.20.0",
+    "asyncpg>=0.30.0",
+    "redis>=5.0.0,<6.0.0",
+]
+
 [project.urls]
-Homepage = "https://github.com/codevelo-pub/fastkit-core/fastkit-core"
-Documentation = "https://github.com/codevelo-pub/fastkit-core"
-Repository = "https://github.com/codevelo-pub/fastkit-core"
-Issues = "https://github.com/codevelo-pub/fastkit-core/issues"
+Homepage = "https://fastkit.org"
+Documentation = "https://fastkit.org/docs/fastkit-core"
+Repository = "https://github.com/fastkit-org/fastkit-core"
+Issues = "https://github.com/fastkit-org/fastkit-core/issues"
 
 [tool.setuptools.packages.find]
 include = ["fastkit_core*"]
@@ -258,6 +280,7 @@ ignore_missing_imports = true
 [dependency-groups]
 dev = [
     "aiosqlite>=0.22.1",
+    "asyncpg>=0.30.0",
     "black>=25.12.0",
     "build>=1.4.0",
     "httpx>=0.28.1",
@@ -277,4 +300,7 @@ dev = [
     "twine>=6.2.0",
     "types-python-dateutil>=2.9.0.20251115",
     "wheel>=0.45.1",
+    "aiomysql>=0.2.0",
+    "psycopg2-binary>=2.9.10",
+    "redis>=5.0.0,<6.0.0",
 ]

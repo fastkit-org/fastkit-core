@@ -6,7 +6,11 @@ Provides common CRUD operations and query helpers.
 
 from __future__ import annotations
 
-from typing import Any, Generic, Type, TypeVar, Sequence
+from typing import Any, Generic, Type, TypeVar, Sequence, Literal
+
+import base64
+import json
+from datetime import datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, Load
@@ -134,6 +138,31 @@ class Repository(Generic[T]):
 
         return stmt
 
+    def _apply_ordering(self, query, order_by: str | list[str] | None):
+        if not order_by:
+            return query
+
+        fields = [order_by] if isinstance(order_by, str) else order_by
+
+        for field in fields:
+            if field.startswith('-'):
+                col = field[1:]
+                if hasattr(self.model, col):
+                    query = query.order_by(getattr(self.model, col).desc())
+            else:
+                if hasattr(self.model, field):
+                    query = query.order_by(getattr(self.model, field))
+
+        return query
+
+    def _encode_cursor(self, value: Any) -> str:
+        if isinstance(value, datetime):
+            value = value.isoformat()
+        return base64.urlsafe_b64encode(json.dumps(value).encode()).decode()
+
+    def _decode_cursor(self, cursor: str) -> Any:
+        return json.loads(base64.urlsafe_b64decode(cursor.encode()).decode())
+
     def query(self):
         """Get query builder for complex queries."""
         return select(self.model)
@@ -247,13 +276,18 @@ class Repository(Generic[T]):
             raise ValueError(f"{self.model.__name__} with id={id} not found")
         return instance
 
-    def get_all(self, limit: int | None = None, load_relations: Sequence[Load] | None = None) -> list[T]:
+    def get_all(self,
+                limit: int | None = None,
+                load_relations: Sequence[Load] | None = None,
+                _order_by: str | list[str] | None = None
+                ) -> list[T]:
         """
         Get all records.
 
         Args:
             limit: Maximum number of records to return
             load_relations: SQLAlchemy Load objects for eager loading (prevents N+1)
+            _order_by: List of columns for ordering
         Returns:
             List of model instances
 
@@ -271,6 +305,9 @@ class Repository(Generic[T]):
         if self._has_soft_delete():
             query = query.where(self.model.deleted_at.is_(None))
 
+        if _order_by:
+            query = self._apply_ordering(query, _order_by)
+
         if limit:
             query = query.limit(limit)
 
@@ -281,7 +318,7 @@ class Repository(Generic[T]):
             self,
             _limit: int | None = None,
             _offset: int | None = None,
-            _order_by: str | None = None,
+            _order_by: str | list[str] | None = None,
             _load_relations: Sequence[Load] | None = None,
             **filters
     ) -> list[T]:
@@ -340,15 +377,7 @@ class Repository(Generic[T]):
 
         # Apply ordering
         if _order_by:
-            if _order_by.startswith('-'):
-                # Descending order
-                field = _order_by[1:]
-                if hasattr(self.model, field):
-                    query = query.order_by(getattr(self.model, field).desc())
-            else:
-                # Ascending order
-                if hasattr(self.model, _order_by):
-                    query = query.order_by(getattr(self.model, _order_by))
+            query = self._apply_ordering(query, _order_by)
 
         # Apply limit and offset
         if _offset:
@@ -360,12 +389,16 @@ class Repository(Generic[T]):
         result = self.session.execute(query)
         return result.scalars().all()
 
-    def first(self, _load_relations: Sequence[Load] | None = None, **filters) -> T | None:
+    def first(self,
+              _load_relations: Sequence[Load] | None = None,
+              _order_by: str | list[str] | None = None,
+              **filters) -> T | None:
         """
         Get first record matching filters.
 
         Args:
             _load_relations: SQLAlchemy Load objects for eager loading (prevents N+1)
+            _order_by: List of columns for ordering
             **filters: Keyword arguments for filtering
 
         Returns:
@@ -376,7 +409,7 @@ class Repository(Generic[T]):
             user = repo.first(email='john@test.com')
 ```
         """
-        results = self.filter(_limit=1, _load_relations=_load_relations, **filters)
+        results = self.filter(_limit=1, _load_relations=_load_relations, _order_by=_order_by, **filters)
         return results[0] if results else None
 
     def exists(self, **filters) -> bool:
@@ -621,7 +654,7 @@ class Repository(Generic[T]):
             self,
             page: int = 1,
             per_page: int = 20,
-            _order_by: str | None = None,
+            _order_by: str | list[str] | None = None,
             _load_relations: Sequence[Load] | None = None,
             **filters
     ) -> tuple[list[T], dict[str, Any]]:
@@ -633,7 +666,7 @@ class Repository(Generic[T]):
         Args:
             page: Page number (1-indexed)
             per_page: Items per page
-            _order_by: Order by field (prefix with - for DESC)
+            _order_by: List of columns for ordering
             _load_relations: SQLAlchemy Load objects for eager loading (prevents N+1)
             **filters: Filter conditions with operators
 
@@ -676,6 +709,39 @@ class Repository(Generic[T]):
         }
 
         return items, metadata
+
+    def cursor_paginate(
+            self,
+            per_page: int = 20,
+            cursor: str | None = None,
+            cursor_field: str = 'id',
+            direction: Literal['asc', 'desc'] = 'asc',
+            _load_relations: Sequence[Load] | None = None,
+            **filters
+    ) -> tuple[list[T], str | None]:
+
+        if cursor is not None:
+            cursor_value = self._decode_cursor(cursor)
+            if direction == 'asc':
+                filters[f'{cursor_field}__gt'] = cursor_value
+            elif direction == 'desc':
+                filters[f'{cursor_field}__lt'] = cursor_value
+
+        order = f'-{cursor_field}' if direction == 'desc' else cursor_field
+        items = self.filter(
+            _limit=per_page + 1,
+            _order_by=order,
+            _load_relations=_load_relations,
+            **filters
+        )
+
+        next_cursor = None
+        if len(items) > per_page:
+            items = items[:per_page]
+            next_cursor = self._encode_cursor(getattr(items[-1], cursor_field))
+
+        return items, next_cursor
+
 
     # ========================================================================
     # UTILITY
