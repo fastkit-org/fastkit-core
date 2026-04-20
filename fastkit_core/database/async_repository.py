@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Generic, Type, TypeVar, Sequence, Literal
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, or_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Load
 
@@ -358,6 +358,71 @@ class AsyncRepository(_BaseRepositoryMixin, Generic[T]):
         """
         count = await self.count(**filters)
         return count > 0
+
+    async def filter_or(
+            self,
+            *filter_groups: dict[str, Any],
+            _load_relations: Sequence[Load] | None = None,
+            _order_by: str | list[str] | None = None,
+            **and_filters,
+    ) -> list[T]:
+        """
+        Filter with OR conditions between groups, combined with AND filters.
+
+        Each positional dict is an OR group. Keyword arguments are applied
+        as additional AND conditions on top of the OR clause.
+
+        Args:
+            *filter_groups: Dicts of filter conditions combined with OR
+            _load_relations: SQLAlchemy Load objects for eager loading
+            _order_by: Ordering field(s), prefix with - for DESC
+            **and_filters: Additional AND conditions (supports operators)
+
+        Returns:
+            List of matching model instances
+
+        Example:
+    ```python
+            # (status='active' OR status='pending') AND age__gte=18
+            users = await repo.filter_or(
+                {'status': 'active'},
+                {'status': 'pending'},
+                age__gte=18,
+            )
+    ```
+        """
+        query = select(self.model)
+
+        if self._has_soft_delete():
+            query = query.where(self.model.deleted_at.is_(None))
+
+        if filter_groups:
+            or_conditions = []
+            for group in filter_groups:
+                group_conditions: list[Any] = []
+                for key, value in group.items():
+                    self._parse_field_operator(key, value, group_conditions)
+                if group_conditions:
+                    or_conditions.append(and_(*group_conditions))
+
+            if or_conditions:
+                query = query.where(or_(*or_conditions))
+
+        if and_filters:
+            and_conditions: list[Any] = []
+            for key, value in and_filters.items():
+                self._parse_field_operator(key, value, and_conditions)
+            if and_conditions:
+                query = query.where(and_(*and_conditions))
+
+        if _load_relations:
+            query = self._apply_eager_loading(query, _load_relations)
+
+        if _order_by:
+            query = self._apply_ordering(query, _order_by)
+
+        result = await self.session.execute(query)
+        return result.scalars().all()
 
     async def count(self, **filters) -> int:
         """
