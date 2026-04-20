@@ -110,3 +110,29 @@ class _BaseRepositoryMixin:
     def query(self):
         """Get query builder for complex queries."""
         return select(self.model)
+
+    def _parse_field_operator(self, key: str, value: Any, conditions: list[Any]):
+        # Parse field__operator format
+        if '__' in key:
+            field_name, operator = key.rsplit('__', 1)
+        else:
+            field_name = key
+            operator = 'eq'  # Default to equality
+
+        # Validate field exists on model
+        if not hasattr(self.model, field_name):
+            raise ValueError(
+                f"Field '{field_name}' does not exist on {self.model.__name__}"
+            )
+
+        # Validate operator
+        if operator not in self.LOOKUP_OPERATORS:
+            raise ValueError(
+                f"Unknown operator '{operator}'. "
+                f"Available: {', '.join(self.LOOKUP_OPERATORS.keys())}"
+            )
+
+        # Get column and apply operator
+        column = getattr(self.model, field_name)
+        condition = self.LOOKUP_OPERATORS[operator](column, value)
+        conditions.append(condition)
