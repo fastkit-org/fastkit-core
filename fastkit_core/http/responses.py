@@ -25,7 +25,7 @@ def success_response(
     """
     content = {
         'success': True,
-        'data': data
+        'data': _serialize(data) if data is not None else data
     }
 
     if message:
@@ -109,7 +109,7 @@ def paginated_response(
     """
     content = {
         'success': True,
-        'data': items,
+        'data': [_serialize(item) for item in items],
         'pagination': pagination
     }
 
@@ -117,3 +117,11 @@ def paginated_response(
         content['message'] = message
 
     return JSONResponse(content=content, status_code=status_code)
+
+def _serialize(obj: Any) -> Any:
+    """Serialize a single item to a JSON-safe value."""
+    if hasattr(obj, 'model_dump'):  # Pydantic v2
+        return obj.model_dump()
+    if hasattr(obj, 'dict'):        # Pydantic v1
+        return obj.dict()
+    return obj
