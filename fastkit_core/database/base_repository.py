@@ -136,3 +136,20 @@ class _BaseRepositoryMixin:
         column = getattr(self.model, field_name)
         condition = self.LOOKUP_OPERATORS[operator](column, value)
         conditions.append(condition)
+
+    def _build_pagination_meta(
+            self,
+            page: int,
+            per_page: int,
+            total: int,
+    ) -> dict[str, Any]:
+        total_pages = (total + per_page - 1) // per_page if total > 0 else 0
+        return {
+            'page': page,
+            'per_page': per_page,
+            'total': total,
+            'total_pages': total_pages,
+            'has_next': page < total_pages,
+            'has_prev': page > 1,
+        }
+

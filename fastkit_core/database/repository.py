@@ -581,7 +581,6 @@ class Repository(_BaseRepositoryMixin, Generic[T]):
         total = self.count(**filters)
 
         # Calculate pagination metadata
-        total_pages = (total + per_page - 1) // per_page if total > 0 else 0
         offset = (page - 1) * per_page
 
         # Get items with limit, offset, and ordering
@@ -594,14 +593,7 @@ class Repository(_BaseRepositoryMixin, Generic[T]):
         )
 
         # Build metadata
-        metadata = {
-            'page': page,
-            'per_page': per_page,
-            'total': total,
-            'total_pages': total_pages,
-            'has_next': page < total_pages,
-            'has_prev': page > 1
-        }
+        metadata = self._build_pagination_meta(page, per_page, total)
 
         return items, metadata
 
