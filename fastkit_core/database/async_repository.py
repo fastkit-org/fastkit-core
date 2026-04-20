@@ -64,10 +64,6 @@ class AsyncRepository(_BaseRepositoryMixin, Generic[T]):
         self.model = model
         self.session = session
 
-    def _has_soft_delete(self) -> bool:
-        """Check if model has soft delete support."""
-        return hasattr(self.model, 'deleted_at')
-
     def query(self):
         """Get query builder for complex queries."""
         return select(self.model)

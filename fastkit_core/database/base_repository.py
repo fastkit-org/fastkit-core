@@ -6,6 +6,7 @@ from datetime import datetime
 
 
 class _BaseRepositoryMixin:
+    model: Any
 
     LOOKUP_OPERATORS = {
         'eq': lambda col, val: col == val,
@@ -100,3 +101,7 @@ class _BaseRepositoryMixin:
 
     def _decode_cursor(self, cursor: str) -> Any:
         return json.loads(base64.urlsafe_b64decode(cursor.encode()).decode())
+
+    def _has_soft_delete(self) -> bool:
+        """Check if model has soft delete support."""
+        return hasattr(self.model, 'deleted_at')

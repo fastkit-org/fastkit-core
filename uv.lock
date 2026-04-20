@@ -725,6 +725,17 @@ all-sync = [
     { name = "pyodbc" },
     { name = "redis" },
 ]
+ci = [
+    { name = "aiosqlite" },
+    { name = "asyncpg" },
+    { name = "httpx" },
+    { name = "pydantic", extra = ["email"] },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "pytest-mock" },
+    { name = "redis" },
+]
 dev = [
     { name = "black" },
     { name = "isort" },
@@ -814,8 +825,10 @@ requires-dist = [
     { name = "aioodbc", marker = "extra == 'all-async'", specifier = ">=0.5.0" },
     { name = "aioodbc", marker = "extra == 'all-drivers'", specifier = ">=0.5.0" },
     { name = "aioodbc", marker = "extra == 'mssql-async'", specifier = ">=0.5.0" },
+    { name = "aiosqlite", marker = "extra == 'ci'", specifier = ">=0.20.0" },
     { name = "asyncpg", marker = "extra == 'all-async'", specifier = ">=0.30.0" },
     { name = "asyncpg", marker = "extra == 'all-drivers'", specifier = ">=0.30.0" },
+    { name = "asyncpg", marker = "extra == 'ci'", specifier = ">=0.30.0" },
     { name = "asyncpg", marker = "extra == 'postgresql-async'", specifier = ">=0.30.0" },
     { name = "black", marker = "extra == 'dev'", specifier = ">=24.10.0" },
     { name = "cryptography", marker = "extra == 'all-async'", specifier = ">=44.0.0" },
@@ -829,6 +842,7 @@ requires-dist = [
     { name = "cx-oracle", marker = "extra == 'all-sync'", specifier = ">=8.3.0" },
     { name = "cx-oracle", marker = "extra == 'oracle'", specifier = ">=8.3.0" },
     { name = "fastapi", specifier = ">=0.115.0,<0.116.0" },
+    { name = "httpx", marker = "extra == 'ci'", specifier = ">=0.28.0" },
     { name = "isort", marker = "extra == 'dev'", specifier = ">=5.13.0" },
     { name = "mkdocs", marker = "extra == 'docs'", specifier = ">=1.6.0" },
     { name = "mkdocs-material", marker = "extra == 'docs'", specifier = ">=9.5.0" },
@@ -841,6 +855,7 @@ requires-dist = [
     { name = "psycopg2-binary", marker = "extra == 'all-sync'", specifier = ">=2.9.10" },
     { name = "psycopg2-binary", marker = "extra == 'postgresql'", specifier = ">=2.9.10" },
     { name = "pydantic", specifier = ">=2.10.0,<3.0.0" },
+    { name = "pydantic", extras = ["email"], marker = "extra == 'ci'", specifier = ">=2.10.0" },
     { name = "pydantic-settings", specifier = ">=2.6.0,<3.0.0" },
     { name = "pymysql", marker = "extra == 'all-drivers'", specifier = ">=1.1.0" },
     { name = "pymysql", marker = "extra == 'all-sync'", specifier = ">=1.1.0" },
@@ -849,19 +864,24 @@ requires-dist = [
     { name = "pyodbc", marker = "extra == 'all-drivers'", specifier = ">=5.2.0" },
     { name = "pyodbc", marker = "extra == 'all-sync'", specifier = ">=5.2.0" },
     { name = "pyodbc", marker = "extra == 'mssql'", specifier = ">=5.2.0" },
+    { name = "pytest", marker = "extra == 'ci'", specifier = ">=8.3.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3.0" },
+    { name = "pytest-asyncio", marker = "extra == 'ci'", specifier = ">=0.24.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24.0" },
+    { name = "pytest-cov", marker = "extra == 'ci'", specifier = ">=6.0.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0.0" },
+    { name = "pytest-mock", marker = "extra == 'ci'", specifier = ">=3.15.1" },
     { name = "python-dotenv", specifier = ">=1.0.0,<2.0.0" },
     { name = "redis", marker = "extra == 'all-async'", specifier = ">=5.0.0,<6.0.0" },
     { name = "redis", marker = "extra == 'all-drivers'", specifier = ">=5.0.0,<6.0.0" },
     { name = "redis", marker = "extra == 'all-sync'", specifier = ">=5.0.0,<6.0.0" },
+    { name = "redis", marker = "extra == 'ci'", specifier = ">=5.0.0,<6.0.0" },
     { name = "redis", marker = "extra == 'redis'", specifier = ">=5.0.0,<6.0.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8.0" },
     { name = "sqlalchemy", specifier = ">=2.0.36,<2.1.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34.0,<0.35.0" },
 ]
-provides-extras = ["dev", "postgresql", "mysql", "mariadb", "mssql", "oracle", "postgresql-async", "mysql-async", "mariadb-async", "mssql-async", "oracle-async", "redis", "all-sync", "all-async", "all-drivers", "docs"]
+provides-extras = ["dev", "postgresql", "mysql", "mariadb", "mssql", "oracle", "postgresql-async", "mysql-async", "mariadb-async", "mssql-async", "oracle-async", "redis", "all-sync", "all-async", "all-drivers", "docs", "ci"]
 
 [package.metadata.requires-dev]
 dev = [
