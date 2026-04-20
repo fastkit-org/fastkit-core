@@ -64,10 +64,6 @@ class AsyncRepository(_BaseRepositoryMixin, Generic[T]):
         self.model = model
         self.session = session
 
-    def query(self):
-        """Get query builder for complex queries."""
-        return select(self.model)
-
     # ========================================================================
     # CREATE
     # ========================================================================

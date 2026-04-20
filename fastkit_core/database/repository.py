@@ -8,10 +8,6 @@ from __future__ import annotations
 
 from typing import Any, Generic, Type, TypeVar, Sequence, Literal
 
-import base64
-import json
-from datetime import datetime
-
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, Load
 from sqlalchemy import and_, or_
@@ -65,10 +61,6 @@ class Repository(_BaseRepositoryMixin, Generic[T]):
         """
         self.model = model
         self.session = session
-
-    def query(self):
-        """Get query builder for complex queries."""
-        return select(self.model)
 
     # ========================================================================
     # CREATE

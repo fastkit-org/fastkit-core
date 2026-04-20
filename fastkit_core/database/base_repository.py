@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Load
+from sqlalchemy import func, select
 from typing import Sequence, Any
 import base64
 import json
@@ -105,3 +106,7 @@ class _BaseRepositoryMixin:
     def _has_soft_delete(self) -> bool:
         """Check if model has soft delete support."""
         return hasattr(self.model, 'deleted_at')
+
+    def query(self):
+        """Get query builder for complex queries."""
+        return select(self.model)
