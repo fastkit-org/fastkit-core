@@ -542,7 +542,8 @@ class Repository(_BaseRepositoryMixin, Generic[T]):
     def delete_many(
             self,
             filters: dict[str, Any],
-            commit: bool = True
+            commit: bool = True,
+            force: bool = False,
     ) -> int:
         """
         Delete multiple records matching filters.
@@ -550,6 +551,7 @@ class Repository(_BaseRepositoryMixin, Generic[T]):
         Args:
             filters: Filter conditions
             commit: Whether to commit immediately
+            force: Force delete
 
         Returns:
             Number of deleted records
@@ -563,7 +565,10 @@ class Repository(_BaseRepositoryMixin, Generic[T]):
         instances = self.filter(**filters)
 
         for instance in instances:
-            self.session.delete(instance)
+            if hasattr(instance, 'soft_delete') and not force:
+                instance.soft_delete()
+            else:
+                self.session.delete(instance)
 
         if commit:
             self.session.commit()
