@@ -1,5 +1,8 @@
 from sqlalchemy.orm import Load
-from typing import Sequence
+from typing import Sequence, Any
+import base64
+import json
+from datetime import datetime
 
 
 class _BaseRepositoryMixin:
@@ -89,3 +92,8 @@ class _BaseRepositoryMixin:
             stmt = stmt.options(load_option)
 
         return stmt
+
+    def _encode_cursor(self, value: Any) -> str:
+        if isinstance(value, datetime):
+            value = value.isoformat()
+        return base64.urlsafe_b64encode(json.dumps(value).encode()).decode()

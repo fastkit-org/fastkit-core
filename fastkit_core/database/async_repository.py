@@ -11,7 +11,6 @@ from typing import Any, Generic, Type, TypeVar, Sequence, Literal
 
 import base64
 import json
-from datetime import datetime
 
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -71,11 +70,6 @@ class AsyncRepository(_BaseRepositoryMixin, Generic[T]):
     def _has_soft_delete(self) -> bool:
         """Check if model has soft delete support."""
         return hasattr(self.model, 'deleted_at')
-
-    def _encode_cursor(self, value: Any) -> str:
-        if isinstance(value, datetime):
-            value = value.isoformat()
-        return base64.urlsafe_b64encode(json.dumps(value).encode()).decode()
 
     def _decode_cursor(self, cursor: str) -> Any:
         return json.loads(base64.urlsafe_b64decode(cursor.encode()).decode())
