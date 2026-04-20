@@ -8,20 +8,17 @@ from __future__ import annotations
 
 from typing import Any, Generic, Type, TypeVar, Sequence, Literal
 
-import base64
-import json
-from datetime import datetime
-
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, Load
 from sqlalchemy import and_, or_
 
 from fastkit_core.database.base import Base
+from fastkit_core.database.base_repository import _BaseRepositoryMixin
 
 T = TypeVar('T', bound=Base)
 
 
-class Repository(Generic[T]):
+class Repository(_BaseRepositoryMixin, Generic[T]):
     """
     Generic repository for database operations.
 
@@ -54,25 +51,6 @@ class Repository(Generic[T]):
 ```
     """
 
-    LOOKUP_OPERATORS = {
-        'eq': lambda col, val: col == val,  # Equal (default)
-        'ne': lambda col, val: col != val,  # Not equal
-        'lt': lambda col, val: col < val,  # Less than
-        'lte': lambda col, val: col <= val,  # Less than or equal
-        'gt': lambda col, val: col > val,  # Greater than
-        'gte': lambda col, val: col >= val,  # Greater than or equal
-        'in': lambda col, val: col.in_(val),  # IN (list)
-        'not_in': lambda col, val: col.not_in(val),  # NOT IN
-        'like': lambda col, val: col.like(val),  # LIKE
-        'ilike': lambda col, val: col.ilike(val),  # Case-insensitive LIKE
-        'is_null': lambda col, val: col.is_(None) if val else col.isnot(None),
-        'is_not_null': lambda col, val: col.isnot(None),
-        'between': lambda col, val: col.between(val[0], val[1]),  # BETWEEN
-        'startswith': lambda col, val: col.like(f'{val}%'),
-        'endswith': lambda col, val: col.like(f'%{val}'),
-        'contains': lambda col, val: col.like(f'%{val}%'),
-    }
-
     def __init__(self, model: Type[T], session: Session):
         """
         Initialize repository.
@@ -83,89 +61,6 @@ class Repository(Generic[T]):
         """
         self.model = model
         self.session = session
-
-    def _has_soft_delete(self) -> bool:
-        """Check if model has soft delete support."""
-        return hasattr(self.model, 'deleted_at')
-
-    def _apply_eager_loading(
-            self,
-            stmt,
-            load: Sequence[Load] | None = None
-    ):
-        """
-        Apply eager loading options to statement.
-
-        Uses SQLAlchemy's native Load objects for type-safe relationship loading.
-
-        Args:
-            stmt: SQLAlchemy select statement
-            load: Sequence of SQLAlchemy Load objects (selectinload, joinedload, etc.)
-
-        Returns:
-            Statement with eager loading options applied
-
-        Example:
-            from sqlalchemy.orm import selectinload
-
-            # Single relationship
-            stmt = self._apply_eager_loading(
-                stmt,
-                [selectinload(Invoice.items)]
-            )
-
-            # Nested relationships
-            stmt = self._apply_eager_loading(
-                stmt,
-                [selectinload(Invoice.items).selectinload(InvoiceItem.product)]
-            )
-
-            # Multiple relationships
-            stmt = self._apply_eager_loading(
-                stmt,
-                [
-                    selectinload(Invoice.client),
-                    selectinload(Invoice.items).selectinload(InvoiceItem.product)
-                ]
-            )
-        """
-        if not load:
-            return stmt
-
-        # Simply apply each SQLAlchemy Load object to the statement
-        for load_option in load:
-            stmt = stmt.options(load_option)
-
-        return stmt
-
-    def _apply_ordering(self, query, order_by: str | list[str] | None):
-        if not order_by:
-            return query
-
-        fields = [order_by] if isinstance(order_by, str) else order_by
-
-        for field in fields:
-            if field.startswith('-'):
-                col = field[1:]
-                if hasattr(self.model, col):
-                    query = query.order_by(getattr(self.model, col).desc())
-            else:
-                if hasattr(self.model, field):
-                    query = query.order_by(getattr(self.model, field))
-
-        return query
-
-    def _encode_cursor(self, value: Any) -> str:
-        if isinstance(value, datetime):
-            value = value.isoformat()
-        return base64.urlsafe_b64encode(json.dumps(value).encode()).decode()
-
-    def _decode_cursor(self, cursor: str) -> Any:
-        return json.loads(base64.urlsafe_b64decode(cursor.encode()).decode())
-
-    def query(self):
-        """Get query builder for complex queries."""
-        return select(self.model)
 
     # ========================================================================
     # CREATE
@@ -429,16 +324,34 @@ class Repository(Generic[T]):
         """
         return self.first(**filters) is not None
 
-    def filter_or(self, *filter_groups, **and_filters) -> list[T]:
+    def filter_or(
+            self,
+            *filter_groups: dict[str, Any],
+            _load_relations: Sequence[Load] | None = None,
+            _order_by: str | list[str] | None = None,
+            **and_filters,
+    ) -> list[T]:
         """
-        Filter with OR conditions.
+        Filter with OR conditions between groups, combined with AND filters.
+
+        Each positional dict is an OR group. Keyword arguments are applied
+        as additional AND conditions on top of the OR clause.
+
+        Args:
+            *filter_groups: Dicts of filter conditions combined with OR
+            _load_relations: SQLAlchemy Load objects for eager loading
+            _order_by: Ordering field(s), prefix with - for DESC
+            **and_filters: Additional AND conditions (supports operators)
+
+        Returns:
+            List of matching model instances
 
         Example:
-            # (status='active' OR status='pending') AND age >= 18
+            # (status='active' OR status='pending') AND age__gte=18
             users = repo.filter_or(
                 {'status': 'active'},
                 {'status': 'pending'},
-                age__gte=18
+                age__gte=18,
             )
         """
         query = select(self.model)
@@ -446,11 +359,11 @@ class Repository(Generic[T]):
         if self._has_soft_delete():
             query = query.where(self.model.deleted_at.is_(None))
 
-        # OR conditions
+        # OR conditions — each group is internally AND-ed, groups are OR-ed
         if filter_groups:
             or_conditions = []
             for group in filter_groups:
-                group_conditions = []
+                group_conditions: list[Any] = []
                 for key, value in group.items():
                     self._parse_field_operator(key, value, group_conditions)
                 if group_conditions:
@@ -459,8 +372,19 @@ class Repository(Generic[T]):
             if or_conditions:
                 query = query.where(or_(*or_conditions))
 
-        # AND conditions
-        # (same as filter())
+        # AND conditions on top of OR clause
+        if and_filters:
+            and_conditions: list[Any] = []
+            for key, value in and_filters.items():
+                self._parse_field_operator(key, value, and_conditions)
+            if and_conditions:
+                query = query.where(and_(*and_conditions))
+
+        if _load_relations:
+            query = self._apply_eager_loading(query, _load_relations)
+
+        if _order_by:
+            query = self._apply_ordering(query, _order_by)
 
         result = self.session.execute(query)
         return result.scalars().all()
@@ -618,7 +542,8 @@ class Repository(Generic[T]):
     def delete_many(
             self,
             filters: dict[str, Any],
-            commit: bool = True
+            commit: bool = True,
+            force: bool = False,
     ) -> int:
         """
         Delete multiple records matching filters.
@@ -626,6 +551,7 @@ class Repository(Generic[T]):
         Args:
             filters: Filter conditions
             commit: Whether to commit immediately
+            force: Force delete
 
         Returns:
             Number of deleted records
@@ -639,7 +565,10 @@ class Repository(Generic[T]):
         instances = self.filter(**filters)
 
         for instance in instances:
-            self.session.delete(instance)
+            if hasattr(instance, 'soft_delete') and not force:
+                instance.soft_delete()
+            else:
+                self.session.delete(instance)
 
         if commit:
             self.session.commit()
@@ -686,7 +615,6 @@ class Repository(Generic[T]):
         total = self.count(**filters)
 
         # Calculate pagination metadata
-        total_pages = (total + per_page - 1) // per_page if total > 0 else 0
         offset = (page - 1) * per_page
 
         # Get items with limit, offset, and ordering
@@ -699,14 +627,7 @@ class Repository(Generic[T]):
         )
 
         # Build metadata
-        metadata = {
-            'page': page,
-            'per_page': per_page,
-            'total': total,
-            'total_pages': total_pages,
-            'has_next': page < total_pages,
-            'has_prev': page > 1
-        }
+        metadata = self._build_pagination_meta(page, per_page, total)
 
         return items, metadata
 
@@ -771,32 +692,6 @@ class Repository(Generic[T]):
     def flush(self) -> None:
         """Flush pending changes."""
         self.session.flush()
-
-    def _parse_field_operator(self, key: str, value: Any, conditions: list[Any]):
-        # Parse field__operator format
-        if '__' in key:
-            field_name, operator = key.rsplit('__', 1)
-        else:
-            field_name = key
-            operator = 'eq'  # Default to equality
-
-        # Validate field exists on model
-        if not hasattr(self.model, field_name):
-            raise ValueError(
-                f"Field '{field_name}' does not exist on {self.model.__name__}"
-            )
-
-        # Validate operator
-        if operator not in self.LOOKUP_OPERATORS:
-            raise ValueError(
-                f"Unknown operator '{operator}'. "
-                f"Available: {', '.join(self.LOOKUP_OPERATORS.keys())}"
-            )
-
-        # Get column and apply operator
-        column = getattr(self.model, field_name)
-        condition = self.LOOKUP_OPERATORS[operator](column, value)
-        conditions.append(condition)
 
 
 # ============================================================================
