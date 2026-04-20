@@ -18,11 +18,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Load
 
 from fastkit_core.database.base import Base
+from fastkit_core.database.base_repository import _BaseRepositoryMixin
 
 T = TypeVar('T', bound=Base)
 
 
-class AsyncRepository(Generic[T]):
+class AsyncRepository(_BaseRepositoryMixin, Generic[T]):
     """
     Async generic repository for database operations.
 
@@ -55,25 +56,6 @@ class AsyncRepository(Generic[T]):
         users, meta = await user_repo.paginate(page=1, per_page=10)
     ```
     """
-
-    LOOKUP_OPERATORS = {
-        'eq': lambda col, val: col == val,
-        'ne': lambda col, val: col != val,
-        'lt': lambda col, val: col < val,
-        'lte': lambda col, val: col <= val,
-        'gt': lambda col, val: col > val,
-        'gte': lambda col, val: col >= val,
-        'in': lambda col, val: col.in_(val),
-        'not_in': lambda col, val: col.not_in(val),
-        'like': lambda col, val: col.like(val),
-        'ilike': lambda col, val: col.ilike(val),
-        'is_null': lambda col, val: col.is_(None) if val else col.isnot(None),
-        'is_not_null': lambda col, val: col.isnot(None),
-        'between': lambda col, val: col.between(val[0], val[1]),
-        'startswith': lambda col, val: col.like(f'{val}%'),
-        'endswith': lambda col, val: col.like(f'%{val}'),
-        'contains': lambda col, val: col.like(f'%{val}%'),
-    }
 
     def __init__(self, model: Type[T], session: AsyncSession):
         """
@@ -139,23 +121,6 @@ class AsyncRepository(Generic[T]):
             stmt = stmt.options(load_option)
 
         return stmt
-
-    def _apply_ordering(self, query, order_by: str | list[str] | None):
-        if not order_by:
-            return query
-
-        fields = [order_by] if isinstance(order_by, str) else order_by
-
-        for field in fields:
-            if field.startswith('-'):
-                col = field[1:]
-                if hasattr(self.model, col):
-                    query = query.order_by(getattr(self.model, col).desc())
-            else:
-                if hasattr(self.model, field):
-                    query = query.order_by(getattr(self.model, field))
-
-        return query
 
     def _encode_cursor(self, value: Any) -> str:
         if isinstance(value, datetime):
