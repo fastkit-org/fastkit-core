@@ -72,56 +72,6 @@ class AsyncRepository(_BaseRepositoryMixin, Generic[T]):
         """Check if model has soft delete support."""
         return hasattr(self.model, 'deleted_at')
 
-    def _apply_eager_loading(
-            self,
-            stmt,
-            load: Sequence[Load] | None = None
-    ):
-        """
-        Apply eager loading options to statement.
-
-        Uses SQLAlchemy's native Load objects for type-safe relationship loading.
-
-        Args:
-            stmt: SQLAlchemy select statement
-            load: Sequence of SQLAlchemy Load objects (selectinload, joinedload, etc.)
-
-        Returns:
-            Statement with eager loading options applied
-
-        Example:
-            from sqlalchemy.orm import selectinload
-
-            # Single relationship
-            stmt = self._apply_eager_loading(
-                stmt,
-                [selectinload(Invoice.items)]
-            )
-
-            # Nested relationships
-            stmt = self._apply_eager_loading(
-                stmt,
-                [selectinload(Invoice.items).selectinload(InvoiceItem.product)]
-            )
-
-            # Multiple relationships
-            stmt = self._apply_eager_loading(
-                stmt,
-                [
-                    selectinload(Invoice.client),
-                    selectinload(Invoice.items).selectinload(InvoiceItem.product)
-                ]
-            )
-        """
-        if not load:
-            return stmt
-
-        # Simply apply each SQLAlchemy Load object to the statement
-        for load_option in load:
-            stmt = stmt.options(load_option)
-
-        return stmt
-
     def _encode_cursor(self, value: Any) -> str:
         if isinstance(value, datetime):
             value = value.isoformat()
