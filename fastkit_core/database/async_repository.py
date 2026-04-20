@@ -9,9 +9,6 @@ from __future__ import annotations
 
 from typing import Any, Generic, Type, TypeVar, Sequence, Literal
 
-import base64
-import json
-
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Load
@@ -70,9 +67,6 @@ class AsyncRepository(_BaseRepositoryMixin, Generic[T]):
     def _has_soft_delete(self) -> bool:
         """Check if model has soft delete support."""
         return hasattr(self.model, 'deleted_at')
-
-    def _decode_cursor(self, cursor: str) -> Any:
-        return json.loads(base64.urlsafe_b64decode(cursor.encode()).decode())
 
     def query(self):
         """Get query builder for complex queries."""

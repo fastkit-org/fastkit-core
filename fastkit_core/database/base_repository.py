@@ -97,3 +97,6 @@ class _BaseRepositoryMixin:
         if isinstance(value, datetime):
             value = value.isoformat()
         return base64.urlsafe_b64encode(json.dumps(value).encode()).decode()
+
+    def _decode_cursor(self, cursor: str) -> Any:
+        return json.loads(base64.urlsafe_b64decode(cursor.encode()).decode())
