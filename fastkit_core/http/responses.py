@@ -25,7 +25,7 @@ def success_response(
     """
     content = {
         'success': True,
-        'data': data
+        'data': _serialize(data) if data is not None else data
     }
 
     if message:
@@ -103,13 +103,13 @@ def paginated_response(
     Example:
         items, metadata = service.paginate(page=1, per_page=20)
         return paginated_response(
-            items=[item.to_dict() for item in items],
+            items=items
             pagination=metadata
         )
     """
     content = {
         'success': True,
-        'data': items,
+        'data': [_serialize(item) for item in items],
         'pagination': pagination
     }
 
@@ -117,3 +117,17 @@ def paginated_response(
         content['message'] = message
 
     return JSONResponse(content=content, status_code=status_code)
+
+def _serialize(obj: Any) -> Any:
+    """Recursively serialize to a JSON-safe value."""
+    if hasattr(obj, 'model_dump'):  # Pydantic v2
+        return obj.model_dump()
+    if hasattr(obj, 'dict'):  # Pydantic v1
+        return obj.dict()
+    if hasattr(obj, '__table__'):  # SQLAlchemy model
+        return {c.name: getattr(obj, c.name) for c in obj.__table__.columns}
+    if isinstance(obj, dict):
+        return {k: _serialize(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_serialize(i) for i in obj]
+    return obj

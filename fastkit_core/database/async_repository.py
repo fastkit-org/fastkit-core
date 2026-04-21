@@ -9,20 +9,17 @@ from __future__ import annotations
 
 from typing import Any, Generic, Type, TypeVar, Sequence, Literal
 
-import base64
-import json
-from datetime import datetime
-
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, or_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Load
 
 from fastkit_core.database.base import Base
+from fastkit_core.database.base_repository import _BaseRepositoryMixin
 
 T = TypeVar('T', bound=Base)
 
 
-class AsyncRepository(Generic[T]):
+class AsyncRepository(_BaseRepositoryMixin, Generic[T]):
     """
     Async generic repository for database operations.
 
@@ -56,25 +53,6 @@ class AsyncRepository(Generic[T]):
     ```
     """
 
-    LOOKUP_OPERATORS = {
-        'eq': lambda col, val: col == val,
-        'ne': lambda col, val: col != val,
-        'lt': lambda col, val: col < val,
-        'lte': lambda col, val: col <= val,
-        'gt': lambda col, val: col > val,
-        'gte': lambda col, val: col >= val,
-        'in': lambda col, val: col.in_(val),
-        'not_in': lambda col, val: col.not_in(val),
-        'like': lambda col, val: col.like(val),
-        'ilike': lambda col, val: col.ilike(val),
-        'is_null': lambda col, val: col.is_(None) if val else col.isnot(None),
-        'is_not_null': lambda col, val: col.isnot(None),
-        'between': lambda col, val: col.between(val[0], val[1]),
-        'startswith': lambda col, val: col.like(f'{val}%'),
-        'endswith': lambda col, val: col.like(f'%{val}'),
-        'contains': lambda col, val: col.like(f'%{val}%'),
-    }
-
     def __init__(self, model: Type[T], session: AsyncSession):
         """
         Initialize async repository.
@@ -85,89 +63,6 @@ class AsyncRepository(Generic[T]):
         """
         self.model = model
         self.session = session
-
-    def _has_soft_delete(self) -> bool:
-        """Check if model has soft delete support."""
-        return hasattr(self.model, 'deleted_at')
-
-    def _apply_eager_loading(
-            self,
-            stmt,
-            load: Sequence[Load] | None = None
-    ):
-        """
-        Apply eager loading options to statement.
-
-        Uses SQLAlchemy's native Load objects for type-safe relationship loading.
-
-        Args:
-            stmt: SQLAlchemy select statement
-            load: Sequence of SQLAlchemy Load objects (selectinload, joinedload, etc.)
-
-        Returns:
-            Statement with eager loading options applied
-
-        Example:
-            from sqlalchemy.orm import selectinload
-
-            # Single relationship
-            stmt = self._apply_eager_loading(
-                stmt,
-                [selectinload(Invoice.items)]
-            )
-
-            # Nested relationships
-            stmt = self._apply_eager_loading(
-                stmt,
-                [selectinload(Invoice.items).selectinload(InvoiceItem.product)]
-            )
-
-            # Multiple relationships
-            stmt = self._apply_eager_loading(
-                stmt,
-                [
-                    selectinload(Invoice.client),
-                    selectinload(Invoice.items).selectinload(InvoiceItem.product)
-                ]
-            )
-        """
-        if not load:
-            return stmt
-
-        # Simply apply each SQLAlchemy Load object to the statement
-        for load_option in load:
-            stmt = stmt.options(load_option)
-
-        return stmt
-
-    def _apply_ordering(self, query, order_by: str | list[str] | None):
-        if not order_by:
-            return query
-
-        fields = [order_by] if isinstance(order_by, str) else order_by
-
-        for field in fields:
-            if field.startswith('-'):
-                col = field[1:]
-                if hasattr(self.model, col):
-                    query = query.order_by(getattr(self.model, col).desc())
-            else:
-                if hasattr(self.model, field):
-                    query = query.order_by(getattr(self.model, field))
-
-        return query
-
-    def _encode_cursor(self, value: Any) -> str:
-        if isinstance(value, datetime):
-            value = value.isoformat()
-        return base64.urlsafe_b64encode(json.dumps(value).encode()).decode()
-
-    def _decode_cursor(self, cursor: str) -> Any:
-        return json.loads(base64.urlsafe_b64decode(cursor.encode()).decode())
-
-    def query(self):
-        """Get query builder for complex queries."""
-        return select(self.model)
 
     # ========================================================================
     # CREATE
@@ -464,6 +359,71 @@ class AsyncRepository(Generic[T]):
         count = await self.count(**filters)
         return count > 0
 
+    async def filter_or(
+            self,
+            *filter_groups: dict[str, Any],
+            _load_relations: Sequence[Load] | None = None,
+            _order_by: str | list[str] | None = None,
+            **and_filters,
+    ) -> list[T]:
+        """
+        Filter with OR conditions between groups, combined with AND filters.
+
+        Each positional dict is an OR group. Keyword arguments are applied
+        as additional AND conditions on top of the OR clause.
+
+        Args:
+            *filter_groups: Dicts of filter conditions combined with OR
+            _load_relations: SQLAlchemy Load objects for eager loading
+            _order_by: Ordering field(s), prefix with - for DESC
+            **and_filters: Additional AND conditions (supports operators)
+
+        Returns:
+            List of matching model instances
+
+        Example:
+    ```python
+            # (status='active' OR status='pending') AND age__gte=18
+            users = await repo.filter_or(
+                {'status': 'active'},
+                {'status': 'pending'},
+                age__gte=18,
+            )
+    ```
+        """
+        query = select(self.model)
+
+        if self._has_soft_delete():
+            query = query.where(self.model.deleted_at.is_(None))
+
+        if filter_groups:
+            or_conditions = []
+            for group in filter_groups:
+                group_conditions: list[Any] = []
+                for key, value in group.items():
+                    self._parse_field_operator(key, value, group_conditions)
+                if group_conditions:
+                    or_conditions.append(and_(*group_conditions))
+
+            if or_conditions:
+                query = query.where(or_(*or_conditions))
+
+        if and_filters:
+            and_conditions: list[Any] = []
+            for key, value in and_filters.items():
+                self._parse_field_operator(key, value, and_conditions)
+            if and_conditions:
+                query = query.where(and_(*and_conditions))
+
+        if _load_relations:
+            query = self._apply_eager_loading(query, _load_relations)
+
+        if _order_by:
+            query = self._apply_ordering(query, _order_by)
+
+        result = await self.session.execute(query)
+        return result.scalars().all()
+
     async def count(self, **filters) -> int:
         """
         Count records matching filters asynchronously.
@@ -703,7 +663,6 @@ class AsyncRepository(Generic[T]):
         total = await self.count(**filters)
 
         # Calculate pagination metadata
-        total_pages = (total + per_page - 1) // per_page if total > 0 else 0
         offset = (page - 1) * per_page
 
         # Get items with limit, offset, and ordering
@@ -716,14 +675,7 @@ class AsyncRepository(Generic[T]):
         )
 
         # Build metadata
-        metadata = {
-            'page': page,
-            'per_page': per_page,
-            'total': total,
-            'total_pages': total_pages,
-            'has_next': page < total_pages,
-            'has_prev': page > 1
-        }
+        metadata = self._build_pagination_meta(page, per_page, total)
 
         return items, metadata
 
@@ -792,33 +744,6 @@ class AsyncRepository(Generic[T]):
     async def flush(self) -> None:
         """Flush pending changes asynchronously."""
         await self.session.flush()
-
-    def _parse_field_operator(self, key: str, value: Any, conditions: list[Any]):
-        """Parse field__operator format and build condition."""
-        # Parse field__operator format
-        if '__' in key:
-            field_name, operator = key.rsplit('__', 1)
-        else:
-            field_name = key
-            operator = 'eq'  # Default to equality
-
-        # Validate field exists on model
-        if not hasattr(self.model, field_name):
-            raise ValueError(
-                f"Field '{field_name}' does not exist on {self.model.__name__}"
-            )
-
-        # Validate operator
-        if operator not in self.LOOKUP_OPERATORS:
-            raise ValueError(
-                f"Unknown operator '{operator}'. "
-                f"Available: {', '.join(self.LOOKUP_OPERATORS.keys())}"
-            )
-
-        # Get column and apply operator
-        column = getattr(self.model, field_name)
-        condition = self.LOOKUP_OPERATORS[operator](column, value)
-        conditions.append(condition)
 
 
 # ============================================================================
