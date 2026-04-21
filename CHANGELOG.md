@@ -7,6 +7,60 @@ FastKit Core follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.4.1] — 2026-04-21
+
+This release eliminates sync/async code duplication in the repository layer,
+adds missing feature parity between the two implementations, and introduces
+automatic Pydantic and SQLAlchemy serialization in HTTP response helpers.
+No breaking changes.
+
+### Changed
+
+#### Repository — Shared Base Logic (`fastkit_core/database/base_repository.py`)
+
+Extracted all non-I/O logic from `Repository` and `AsyncRepository` into a shared
+`_BaseRepositoryMixin`. Both classes now inherit the same query-building helpers
+and only differ in session type and `await` usage.
+
+- **`_parse_field_operator()`** — moved from both repository classes into the mixin.
+  Single source of truth for Django-style `field__operator` parsing.
+- **`_has_soft_delete()`** and **`query()`** — moved into the mixin. Eliminates
+  identical method declarations in both classes.
+- **`_build_pagination_meta()`** — new shared method. Calculates `total_pages`,
+  `has_next`, and `has_prev` from `page`, `per_page`, and `total`. Both `paginate()`
+  implementations now delegate to this method instead of constructing the dict inline.
+
+#### Repository — Feature Parity
+
+- **`filter_or()`** added to `AsyncRepository`. Previously only available on the sync
+  `Repository`. Supports OR groups, AND conditions, `_load_relations`, and `_order_by`
+  — identical API to the sync version.
+- **`filter_or()`** in `Repository` — fixed incomplete implementation. `and_filters`
+  keyword arguments were accepted but silently ignored. Now correctly applied as
+  AND conditions on top of the OR clause. Added `_load_relations` and `_order_by`
+  support consistent with other read methods.
+- **`delete_many()`** in `Repository` — added missing `force: bool = False` parameter.
+  Previously always performed a hard delete, ignoring soft delete even when available.
+  Now consistent with `AsyncRepository.delete_many()` and `Repository.delete()`.
+
+#### HTTP Responses — Automatic Serialization (`fastkit_core/http/responses.py`)
+
+- **`_serialize()`** — extended with recursive serialization and two new fallbacks:
+  - **SQLAlchemy model fallback** — objects with `__table__` are serialized to a
+    plain `dict` of column values. Passing ORM instances directly to `success_response()`
+    or `paginated_response()` no longer raises `TypeError`.
+  - **Recursive dict/list handling** — nested Pydantic models, ORM instances, or mixed
+    structures inside `dict` and `list` values are now fully serialized. Previously only
+    the top-level object was processed.
+
+### Fixed
+
+- `filter_or()` in `Repository` silently dropped all `**and_filters` keyword arguments.
+- `delete_many()` in `Repository` always performed a hard delete, bypassing soft delete.
+- `_serialize()` raised `TypeError` when passed a SQLAlchemy model instance directly.
+- `_serialize()` did not recurse into `dict` or `list` values, leaving nested objects
+  unserializable.
+
 ## [0.4.0] — 2026-04-11
 
 This release focuses on infrastructure that every production application needs but
