@@ -72,6 +72,13 @@ def make_redis_config(**extra) -> MagicMock:
     return config
 
 
+@pytest.fixture
+def mock_redis():
+    """Patch redis.asyncio.Redis so no real connection is made."""
+    with patch('fastkit_core.cache.backends.redis.Redis') as mock:
+        yield mock
+
+
 # ============================================================================
 # Test AbstractCacheBackend
 # ============================================================================
@@ -323,6 +330,38 @@ class TestCacheManagerConfigValidation:
         with patch('fastkit_core.cache.backends.redis.Redis'):
             manager = CacheManager(config)
         assert isinstance(manager._backend_instance, RedisBackend)
+
+    def test_redis_backend_receives_password_from_config(self, mock_redis):
+        """CacheManager must pass password from config to RedisBackend."""
+        config = make_redis_config(password='secret123')
+        CacheManager(config)
+        mock_redis.assert_called_once_with(
+            host='localhost',
+            port=6379,
+            db=0,
+            password='secret123',
+        )
+
+    def test_redis_backend_receives_none_password_when_absent(self, mock_redis):
+        """When password is absent from config, Redis must receive password=None."""
+        config = make_redis_config()  # no password key
+        CacheManager(config)
+        _, kwargs = mock_redis.call_args
+        assert kwargs.get('password') is None
+
+    def test_redis_backend_receives_none_password_when_explicitly_none(self, mock_redis):
+        """When password is explicitly None in config, Redis must receive password=None."""
+        config = make_redis_config(password=None)
+        CacheManager(config)
+        _, kwargs = mock_redis.call_args
+        assert kwargs.get('password') is None
+
+    def test_redis_backend_receives_empty_string_password_as_none(self, mock_redis):
+        """Empty string password should be normalised to None."""
+        config = make_redis_config(password='')
+        CacheManager(config)
+        _, kwargs = mock_redis.call_args
+        assert kwargs.get('password') is None
 
 # ============================================================================
 # Test CacheManager — Delegation
