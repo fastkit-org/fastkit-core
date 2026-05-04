@@ -9,9 +9,10 @@ class RedisBackend(AbstractCacheBackend):
                  host: str,
                  port: int,
                  db: int = 0,
+                 password: str | None = None,
                  default_ttl: int | None = 300
                 ):
-        self._storage = Redis(host=host, port=port, db=db)
+        self._storage = Redis(host=host, port=port, db=db, password=password or None)
         self._default_ttl = default_ttl
 
     async def get(self, key: str) -> Any | None:

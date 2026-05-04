@@ -7,6 +7,44 @@ FastKit Core follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.4.2] — 2026-05-04
+
+Patch release. Fixes a bug that made `RedisBackend` unusable with any
+password-protected Redis instance.
+
+### Fixed
+
+#### Cache — `RedisBackend` missing password authentication support
+
+`RedisBackend` did not accept a `password` parameter, and `CacheManager` did not
+read the `password` key from the cache configuration. Any Redis instance configured
+with `requirepass` raised `AuthenticationError` immediately on the first cache
+operation, making `RedisBackend` unusable in production environments.
+
+- **`RedisBackend.__init__`** (`fastkit_core/cache/backends/redis.py`) — added
+  `password: str | None = None` parameter. The value is forwarded directly to
+  `redis.asyncio.Redis`. An empty string is normalised to `None` (`password or None`).
+- **`CacheManager._make_backend_instance`** (`fastkit_core/cache/manager.py`) — now
+  reads `password` from `cache.DEFAULT` config and passes it to `RedisBackend`.
+  Defaults to `None` when the key is absent, preserving backward compatibility with
+  unauthenticated Redis setups.
+
+```python
+# config/cache.py
+DEFAULT = {
+    "driver": "redis",
+    "host": os.getenv("REDIS_HOST", "localhost"),
+    "port": int(os.getenv("REDIS_PORT", 6379)),
+    "password": os.getenv("REDIS_PASSWORD", None),  # now respected
+    "ttl": int(os.getenv("CACHE_TTL", 300)),
+}
+```
+
+**Backwards compatible** — `password` defaults to `None`, matching the previous
+behaviour for unauthenticated Redis instances. No existing code requires changes.
+
+---
+
 ## [0.4.1] — 2026-04-21
 
 This release eliminates sync/async code duplication in the repository layer,

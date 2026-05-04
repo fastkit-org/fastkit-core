@@ -36,6 +36,7 @@ class CacheManager(AbstractCacheBackend):
                 host=host,
                 port=port,
                 db=drivers.get('db', 0),
+                password=drivers.get('password', None),
                 default_ttl=drivers.get('ttl')
             )
         raise ValueError(f"Unsupported driver: {drivers.get('driver')}")
