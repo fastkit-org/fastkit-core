@@ -363,6 +363,168 @@ class TestCacheManagerConfigValidation:
         _, kwargs = mock_redis.call_args
         assert kwargs.get('password') is None
 
+
+# ============================================================================
+# Test RedisBackend
+# ============================================================================
+
+class TestRedisBackend:
+    """Unit tests for RedisBackend — no real Redis connection required."""
+
+    from fastkit_core.cache.backends.redis import RedisBackend
+
+    # ------------------------------------------------------------------
+    # Instantiation
+    # ------------------------------------------------------------------
+
+    def test_instantiates_with_required_params(self, mock_redis):
+        from fastkit_core.cache.backends.redis import RedisBackend
+        backend = RedisBackend(host='localhost', port=6379)
+        assert backend is not None
+
+    def test_passes_host_and_port_to_redis(self, mock_redis):
+        from fastkit_core.cache.backends.redis import RedisBackend
+        RedisBackend(host='redis-host', port=6380)
+        mock_redis.assert_called_once()
+        _, kwargs = mock_redis.call_args
+        assert kwargs['host'] == 'redis-host'
+        assert kwargs['port'] == 6380
+
+    def test_passes_db_to_redis(self, mock_redis):
+        from fastkit_core.cache.backends.redis import RedisBackend
+        RedisBackend(host='localhost', port=6379, db=3)
+        _, kwargs = mock_redis.call_args
+        assert kwargs['db'] == 3
+
+    def test_default_db_is_zero(self, mock_redis):
+        from fastkit_core.cache.backends.redis import RedisBackend
+        RedisBackend(host='localhost', port=6379)
+        _, kwargs = mock_redis.call_args
+        assert kwargs['db'] == 0
+
+    # ------------------------------------------------------------------
+    # Password — the bug fix being tested
+    # ------------------------------------------------------------------
+
+    def test_passes_password_to_redis(self, mock_redis):
+        """RedisBackend must forward password to the Redis client."""
+        from fastkit_core.cache.backends.redis import RedisBackend
+        RedisBackend(host='localhost', port=6379, password='secret')
+        _, kwargs = mock_redis.call_args
+        assert kwargs['password'] == 'secret'
+
+    def test_password_defaults_to_none(self, mock_redis):
+        """Without a password, Redis must receive password=None."""
+        from fastkit_core.cache.backends.redis import RedisBackend
+        RedisBackend(host='localhost', port=6379)
+        _, kwargs = mock_redis.call_args
+        assert kwargs.get('password') is None
+
+    def test_empty_string_password_passed_as_none(self, mock_redis):
+        """Empty string password should be normalised to None."""
+        from fastkit_core.cache.backends.redis import RedisBackend
+        RedisBackend(host='localhost', port=6379, password='')
+        _, kwargs = mock_redis.call_args
+        assert kwargs.get('password') is None
+
+    def test_explicit_none_password_passed_as_none(self, mock_redis):
+        from fastkit_core.cache.backends.redis import RedisBackend
+        RedisBackend(host='localhost', port=6379, password=None)
+        _, kwargs = mock_redis.call_args
+        assert kwargs.get('password') is None
+
+    # ------------------------------------------------------------------
+    # TTL
+    # ------------------------------------------------------------------
+
+    def test_default_ttl_is_300(self, mock_redis):
+        from fastkit_core.cache.backends.redis import RedisBackend
+        backend = RedisBackend(host='localhost', port=6379)
+        assert backend._default_ttl == 300
+
+    def test_custom_default_ttl(self, mock_redis):
+        from fastkit_core.cache.backends.redis import RedisBackend
+        backend = RedisBackend(host='localhost', port=6379, default_ttl=120)
+        assert backend._default_ttl == 120
+
+    def test_none_default_ttl(self, mock_redis):
+        from fastkit_core.cache.backends.redis import RedisBackend
+        backend = RedisBackend(host='localhost', port=6379, default_ttl=None)
+        assert backend._default_ttl is None
+
+    # ------------------------------------------------------------------
+    # Operations — via AsyncMock
+    # ------------------------------------------------------------------
+
+    @pytest.fixture
+    def backend(self, mock_redis):
+        """RedisBackend with fully mocked Redis storage."""
+        from fastkit_core.cache.backends.redis import RedisBackend
+        backend = RedisBackend(host='localhost', port=6379, password='secret')
+        backend._storage = MagicMock()
+        backend._storage.get = AsyncMock(return_value=None)
+        backend._storage.set = AsyncMock()
+        backend._storage.delete = AsyncMock()
+        backend._storage.keys = AsyncMock(return_value=[])
+        backend._storage.exists = AsyncMock(return_value=0)
+        backend._storage.flushdb = AsyncMock()
+        return backend
+
+    @pytest.mark.asyncio
+    async def test_get_calls_storage(self, backend):
+        await backend.get('key')
+        backend._storage.get.assert_awaited_once_with('key')
+
+    @pytest.mark.asyncio
+    async def test_get_returns_none_when_not_found(self, backend):
+        backend._storage.get = AsyncMock(return_value=None)
+        result = await backend.get('missing')
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_set_uses_explicit_ttl(self, backend):
+        await backend.set('key', 'value', ttl=60)
+        backend._storage.set.assert_awaited_once_with('key', 'value', ex=60)
+
+    @pytest.mark.asyncio
+    async def test_set_uses_default_ttl_when_none(self, backend):
+        backend._default_ttl = 300
+        await backend.set('key', 'value')  # no explicit ttl
+        backend._storage.set.assert_awaited_once_with('key', 'value', ex=300)
+
+    @pytest.mark.asyncio
+    async def test_delete_calls_storage(self, backend):
+        await backend.delete('key')
+        backend._storage.delete.assert_awaited_once_with('key')
+
+    @pytest.mark.asyncio
+    async def test_has_returns_true_when_key_exists(self, backend):
+        backend._storage.exists = AsyncMock(return_value=1)
+        assert await backend.has('key') is True
+
+    @pytest.mark.asyncio
+    async def test_has_returns_false_when_key_missing(self, backend):
+        backend._storage.exists = AsyncMock(return_value=0)
+        assert await backend.has('key') is False
+
+    @pytest.mark.asyncio
+    async def test_clear_calls_flushdb(self, backend):
+        await backend.clear()
+        backend._storage.flushdb.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_invalidate_deletes_matched_keys(self, backend):
+        backend._storage.keys = AsyncMock(return_value=['products:1', 'products:2'])
+        backend._storage.delete = AsyncMock()
+        await backend.invalidate('products:*')
+        assert backend._storage.delete.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_invalidate_does_nothing_when_no_match(self, backend):
+        backend._storage.keys = AsyncMock(return_value=[])
+        await backend.invalidate('nonexistent:*')
+        backend._storage.delete.assert_not_awaited()
+
 # ============================================================================
 # Test CacheManager — Delegation
 # ============================================================================
