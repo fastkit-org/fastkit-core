@@ -152,3 +152,33 @@ class TestCursorAndHasNext:
         response = cursor_paginated_response(items=[], next_cursor=None, per_page=50)
 
         assert _body(response)["pagination"]["per_page"] == 50
+
+
+# ============================================================================
+# Optional message
+# ============================================================================
+
+class TestMessageField:
+    """Presence and absence of the optional message field."""
+
+    def test_message_included_when_provided(self):
+        """message key must appear when argument is given."""
+        response = cursor_paginated_response(
+            items=[], next_cursor=None, per_page=20, message="OK"
+        )
+
+        assert _body(response)["message"] == "OK"
+
+    def test_message_absent_by_default(self):
+        """message key must NOT appear when not provided."""
+        response = cursor_paginated_response(items=[], next_cursor=None, per_page=20)
+
+        assert "message" not in _body(response)
+
+    def test_message_absent_when_none(self):
+        """message key must NOT appear when explicitly passed as None."""
+        response = cursor_paginated_response(
+            items=[], next_cursor=None, per_page=20, message=None
+        )
+
+        assert "message" not in _body(response)
