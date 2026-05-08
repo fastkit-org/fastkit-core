@@ -1,7 +1,8 @@
 from fastkit_core.http.responses import (
     success_response,
     error_response,
-    paginated_response
+    paginated_response,
+    cursor_paginated_response
 )
 from fastkit_core.http.dependencies import (
     get_locale,
@@ -31,6 +32,7 @@ __all__ = [
     'success_response',
     'error_response',
     'paginated_response',
+    'cursor_paginated_response',
     'get_locale',
     'get_pagination',
     'FastKitException',
