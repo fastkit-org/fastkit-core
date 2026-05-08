@@ -118,6 +118,64 @@ def paginated_response(
 
     return JSONResponse(content=content, status_code=status_code)
 
+def cursor_paginated_response(
+        items: list,
+        next_cursor: str | None,
+        per_page: int,
+        message: str | None = None,
+        status_code: int = 200
+) -> JSONResponse:
+    """
+    Cursor-based paginated response.
+
+    Args:
+        items:       List of items for the current page.
+        next_cursor: Opaque cursor string for the next page, or None on the last page.
+        per_page:    Page size used for this request.
+        message:     Optional message.
+        status_code: HTTP status code (default: 200).
+
+    Returns:
+        JSONResponse with format:
+        {
+            "success": true,
+            "data": [...],
+            "pagination": {
+                "next_cursor": "eyJpZCI6IDIwfQ==",
+                "per_page": 20,
+                "has_next": true
+            },
+            "message": "..." (optional)
+        }
+
+    Example:
+        items, next_cursor = await service.cursor_paginate(
+            cursor=cursor,
+            per_page=per_page,
+            cursor_field='id',
+        )
+        return cursor_paginated_response(
+            items=items,
+            next_cursor=next_cursor,
+            per_page=per_page,
+        )
+    """
+    content = {
+        'success': True,
+        'data': [_serialize(item) for item in items],
+        'pagination': {
+            'next_cursor': next_cursor,
+            'per_page': per_page,
+            'has_next': next_cursor is not None,
+        }
+    }
+
+    if message:
+        content['message'] = message
+
+    return JSONResponse(content=content, status_code=status_code)
+
+
 def _serialize(obj: Any) -> Any:
     """Recursively serialize to a JSON-safe value."""
     if hasattr(obj, 'model_dump'):  # Pydantic v2
