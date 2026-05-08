@@ -109,3 +109,46 @@ class TestCursorPaginatedResponseStructure:
         response = cursor_paginated_response(items=[], next_cursor=None, per_page=20)
 
         assert response.status_code == 200
+
+
+# ============================================================================
+# Cursor and has_next logic
+# ============================================================================
+
+class TestCursorAndHasNext:
+    """Cursor forwarding and has_next derivation."""
+
+    def test_next_cursor_forwarded_when_provided(self):
+        """next_cursor value must appear in pagination."""
+        cursor = "eyJpZCI6IDIwfQ=="
+        response = cursor_paginated_response(
+            items=[], next_cursor=cursor, per_page=20
+        )
+
+        assert _body(response)["pagination"]["next_cursor"] == cursor
+
+    def test_next_cursor_is_none_on_last_page(self):
+        """next_cursor must be None when no further pages exist."""
+        response = cursor_paginated_response(items=[], next_cursor=None, per_page=20)
+
+        assert _body(response)["pagination"]["next_cursor"] is None
+
+    def test_has_next_true_when_cursor_present(self):
+        """has_next must be True when next_cursor is not None."""
+        response = cursor_paginated_response(
+            items=[], next_cursor="some_cursor", per_page=20
+        )
+
+        assert _body(response)["pagination"]["has_next"] is True
+
+    def test_has_next_false_when_cursor_is_none(self):
+        """has_next must be False when next_cursor is None."""
+        response = cursor_paginated_response(items=[], next_cursor=None, per_page=20)
+
+        assert _body(response)["pagination"]["has_next"] is False
+
+    def test_per_page_forwarded(self):
+        """per_page value must appear unchanged in pagination."""
+        response = cursor_paginated_response(items=[], next_cursor=None, per_page=50)
+
+        assert _body(response)["pagination"]["per_page"] == 50
