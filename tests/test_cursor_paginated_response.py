@@ -296,3 +296,98 @@ class TestSerializationORM:
         data = _body(response)["data"]
         assert len(data) == 3
         assert data[0] == {"id": 0, "name": "User0"}
+
+
+# ============================================================================
+# Item serialization — nested structures
+# ============================================================================
+
+class TestSerializationNested:
+    """Nested Pydantic / ORM objects inside dicts and lists must be serialized."""
+
+    def test_nested_pydantic_in_dict(self):
+        """Pydantic model nested inside a dict value must be serialized."""
+        items = [{"user": UserSchema(id=1, name="Eve"), "token": "abc"}]
+        response = cursor_paginated_response(
+            items=items, next_cursor=None, per_page=20
+        )
+
+        item = _body(response)["data"][0]
+        assert item["user"] == {"id": 1, "name": "Eve"}
+        assert item["token"] == "abc"
+
+    def test_nested_pydantic_in_list_value(self):
+        """List of Pydantic models nested inside a dict must be fully serialized."""
+        items = [
+            {
+                "users": [
+                    UserSchema(id=1, name="Alice"),
+                    UserSchema(id=2, name="Bob"),
+                ]
+            }
+        ]
+        response = cursor_paginated_response(
+            items=items, next_cursor=None, per_page=20
+        )
+
+        users = _body(response)["data"][0]["users"]
+        assert users == [{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}]
+
+
+# ============================================================================
+# Edge cases
+# ============================================================================
+
+class TestEdgeCases:
+    """Boundary conditions and unusual inputs."""
+
+    def test_empty_items_list(self):
+        """Empty items list must produce an empty data array."""
+        response = cursor_paginated_response(items=[], next_cursor=None, per_page=20)
+
+        assert _body(response)["data"] == []
+
+    def test_per_page_of_one(self):
+        """per_page=1 is a valid boundary value."""
+        response = cursor_paginated_response(
+            items=[{"id": 1}], next_cursor="cursor", per_page=1
+        )
+
+        body = _body(response)
+        assert body["pagination"]["per_page"] == 1
+        assert len(body["data"]) == 1
+
+    def test_large_per_page(self):
+        """Large per_page values must be forwarded without truncation."""
+        response = cursor_paginated_response(
+            items=[], next_cursor=None, per_page=1000
+        )
+
+        assert _body(response)["pagination"]["per_page"] == 1000
+
+    def test_items_with_none_values(self):
+        """Items containing None field values must serialize cleanly."""
+        items = [{"id": 1, "name": None}]
+        response = cursor_paginated_response(
+            items=items, next_cursor=None, per_page=20
+        )
+
+        assert _body(response)["data"] == [{"id": 1, "name": None}]
+
+    def test_cursor_with_special_characters(self):
+        """Cursor strings with base64 padding must be preserved exactly."""
+        cursor = "eyJpZCI6IDIwfQ=="
+        response = cursor_paginated_response(
+            items=[], next_cursor=cursor, per_page=20
+        )
+
+        assert _body(response)["pagination"]["next_cursor"] == cursor
+
+    def test_no_extra_keys_in_pagination(self):
+        """pagination block must contain exactly the three documented keys."""
+        response = cursor_paginated_response(
+            items=[], next_cursor=None, per_page=20
+        )
+        pagination_keys = set(_body(response)["pagination"].keys())
+
+        assert pagination_keys == {"next_cursor", "per_page", "has_next"}
