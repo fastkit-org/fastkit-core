@@ -182,3 +182,117 @@ class TestMessageField:
         )
 
         assert "message" not in _body(response)
+
+
+# ============================================================================
+# Custom status code
+# ============================================================================
+
+class TestStatusCode:
+    """HTTP status code forwarding."""
+
+    def test_custom_status_code(self):
+        """Should use provided status code."""
+        response = cursor_paginated_response(
+            items=[], next_cursor=None, per_page=20, status_code=206
+        )
+
+        assert response.status_code == 206
+
+    def test_status_code_does_not_affect_body(self):
+        """Body structure must be the same regardless of status code."""
+        r200 = cursor_paginated_response(items=[], next_cursor=None, per_page=20)
+        r206 = cursor_paginated_response(
+            items=[], next_cursor=None, per_page=20, status_code=206
+        )
+
+        body_200 = _body(r200)
+        body_206 = _body(r206)
+
+        assert body_200["success"] == body_206["success"]
+        assert body_200["data"] == body_206["data"]
+        assert body_200["pagination"] == body_206["pagination"]
+
+
+# ============================================================================
+# Item serialization — plain dicts
+# ============================================================================
+
+class TestSerializationPlainDicts:
+    """Items that are already plain dicts should pass through unchanged."""
+
+    def test_plain_dict_items_passed_through(self):
+        """Plain dicts must appear verbatim in data."""
+        items = [{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}]
+        response = cursor_paginated_response(
+            items=items, next_cursor=None, per_page=20
+        )
+
+        assert _body(response)["data"] == items
+
+    def test_item_count_preserved(self):
+        """Number of items in data must match input list length."""
+        items = [{"id": i} for i in range(7)]
+        response = cursor_paginated_response(
+            items=items, next_cursor=None, per_page=20
+        )
+
+        assert len(_body(response)["data"]) == 7
+
+
+# ============================================================================
+# Item serialization — Pydantic v2
+# ============================================================================
+
+class TestSerializationPydantic:
+    """Pydantic model instances must be serialized via model_dump()."""
+
+    def test_pydantic_model_serialized(self):
+        """Pydantic v2 instances must be converted to dicts."""
+        items = [UserSchema(id=1, name="Alice"), UserSchema(id=2, name="Bob")]
+        response = cursor_paginated_response(
+            items=items, next_cursor=None, per_page=20
+        )
+
+        data = _body(response)["data"]
+        assert data == [{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}]
+
+    def test_pydantic_model_fields_present(self):
+        """All model fields must appear in the serialized dict."""
+        items = [UserSchema(id=42, name="Charlie")]
+        response = cursor_paginated_response(
+            items=items, next_cursor=None, per_page=20
+        )
+
+        item = _body(response)["data"][0]
+        assert item["id"] == 42
+        assert item["name"] == "Charlie"
+
+
+# ============================================================================
+# Item serialization — SQLAlchemy-like ORM models
+# ============================================================================
+
+class TestSerializationORM:
+    """ORM instances with __table__.columns must be serialized to dicts."""
+
+    def test_orm_instance_serialized(self):
+        """ORM instance must be converted using __table__.columns."""
+        orm_instance = _make_orm_instance(id_=10, name="Dave")
+        response = cursor_paginated_response(
+            items=[orm_instance], next_cursor=None, per_page=20
+        )
+
+        data = _body(response)["data"]
+        assert data == [{"id": 10, "name": "Dave"}]
+
+    def test_multiple_orm_instances(self):
+        """Multiple ORM instances must all be serialized."""
+        items = [_make_orm_instance(i, f"User{i}") for i in range(3)]
+        response = cursor_paginated_response(
+            items=items, next_cursor=None, per_page=20
+        )
+
+        data = _body(response)["data"]
+        assert len(data) == 3
+        assert data[0] == {"id": 0, "name": "User0"}
