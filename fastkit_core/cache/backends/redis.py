@@ -3,6 +3,7 @@ from typing import Any
 
 from fastkit_core.cache.backends.base import AbstractCacheBackend
 
+
 class RedisBackend(AbstractCacheBackend):
 
     def __init__(self,

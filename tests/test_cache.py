@@ -11,6 +11,7 @@ Tests:
 """
 
 import asyncio
+import json
 import time
 import pytest
 import pytest_asyncio
@@ -714,7 +715,7 @@ class TestCachedDecorator:
 
         await fn()
         cached_val = await get_cache().get('static:key')
-        assert cached_val == 'data'
+        assert json.loads(cached_val) == 'data'
 
     @pytest.mark.asyncio
     async def test_lambda_key_single_arg(self):
@@ -724,7 +725,7 @@ class TestCachedDecorator:
 
         await get_user(42)
         cached_val = await get_cache().get('user:42')
-        assert cached_val == {'id': 42}
+        assert json.loads(cached_val) == {'id': 42}
 
     @pytest.mark.asyncio
     async def test_lambda_key_multiple_args(self):
@@ -734,7 +735,7 @@ class TestCachedDecorator:
 
         await get_user(1, 99)
         cached_val = await get_cache().get('user:1:org:99')
-        assert cached_val == {'uid': 1, 'org': 99}
+        assert json.loads(cached_val) == {'uid': 1, 'org': 99}
 
     @pytest.mark.asyncio
     async def test_different_args_produce_different_cache_entries(self):
