@@ -539,3 +539,96 @@ class TestCachedReturnTypes:
         items, meta = result
         assert items == [{"id": 1}]
         assert meta == {"page": 1}
+
+
+# ============================================================================
+# Cache miss / hit call count
+# ============================================================================
+
+
+class TestCachedCallCount:
+    """Miss must call function; hit must skip it."""
+
+    @pytest.mark.asyncio
+    async def test_cache_miss_calls_function_once(self):
+        call_count = 0
+
+        @cached(ttl=60, key="count:miss")
+        async def fn():
+            nonlocal call_count
+            call_count += 1
+            return {"data": "value"}
+
+        await fn()
+        assert call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_cache_hit_does_not_call_function_again(self):
+        call_count = 0
+
+        @cached(ttl=60, key="count:hit")
+        async def fn():
+            nonlocal call_count
+            call_count += 1
+            return {"data": "value"}
+
+        await fn()
+        await fn()
+        await fn()
+        assert call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_different_keys_are_independent(self):
+        """Two functions with different keys must not share cache."""
+        count_a = 0
+        count_b = 0
+
+        @cached(ttl=60, key="independent:a")
+        async def fn_a():
+            nonlocal count_a
+            count_a += 1
+            return "a"
+
+        @cached(ttl=60, key="independent:b")
+        async def fn_b():
+            nonlocal count_b
+            count_b += 1
+            return "b"
+
+        await fn_a()
+        await fn_a()
+        await fn_b()
+        await fn_b()
+
+        assert count_a == 1
+        assert count_b == 1
+
+    @pytest.mark.asyncio
+    async def test_raw_stored_value_is_json_string(self):
+        """After a cache write, the raw stored value must be a JSON string."""
+
+        @cached(ttl=60, key="raw:json")
+        async def fn():
+            return {"id": 1}
+
+        await fn()
+        raw = await get_cache().get("raw:json")
+
+        assert isinstance(raw, str)
+        assert json.loads(raw) == {"id": 1}
+
+    @pytest.mark.asyncio
+    async def test_raw_stored_tuple_contains_sentinel(self):
+        """Tuple stored in cache must be a JSON string with __tuple__ sentinel."""
+
+        @cached(ttl=60, key="raw:tuple")
+        async def fn():
+            return (1, 2)
+
+        await fn()
+        raw = await get_cache().get("raw:tuple")
+
+        assert isinstance(raw, str)
+        parsed = json.loads(raw)
+        assert parsed.get("__tuple__") is True
+        assert parsed["items"] == [1, 2]
