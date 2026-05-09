@@ -6,6 +6,100 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 FastKit Core follows [Semantic Versioning](https://semver.org/).
 
 ---
+## [0.4.3] — 2026-05-09
+
+This release fixes a critical bug that made `@cached` unusable with composite
+return types, extends the decorator with full recursive serialization support,
+and adds the `cursor_paginated_response()` helper for consistency with the
+existing `paginated_response()` API. No breaking changes.
+
+### Added
+
+#### HTTP Responses — `cursor_paginated_response()` (`fastkit_core/http/responses.py`)
+
+Added `cursor_paginated_response()` to standardize cursor-based pagination responses
+and eliminate per-endpoint boilerplate. Mirrors the API of the existing
+`paginated_response()` helper.
+
+- Accepts `items`, `next_cursor`, `per_page`, optional `message`, and `status_code`.
+- All items are automatically serialized via the shared `_serialize()` helper —
+  Pydantic models, SQLAlchemy instances, plain dicts, and nested structures all
+  work without manual `.model_dump()` calls.
+- `has_next` is derived automatically from `next_cursor is not None`.
+- Exported from `fastkit_core/http/__init__.py` alongside existing response helpers.
+
+```python
+# Before — manual boilerplate on every endpoint
+items, next_cursor = await service.cursor_paginate(cursor=cursor, per_page=per_page)
+return success_response(data={
+    'items': [item.model_dump() for item in items],
+    'next_cursor': next_cursor,
+    'per_page': per_page,
+    'has_next': next_cursor is not None,
+})
+
+# After — one line, consistent shape
+return cursor_paginated_response(items=items, next_cursor=next_cursor, per_page=per_page)
+```
+
+Response shape:
+```json
+{
+    "success": true,
+    "data": [...],
+    "pagination": {
+        "next_cursor": "eyJpZCI6IDIwfQ==",
+        "per_page": 20,
+        "has_next": true
+    }
+}
+```
+
+### Fixed
+
+#### Cache — `@cached` decorator crashes with `tuple` and Pydantic return values
+
+`@cached` passed the raw Python return value directly to the cache backend without
+serialization. Redis only accepts `bytes`, `str`, `int`, or `float`, so any function
+returning a `tuple`, Pydantic model, or `list[BaseModel]` raised
+`redis.exceptions.DataError` on the first cache write. The decorator was effectively
+unusable on the most common FastKit service patterns (`paginate`, `get_all`, `find`).
+
+**Root cause** — `get_cache().set(cache_key, result)` stored the raw object.
+On cache hit, `get_cache().get(cache_key)` returned a raw string instead of the
+original structure, so even if the write had succeeded, the caller would receive
+a corrupted value.
+
+**Fix** — introduced four serialization helpers in `fastkit_core/cache/decorators.py`:
+
+- **`_to_serializable(item)`** — recursively converts any value to a JSON-safe
+  structure. Pydantic models are converted via `model_dump()`. Tuples are wrapped
+  with a `{"__tuple__": true, "items": [...]}` sentinel that survives JSON
+  serialization. Lists and dicts are recursed into.
+- **`_serialize(value) -> str`** — thin wrapper over `json.dumps(_to_serializable(value))`.
+  All cache writes now store a JSON string.
+- **`_from_serializable(item)`** — fully recursive counterpart to `_to_serializable`.
+  Reconstructs `tuple` from the `__tuple__` sentinel at any nesting depth.
+  Previously `_deserialize` only checked the top level, so `tuple` inside `tuple`
+  was silently reconstructed as `list`.
+- **`_deserialize(raw: str)`** — thin wrapper over `_from_serializable(json.loads(raw))`.
+  All cache reads now deserialize back to the original structure.
+
+Supported return types and their cache-hit shapes:
+
+| Return type | Cache-hit type |
+|---|---|
+| `str`, `int`, `float`, `bool` | unchanged |
+| `dict` | `dict` |
+| `list[dict]` | `list[dict]` |
+| `tuple` | `tuple` (reconstructed via sentinel) |
+| `tuple` inside `tuple` | fully reconstructed at all depths |
+| `BaseModel` | `dict` (via `model_dump()`) |
+| `list[BaseModel]` | `list[dict]` |
+| `tuple(list[BaseModel], dict)` | `tuple(list[dict], dict)` — exact `paginate()` shape |
+
+**Backwards compatible** — `json.dumps("hello")` → `'"hello"'` →
+`json.loads(...)` → `"hello"`. Plain `str` and `int` values are unaffected.
 
 ## [0.4.2] — 2026-05-04
 
