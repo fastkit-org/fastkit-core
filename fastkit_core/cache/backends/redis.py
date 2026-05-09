@@ -17,6 +17,18 @@ def _to_serializable(item):
         return {k: _to_serializable(v) for k, v in item.items()}
     return item  # str, int, float, bool, None — already JSON-safe
 
+
+def _serialize(value) -> str:
+    """Serialize any supported value to a JSON string."""
+    return json.dumps(_to_serializable(value))
+
+def _deserialize(raw: str):
+    """Deserialize a JSON string back to its original structure."""
+    data = json.loads(raw)
+    if isinstance(data, dict) and data.get('__tuple__'):
+        return tuple(data['items'])
+    return data
+
 class RedisBackend(AbstractCacheBackend):
 
     def __init__(self,
@@ -30,11 +42,11 @@ class RedisBackend(AbstractCacheBackend):
         self._default_ttl = default_ttl
 
     async def get(self, key: str) -> Any | None:
-        return await self._storage.get(key)
+        return await _deserialize(self._storage.get(key))
 
     async def set(self, key: str, data: Any, ttl: int | None = None) -> None:
         effective_ttl = ttl if ttl is not None else self._default_ttl
-        await self._storage.set(key, data, ex=effective_ttl)
+        await self._storage.set(key, _serialize(data), ex=effective_ttl)
 
     async def delete(self, key: str) -> None:
        await self._storage.delete(key)
