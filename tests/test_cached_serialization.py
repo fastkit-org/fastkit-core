@@ -175,3 +175,92 @@ class TestToSerializable:
                 }
             ],
         }
+
+
+# ============================================================================
+# Unit tests — _from_serializable
+# ============================================================================
+
+
+class TestFromSerializable:
+    """_from_serializable reconstructs Python types from JSON-safe structures."""
+
+    # --- primitives ---
+
+    def test_str_passthrough(self):
+        assert _from_serializable("hello") == "hello"
+
+    def test_int_passthrough(self):
+        assert _from_serializable(42) == 42
+
+    def test_none_passthrough(self):
+        assert _from_serializable(None) is None
+
+    # --- dict without sentinel ---
+
+    def test_plain_dict_returned_as_dict(self):
+        result = _from_serializable({"a": 1, "b": 2})
+        assert isinstance(result, dict)
+        assert result == {"a": 1, "b": 2}
+
+    def test_dict_values_are_recursed(self):
+        """Tuple sentinel nested inside a dict value must be reconstructed."""
+        data = {"payload": {"__tuple__": True, "items": [1, 2]}}
+        result = _from_serializable(data)
+        assert isinstance(result["payload"], tuple)
+        assert result["payload"] == (1, 2)
+
+    def test_dict_without_tuple_key_stays_as_dict(self):
+        """Dict that has an 'items' key but no __tuple__ stays as dict."""
+        data = {"items": [1, 2], "other": "value"}
+        result = _from_serializable(data)
+        assert isinstance(result, dict)
+
+    # --- list ---
+
+    def test_list_of_primitives(self):
+        assert _from_serializable([1, 2, 3]) == [1, 2, 3]
+
+    def test_list_containing_tuple_sentinel(self):
+        data = [{"__tuple__": True, "items": [1, 2]}, 3]
+        result = _from_serializable(data)
+        assert result[0] == (1, 2)
+        assert result[1] == 3
+
+    # --- tuple sentinel ---
+
+    def test_tuple_sentinel_reconstructed(self):
+        data = {"__tuple__": True, "items": [1, 2, 3]}
+        result = _from_serializable(data)
+        assert isinstance(result, tuple)
+        assert result == (1, 2, 3)
+
+    def test_nested_tuple_reconstructed(self):
+        data = {
+            "__tuple__": True,
+            "items": [
+                {"__tuple__": True, "items": [1, 2]},
+                {"__tuple__": True, "items": [3, 4]},
+            ],
+        }
+        result = _from_serializable(data)
+        assert isinstance(result, tuple)
+        assert isinstance(result[0], tuple)
+        assert isinstance(result[1], tuple)
+        assert result == ((1, 2), (3, 4))
+
+    def test_deeply_nested_tuple_reconstructed(self):
+        data = {
+            "__tuple__": True,
+            "items": [
+                {
+                    "__tuple__": True,
+                    "items": [
+                        {"__tuple__": True, "items": ["deep"]}
+                    ],
+                }
+            ],
+        }
+        result = _from_serializable(data)
+        assert result == ((("deep",),),)
+        assert isinstance(result[0][0], tuple)
