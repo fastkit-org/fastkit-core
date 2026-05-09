@@ -264,3 +264,90 @@ class TestFromSerializable:
         result = _from_serializable(data)
         assert result == ((("deep",),),)
         assert isinstance(result[0][0], tuple)
+
+
+# ============================================================================
+# Unit tests — _serialize / _deserialize roundtrip
+# ============================================================================
+
+
+class TestSerializeDeserializeRoundtrip:
+    """_serialize → _deserialize must reconstruct the original value."""
+
+    def test_str_roundtrip(self):
+        assert _deserialize(_serialize("hello")) == "hello"
+
+    def test_int_roundtrip(self):
+        assert _deserialize(_serialize(99)) == 99
+
+    def test_float_roundtrip(self):
+        assert _deserialize(_serialize(3.14)) == pytest.approx(3.14)
+
+    def test_bool_roundtrip(self):
+        assert _deserialize(_serialize(True)) is True
+
+    def test_none_roundtrip(self):
+        assert _deserialize(_serialize(None)) is None
+
+    def test_dict_roundtrip(self):
+        original = {"a": 1, "b": "two"}
+        assert _deserialize(_serialize(original)) == original
+
+    def test_list_of_dicts_roundtrip(self):
+        original = [{"id": 1}, {"id": 2}]
+        assert _deserialize(_serialize(original)) == original
+
+    def test_tuple_roundtrip(self):
+        original = (1, "two", 3.0)
+        result = _deserialize(_serialize(original))
+        assert isinstance(result, tuple)
+        assert result == original
+
+    def test_tuple_inside_tuple_roundtrip(self):
+        original = ((1, 2), (3, 4))
+        result = _deserialize(_serialize(original))
+        assert isinstance(result, tuple)
+        assert isinstance(result[0], tuple)
+        assert isinstance(result[1], tuple)
+        assert result == original
+
+    def test_deeply_nested_tuple_roundtrip(self):
+        original = ((("deep",),),)
+        result = _deserialize(_serialize(original))
+        assert result == original
+        assert isinstance(result[0][0], tuple)
+
+    def test_pydantic_model_roundtrip_as_dict(self):
+        """Pydantic models serialize to dict — type info is not preserved."""
+        product = ProductResponse(id=1, name="Widget", price=9.99)
+        result = _deserialize(_serialize(product))
+        assert isinstance(result, dict)
+        assert result == {"id": 1, "name": "Widget", "price": 9.99}
+
+    def test_list_of_pydantic_models_roundtrip(self):
+        items = [
+            ProductResponse(id=1, name="A", price=1.0),
+            ProductResponse(id=2, name="B", price=2.0),
+        ]
+        result = _deserialize(_serialize(items))
+        assert result == [
+            {"id": 1, "name": "A", "price": 1.0},
+            {"id": 2, "name": "B", "price": 2.0},
+        ]
+
+    def test_paginate_tuple_roundtrip(self):
+        """Exact paginate() shape: tuple(list[dict], dict)."""
+        items = [{"id": 1, "name": "A"}, {"id": 2, "name": "B"}]
+        meta = {"page": 1, "total": 2, "has_next": False}
+        original = (items, meta)
+
+        result = _deserialize(_serialize(original))
+
+        assert isinstance(result, tuple)
+        assert result[0] == items
+        assert result[1] == meta
+
+    def test_serialize_produces_json_string(self):
+        raw = _serialize({"key": "value"})
+        assert isinstance(raw, str)
+        assert json.loads(raw) == {"key": "value"}
