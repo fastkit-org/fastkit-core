@@ -17,6 +17,18 @@ def _to_serializable(item):
         return {k: _to_serializable(v) for k, v in item.items()}
     return item  # str, int, float, bool, None — already JSON-safe
 
+def _from_serializable(item: Any) -> Any:
+    """Recursively reconstruct Python types from JSON-safe structures."""
+    if isinstance(item, dict):
+        if item.get("__tuple__"):
+            # Reconstruct tuple — recurse into each item
+            return tuple(_from_serializable(i) for i in item["items"])
+        # Regular dict — recurse into values
+        return {k: _from_serializable(v) for k, v in item.items()}
+    if isinstance(item, list):
+        return [_from_serializable(i) for i in item]
+    # Primitive — str, int, float, bool, None
+    return item
 
 def _serialize(value) -> str:
     """Serialize any supported value to a JSON string."""
@@ -25,9 +37,7 @@ def _serialize(value) -> str:
 def _deserialize(raw: str):
     """Deserialize a JSON string back to its original structure."""
     data = json.loads(raw)
-    if isinstance(data, dict) and data.get('__tuple__'):
-        return tuple(data['items'])
-    return data
+    return _from_serializable(data)
 
 class RedisBackend(AbstractCacheBackend):
 
