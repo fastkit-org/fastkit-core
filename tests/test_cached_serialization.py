@@ -351,3 +351,191 @@ class TestSerializeDeserializeRoundtrip:
         raw = _serialize({"key": "value"})
         assert isinstance(raw, str)
         assert json.loads(raw) == {"key": "value"}
+
+
+# ============================================================================
+# Integration tests — @cached decorator end-to-end
+# ============================================================================
+
+
+class TestCachedReturnTypes:
+    """@cached must store and retrieve all supported return types correctly."""
+
+    @pytest.mark.asyncio
+    async def test_cached_plain_str(self):
+        @cached(ttl=60, key="str:key")
+        async def fn():
+            return "hello"
+
+        assert await fn() == "hello"
+        assert await fn() == "hello"
+
+    @pytest.mark.asyncio
+    async def test_cached_plain_int(self):
+        @cached(ttl=60, key="int:key")
+        async def fn():
+            return 42
+
+        assert await fn() == 42
+        assert await fn() == 42
+
+    @pytest.mark.asyncio
+    async def test_cached_none_not_cached(self):
+        """None is treated as cache miss — function is called every time."""
+        call_count = 0
+
+        @cached(ttl=60, key="none:key")
+        async def fn():
+            nonlocal call_count
+            call_count += 1
+            return None
+
+        await fn()
+        await fn()
+        assert call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_cached_dict(self):
+        @cached(ttl=60, key="dict:key")
+        async def fn():
+            return {"id": 1, "name": "Alice"}
+
+        first = await fn()
+        second = await fn()
+        assert first == second == {"id": 1, "name": "Alice"}
+
+    @pytest.mark.asyncio
+    async def test_cached_list_of_dicts(self):
+        @cached(ttl=60, key="list:key")
+        async def fn():
+            return [{"id": 1}, {"id": 2}, {"id": 3}]
+
+        result = await fn()
+        assert result == [{"id": 1}, {"id": 2}, {"id": 3}]
+        assert await fn() == result
+
+    @pytest.mark.asyncio
+    async def test_cached_tuple_reconstructed_as_tuple(self):
+        """Core fix: tuple must come back as tuple, not list."""
+
+        @cached(ttl=60, key="tuple:key")
+        async def fn():
+            return (1, "two", 3.0)
+
+        result = await fn()
+        assert isinstance(result, tuple)
+        assert result == (1, "two", 3.0)
+
+    @pytest.mark.asyncio
+    async def test_cached_tuple_on_cache_hit_is_still_tuple(self):
+        """Cache hit must also reconstruct as tuple."""
+
+        @cached(ttl=60, key="tuple:hit")
+        async def fn():
+            return ("a", "b")
+
+        await fn()  # miss — stores serialized
+        result = await fn()  # hit — must deserialize back
+
+        assert isinstance(result, tuple)
+        assert result == ("a", "b")
+
+    @pytest.mark.asyncio
+    async def test_cached_tuple_inside_tuple(self):
+        """Nested tuple must be fully reconstructed on cache hit."""
+
+        @cached(ttl=60, key="tuple:nested")
+        async def fn():
+            return ((1, 2), (3, 4))
+
+        await fn()  # miss
+        result = await fn()  # hit
+
+        assert isinstance(result, tuple)
+        assert isinstance(result[0], tuple)
+        assert isinstance(result[1], tuple)
+        assert result == ((1, 2), (3, 4))
+
+    @pytest.mark.asyncio
+    async def test_cached_deeply_nested_tuple(self):
+        @cached(ttl=60, key="tuple:deep")
+        async def fn():
+            return ((("deep",),),)
+
+        await fn()
+        result = await fn()
+
+        assert result == ((("deep",),),)
+        assert isinstance(result[0][0], tuple)
+
+    @pytest.mark.asyncio
+    async def test_cached_pydantic_model_returned_as_dict(self):
+        @cached(ttl=60, key="pydantic:single")
+        async def fn():
+            return {"id": 1, "name": "Widget", "price": 9.99}
+
+        result = await fn()
+        assert isinstance(result, dict)
+        assert result == {"id": 1, "name": "Widget", "price": 9.99}
+
+    @pytest.mark.asyncio
+    async def test_cached_list_of_pydantic_models(self):
+        @cached(ttl=60, key="pydantic:list")
+        async def fn():
+            return [
+                {"id": 1, "name": "A", "price": 1.0},
+                {"id": 2, "name": "B", "price": 2.0},
+            ]
+
+        result = await fn()
+        assert result == [
+            {"id": 1, "name": "A", "price": 1.0},
+            {"id": 2, "name": "B", "price": 2.0},
+        ]
+
+    @pytest.mark.asyncio
+    async def test_cached_paginate_tuple_scenario(self):
+        """
+        Exact scenario from the bug report:
+        paginate() returns tuple(list[ProductResponse], dict).
+        Must be stored and retrieved without DataError.
+        """
+
+        @cached(ttl=60, key="paginate:p1")
+        async def paginate():
+            items = [
+                {"id": 1, "name": "Widget", "price": 9.99},
+                {"id": 2, "name": "Gadget", "price": 19.99},
+            ]
+            meta = {"page": 1, "per_page": 10, "total": 2, "has_next": False}
+            return items, meta
+
+        result = await paginate()
+
+        assert isinstance(result, tuple)
+        items, meta = result
+        assert items == [
+            {"id": 1, "name": "Widget", "price": 9.99},
+            {"id": 2, "name": "Gadget", "price": 19.99},
+        ]
+        assert meta == {"page": 1, "per_page": 10, "total": 2, "has_next": False}
+
+    @pytest.mark.asyncio
+    async def test_cached_paginate_cache_hit_returns_tuple(self):
+        """Cache hit for paginate() must also return tuple."""
+        call_count = 0
+
+        @cached(ttl=60, key="paginate:hit")
+        async def paginate():
+            nonlocal call_count
+            call_count += 1
+            return [{"id": 1}], {"page": 1}
+
+        await paginate()  # miss
+        result = await paginate()  # hit
+
+        assert call_count == 1
+        assert isinstance(result, tuple)
+        items, meta = result
+        assert items == [{"id": 1}]
+        assert meta == {"page": 1}
