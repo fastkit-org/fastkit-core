@@ -1,7 +1,21 @@
 from redis.asyncio import Redis
 from typing import Any
+import json
+from pydantic import BaseModel
 
 from fastkit_core.cache.backends.base import AbstractCacheBackend
+
+
+def _to_serializable(item):
+    if isinstance(item, BaseModel):  # Pydantic v2
+        return item.model_dump()
+    if isinstance(item, tuple):
+        return {'__tuple__': True, 'items': [_to_serializable(i) for i in item]}
+    if isinstance(item, list):
+        return [_to_serializable(i) for i in item]
+    if isinstance(item, dict):
+        return {k: _to_serializable(v) for k, v in item.items()}
+    return item  # str, int, float, bool, None — already JSON-safe
 
 class RedisBackend(AbstractCacheBackend):
 
