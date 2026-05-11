@@ -631,6 +631,152 @@ def test_create_raises_on_duplicate(mock_repo):
 
 ---
 
+## Application Wiring — Minimal Working Setup
+
+This section shows how all FastKit Core pieces connect. Use it as a reference
+when bootstrapping a new project or when an agent needs to generate `main.py`.
+
+### Directory layout
+```
+project/
+├── .env
+├── main.py
+├── config/
+│   ├── __init__.py
+│   ├── app.py
+│   └── database.py
+└── modules/
+    └── invoices/
+        ├── models.py
+        ├── schemas.py
+        ├── repository.py
+        ├── service.py
+        └── router.py
+```
+
+### `config/database.py`
+```python
+import os
+
+CONNECTIONS = {
+    'default': {
+        'driver':   os.getenv('DB_DRIVER', 'postgresql'),
+        'host':     os.getenv('DB_HOST', 'localhost'),
+        'port':     int(os.getenv('DB_PORT', 5432)),
+        'database': os.getenv('DB_NAME', 'myapp'),
+        'username': os.getenv('DB_USERNAME', 'postgres'),
+        'password': os.getenv('DB_PASSWORD', ''),
+    }
+}
+```
+
+### `config/app.py`
+```python
+import os
+
+APP_NAME = os.getenv('APP_NAME', 'MyApp')
+DEBUG = os.getenv('DEBUG', 'False').lower() in ('true', '1')
+```
+
+### `main.py` — sync
+```python
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from fastkit_core.config import ConfigManager
+from fastkit_core.database.session import init_database, shutdown_database
+from modules.invoices.router import router as invoices_router
+# import modules.invoices.listeners  # uncomment if using signals
+
+config = ConfigManager(modules=['app', 'database'])
+init_database(config)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    shutdown_database()
+
+app = FastAPI(lifespan=lifespan)
+app.include_router(invoices_router, prefix='/invoices', tags=['invoices'])
+```
+
+### `main.py` — async
+```python
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from fastkit_core.config import ConfigManager
+from fastkit_core.database.session import init_async_database, shutdown_async_database
+from modules.invoices.router import router as invoices_router
+
+config = ConfigManager(modules=['app', 'database'])
+init_async_database(config)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    await shutdown_async_database()
+
+app = FastAPI(lifespan=lifespan)
+app.include_router(invoices_router, prefix='/invoices', tags=['invoices'])
+```
+
+### `modules/invoices/router.py` — dependency wiring
+```python
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+from fastkit_core.database.session import get_async_db
+from fastkit_core.http.responses import success_response, paginated_response
+from .service import InvoiceService
+from .schemas import InvoiceCreate, InvoiceUpdate
+
+router = APIRouter()
+
+def get_service(db: AsyncSession = Depends(get_async_db)) -> InvoiceService:
+    return InvoiceService(InvoiceService(db))
+
+@router.get('/')
+async def list_invoices(page: int = 1, service: InvoiceService = Depends(get_service)):
+    items, meta = await service.paginate(page=page, per_page=20)
+    return paginated_response(items=items, pagination=meta)
+
+@router.post('/', status_code=201)
+async def create_invoice(data: InvoiceCreate, service: InvoiceService = Depends(get_service)):
+    invoice = await service.create(data)
+    return success_response(data=invoice, status_code=201)
+```
+
+### `alembic/env.py` — required snippet for migrations
+```python
+from fastkit_core.config import ConfigManager
+from fastkit_core.database import Base, build_database_url
+
+# Import ALL models so Alembic detects them
+from modules.invoices.models import Invoice  # noqa
+# from modules.products.models import Product  # noqa
+
+config_manager = ConfigManager(modules=['database'])
+DATABASE_URL = build_database_url(config_manager, is_async=False)
+
+# Pass to alembic config
+config.set_main_option('sqlalchemy.url', DATABASE_URL)
+target_metadata = Base.metadata
+```
+
+### ConfigManager key rules
+- `modules` list maps to files in the `config/` package: `['app', 'database']` loads `config/app.py` and `config/database.py`
+- Access values with dot notation: `config.get('database.CONNECTIONS')`, `config.get('app.DEBUG')`
+- `.env` is auto-discovered from CWD upward — no explicit path needed unless using non-standard location
+- Environment variables override config files: `DATABASE_CONNECTIONS` overrides `database.CONNECTIONS`
+- NEVER instantiate `ConfigManager` inside a repository, service, or router — instantiate once at app startup and pass via DI
+
+### Database session rules
+- Call `init_database(config)` or `init_async_database(config)` ONCE at startup, before the app starts serving requests
+- Use `get_db` / `get_async_db` as FastAPI `Depends()` in routers to get a scoped session per request
+- Use `get_read_db` / `get_async_read_db` for read-heavy endpoints when read replicas are configured
+- Call `shutdown_database()` / `shutdown_async_database()` in the `lifespan` context manager on teardown
+- NEVER call `init_database` inside a request handler, service, or repository
+
+---
+
 ## Merge Convention
 
 Each FastKit package exposes its context path for CLI merging:
