@@ -60,9 +60,16 @@ Constructor injection ONLY.
 NEVER: service locator, global registry, `ServiceClass()` inside another class body.
 
 ```python
-# CORRECT
-class InvoiceService(BaseCrudService[...]):
-    def __init__(self, repository: InvoiceRepository) -> None:
+# CORRECT — async: service receives session, creates repository internally
+class InvoiceService(AsyncBaseCrudService[Invoice, InvoiceCreate, InvoiceUpdate, InvoiceResponse]):
+    def __init__(self, session: AsyncSession) -> None:
+        repository = InvoiceRepository(session)
+        super().__init__(repository, response_schema=InvoiceResponse)
+
+# CORRECT — sync: identical pattern, different types
+class InvoiceService(BaseCrudService[Invoice, InvoiceCreate, InvoiceUpdate, InvoiceResponse]):
+    def __init__(self, session: Session) -> None:
+        repository = InvoiceRepository(session)
         super().__init__(repository, response_schema=InvoiceResponse)
 
 # WRONG — hidden dependency
@@ -269,9 +276,11 @@ NEVER: Raise `HTTPException` in a service — raise `FastKitException` or `Value
 
 ```python
 from fastkit_core.services import BaseCrudService
+from sqlalchemy.orm import Session
 
 class InvoiceService(BaseCrudService[Invoice, InvoiceCreate, InvoiceUpdate, InvoiceResponse]):
-    def __init__(self, repository: InvoiceRepository) -> None:
+    def __init__(self, session: Session) -> None:
+        repository = InvoiceRepository(session)
         super().__init__(repository, response_schema=InvoiceResponse)
 
     def validate_create(self, data: InvoiceCreate) -> None:
@@ -341,7 +350,7 @@ NEVER raise `HTTPException` (FastAPI) outside the `router.py` layer.
 **Purpose:** Standardized JSON response envelope.
 
 ```python
-from fastkit_core.http.responses import success_response, error_response, paginated_response, cursor_paginated_response
+from fastkit_core.http import success_response, error_response, paginated_response, cursor_paginated_response
 
 # Single resource
 return success_response(data=invoice, status_code=201)
