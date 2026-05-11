@@ -678,71 +678,104 @@ APP_NAME = os.getenv('APP_NAME', 'MyApp')
 DEBUG = os.getenv('DEBUG', 'False').lower() in ('true', '1')
 ```
 
-### `main.py` — sync
+### `main.py` — async (canonical pattern)
 ```python
-from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastkit_core.config import ConfigManager
-from fastkit_core.database.session import init_database, shutdown_database
+from fastkit_core.database import init_async_database
 from modules.invoices.router import router as invoices_router
-# import modules.invoices.listeners  # uncomment if using signals
+import modules.invoices.listeners  # noqa — registers signal receivers at startup
 
-config = ConfigManager(modules=['app', 'database'])
-init_database(config)
+configuration = ConfigManager(modules=['app', 'database'])
+init_async_database(configuration)
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    yield
-    shutdown_database()
-
-app = FastAPI(lifespan=lifespan)
-app.include_router(invoices_router, prefix='/invoices', tags=['invoices'])
+app = FastAPI()
+app.include_router(invoices_router)
 ```
 
-### `main.py` — async
+Key points:
+- No `lifespan` needed for basic setup — `init_async_database` registers the engine globally at module load time
+- `import modules.x.listeners` MUST be at top level in `main.py` to register receivers before the first request
+- `init_async_database` is imported from `fastkit_core.database`, NOT `fastkit_core.database.session`
+- Router `prefix` and `tags` are defined inside the router itself, not passed to `include_router`
+
+### `main.py` — sync
 ```python
-from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastkit_core.config import ConfigManager
-from fastkit_core.database.session import init_async_database, shutdown_async_database
+from fastkit_core.database import init_database
 from modules.invoices.router import router as invoices_router
 
-config = ConfigManager(modules=['app', 'database'])
-init_async_database(config)
+configuration = ConfigManager(modules=['app', 'database'])
+init_database(configuration)
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    yield
-    await shutdown_async_database()
-
-app = FastAPI(lifespan=lifespan)
-app.include_router(invoices_router, prefix='/invoices', tags=['invoices'])
+app = FastAPI()
+app.include_router(invoices_router)
 ```
 
 ### `modules/invoices/router.py` — dependency wiring
 ```python
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastkit_core.database.session import get_async_db
-from fastkit_core.http.responses import success_response, paginated_response
+from starlette.responses import JSONResponse
+from fastkit_core.database import get_async_db
+from fastkit_core.http import success_response, paginated_response
 from .service import InvoiceService
 from .schemas import InvoiceCreate, InvoiceUpdate
 
-router = APIRouter()
+router = APIRouter(
+    prefix='/invoices',
+    tags=['Invoice'],
+)
 
-def get_service(db: AsyncSession = Depends(get_async_db)) -> InvoiceService:
-    return InvoiceService(InvoiceService(db))
+def get_service(session: AsyncSession = Depends(get_async_db)) -> InvoiceService:
+    return InvoiceService(session)  # service receives session, creates repository internally
 
-@router.get('/')
-async def list_invoices(page: int = 1, service: InvoiceService = Depends(get_service)):
+@router.get('')
+async def index(page: int = 1, service: InvoiceService = Depends(get_service)) -> JSONResponse:
     items, meta = await service.paginate(page=page, per_page=20)
     return paginated_response(items=items, pagination=meta)
 
-@router.post('/', status_code=201)
-async def create_invoice(data: InvoiceCreate, service: InvoiceService = Depends(get_service)):
+@router.post('', status_code=201)
+async def store(data: InvoiceCreate, service: InvoiceService = Depends(get_service)) -> JSONResponse:
     invoice = await service.create(data)
     return success_response(data=invoice, status_code=201)
 ```
+
+### `modules/invoices/repository.py`
+```python
+from sqlalchemy.ext.asyncio import AsyncSession
+from fastkit_core.database import AsyncRepository
+from .models import Invoice
+
+class InvoiceRepository(AsyncRepository[Invoice]):
+    def __init__(self, session: AsyncSession) -> None:
+        super().__init__(Invoice, session)
+```
+
+### `modules/invoices/service.py` — service receives session, builds repository internally
+```python
+from sqlalchemy.ext.asyncio import AsyncSession
+from fastkit_core.services import AsyncBaseCrudService
+from .models import Invoice
+from .repository import InvoiceRepository
+from .schemas import InvoiceCreate, InvoiceUpdate, InvoiceResponse
+
+class InvoiceService(AsyncBaseCrudService[Invoice, InvoiceCreate, InvoiceUpdate, InvoiceResponse]):
+    def __init__(self, session: AsyncSession) -> None:
+        repository = InvoiceRepository(session)
+        self.session = session
+        super().__init__(repository, response_schema=InvoiceResponse)
+```
+
+Key import paths:
+- `get_async_db` / `get_db` → `fastkit_core.database`
+- `init_async_database` / `init_database` → `fastkit_core.database`
+- `success_response` / `paginated_response` / `error_response` → `fastkit_core.http`
+- `AsyncRepository` / `Repository` / `Base` → `fastkit_core.database`
+- `AsyncBaseCrudService` / `BaseCrudService` → `fastkit_core.services`
+- `ConfigManager` → `fastkit_core.config`
+- `Signal` → `fastkit_core.events`
 
 ### `alembic/env.py` — required snippet for migrations
 ```python
