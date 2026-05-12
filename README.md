@@ -158,7 +158,6 @@ Add the following line to your existing `.cursor/rules/*.mdc` file:
 Apply all conventions from @AI_CONTEXT.md
 ```
 
-> **Using `fastkit-cli`?** Run `fastkit ai-sync` to handle this automatically.
 
 ---
 
