@@ -119,9 +119,51 @@ Get up and running in 5 minutes:
 pip install fastkit-core
 ```
 
+---
+
+## AI Agent Setup
+
+FastKit Core ships with an `AI_CONTEXT.md` file that teaches AI coding agents
+(Claude Code, Cursor) the project structure, naming conventions, and patterns.
+Once configured, agents can scaffold complete modules without any prior
+knowledge of FastKit.
+
+### Claude Code
+
+**No existing `CLAUDE.md` in your project:**
+```bash
+# Create CLAUDE.md in your project root
+echo '@AI_CONTEXT.md' > CLAUDE.md
+```
+
+**Already have a `CLAUDE.md`:**
+```bash
+# Add reference at the top of your existing file
+sed -i '1s/^/@AI_CONTEXT.md\n\n/' CLAUDE.md
+```
+Or manually add `@AI_CONTEXT.md` as the first line of your `CLAUDE.md`.
+
+### Cursor
+
+**No existing rules file in your project:**
+```bash
+# Create Cursor rules directory and file
+mkdir -p .cursor/rules
+echo 'Apply all conventions from @AI_CONTEXT.md' > .cursor/rules/fastkit.mdc
+```
+
+**Already have Cursor rules:**
+Add the following line to your existing `.cursor/rules/*.mdc` file:
+```
+Apply all conventions from @AI_CONTEXT.md
+```
+
+> **Using `fastkit-cli`?** Run `fastkit ai-sync` to handle this automatically.
+
+---
+
 ### Your First FastKit Application
 ```python
-from fastapi import FastAPI, Depends
 from sqlalchemy.orm import Session
 from fastkit_core.database import BaseWithTimestamps, Repository, get_db, IntIdMixin
 from fastkit_core.services import BaseCrudService
