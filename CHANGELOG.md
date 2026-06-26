@@ -6,6 +6,42 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 FastKit Core follows [Semantic Versioning](https://semver.org/).
 
 ---
+## [0.4.4] — 2026-06-26
+
+This release is a metadata and contributor experience update. No breaking changes,
+no API changes — purely improvements to package discoverability, contributor
+onboarding, and project documentation.
+
+### Added
+
+#### GitHub — Issue Templates (`.github/ISSUE_TEMPLATE/`)
+
+Added three issue templates to standardize contributor interactions:
+
+- `bug_report.md` — structured bug reports with environment details, reproduction steps, and traceback section
+- `feature_request.md` — feature proposals with problem statement, proposed API, and alternatives
+- `good_first_issue.md` — template for maintainers to create well-defined tasks for new contributors
+
+#### GitHub — `CONTRIBUTING.md` (`.github/CONTRIBUTING.md`)
+
+Added a contributing guide that surfaces automatically when opening issues or PRs on GitHub.
+Links to the full guide at [fastkit.org/contribute](https://fastkit.org/contribute) and includes
+a quick start using `uv sync` and `uv run` commands.
+
+### Changed
+
+#### PyPI — Package Metadata (`pyproject.toml`)
+
+- **Description** updated to include all key features: repository pattern, service layer,
+  i18n, `TranslatableMixin`, cache decorators, events & signals (pub-sub), `AI_CONTEXT.md`
+  support, and standardized responses
+- **Keywords** expanded with `i18n`, `internationalization`, `repository-pattern`,
+  `service-layer`, `translatable`, `cache`, `events`, `signals`, `pub-sub`
+- **Development Status** changed from `4 - Beta` to `5 - Production/Stable`
+- **Classifiers** expanded with `Topic :: Database`, `Topic :: Software Development :: Code Generators`,
+  `Environment :: Web Environment`, `Operating System :: OS Independent`, `Typing :: Typed`
+
+---
 ## [0.4.3] — 2026-05-09
 
 This release fixes a critical bug that made `@cached` unusable with composite

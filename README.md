@@ -5,6 +5,15 @@
   [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
   [![CI](https://github.com/fastkit-org/fastkit-core/actions/workflows/test_publish.yaml/badge.svg)](https://github.com/fastkit-org/fastkit-core/actions/workflows/test_publish.yaml)
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+  [![FastAPI](https://img.shields.io/badge/topic-fastapi-009688?style=flat-square)](https://github.com/topics/fastapi)
+  [![Repository Pattern](https://img.shields.io/badge/topic-repository--pattern-blue?style=flat-square)](https://github.com/topics/repository-pattern)
+  [![Service Layer](https://img.shields.io/badge/topic-service--layer-blue?style=flat-square)](https://github.com/topics/service-layer)
+  [![i18n](https://img.shields.io/badge/topic-i18n-orange?style=flat-square)](https://github.com/topics/i18n)
+  [![SQLAlchemy](https://img.shields.io/badge/topic-sqlalchemy-red?style=flat-square)](https://github.com/topics/sqlalchemy)
+  [![Pub-Sub](https://img.shields.io/badge/topic-pub--sub-purple?style=flat-square)](https://github.com/topics/pub-sub)
+  [![Caching](https://img.shields.io/badge/topic-caching-yellow?style=flat-square)](https://github.com/topics/caching)
+  [![Laravel Inspired](https://img.shields.io/badge/topic-laravel--inspired-ff2d20?style=flat-square)](https://github.com/topics/laravel-inspired)
 </div>
 
 ---
