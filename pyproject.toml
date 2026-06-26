@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fastkit-core"
-version = "0.4.3"
-description = "FastKit Core is a lightweight toolkit that adds structure and common patterns to FastAPI."
+version = "0.4.4"
+description = "FastAPI toolkit with repository pattern, service layer, i18n, TranslatableMixin, cache decorators, events & signals (pub-sub) and standardized responses. Includes AI_CONTEXT.md for instant AI assistant integration. Laravel-inspired structure for production FastAPI apps."
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
@@ -14,17 +14,29 @@ authors = [
 ]
 keywords = [
     "fastapi",
-    "framework",
-    "toolkit",
+    "repository-pattern",
+    "service-layer",
+    "i18n",
+    "internationalization",
+    "sqlalchemy",
+    "pydantic",
+    "crud",
+    "orm",
     "laravel",
+    "toolkit",
+    "framework",
     "web",
     "api",
-    "crud",
     "database",
-    "orm"
+    "translatable",
+    "cache",
+    "decorators",
+    "events",
+    "signals",
+    "pub-sub",
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
@@ -32,10 +44,19 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Framework :: FastAPI",
-    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
+    "Topic :: Internet :: WWW/HTTP :: WSGI :: Application",
     "Topic :: Software Development :: Libraries :: Application Frameworks",
     "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Database",
+    "Topic :: Software Development :: Code Generators",
+    "Environment :: Web Environment",
+    "Operating System :: OS Independent",
+    "Typing :: Typed",
 ]
+
+[tool.setuptools.package-data]
+fastkit_core = ["py.typed"]
 
 dependencies = [
     "fastapi>=0.115.0,<0.116.0",
