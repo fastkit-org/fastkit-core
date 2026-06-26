@@ -55,9 +55,6 @@ classifiers = [
     "Typing :: Typed",
 ]
 
-[tool.setuptools.package-data]
-fastkit_core = ["py.typed"]
-
 dependencies = [
     "fastapi>=0.115.0,<0.116.0",
     "uvicorn[standard]>=0.34.0,<0.35.0",
